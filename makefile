@@ -26,7 +26,8 @@ all:
 	$(CC) -O2 -o extractor6 extractors/extractor6.c $(ORIG_FF)
 	$(CC) -O2 -o extractor7 extractors/extractor7.c $(CUST_FF)
 	$(CC) -O2 -o extractor8 extractors/extractor8.c $(CUST_FF)
-
+	echo $(CUSTOM_PREFIX) > custom
+	
 clean:
 	rm -f extractor*
 
