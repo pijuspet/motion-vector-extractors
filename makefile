@@ -3,7 +3,7 @@ CURRENT_DIR=${shell pwd}
 CC = g++
 
 # Custom FFmpeg install path
-CUSTOM_PREFIX = $(CURRENT_DIR)/ffmpeg-8.0/ffmpeg-8.0-ourversion/FFmpeg
+CUSTOM_PREFIX = $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0-custom
 CUSTOM_PKG_CONFIG = PKG_CONFIG_PATH=$(CUSTOM_PREFIX)/lib/pkgconfig
 CUST_FF_CFLAGS = $(shell $(CUSTOM_PKG_CONFIG) pkg-config --cflags libavformat libavcodec libavutil)
 CUST_FF_LIBS   = $(shell $(CUSTOM_PKG_CONFIG) pkg-config --libs libavformat libavcodec libavutil)
@@ -11,7 +11,7 @@ CUST_RPATH = -Wl,-rpath,$(CUSTOM_PREFIX)/lib
 CUST_FF = $(CUST_FF_CFLAGS) $(CUST_FF_LIBS) $(CUST_RPATH)
 
 # Original FFmpeg install path
-REGULAR_PREFIX = $(CURRENT_DIR)/ffmpeg-8.0/clean-version/FFmpeg-n8.0
+REGULAR_PREFIX = $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0
 REGULAR_PKG_CONFIG = PKG_CONFIG_PATH=$(REGULAR_PREFIX)/lib/pkgconfig
 SYS_FF_CFLAGS = $(shell $(REGULAR_PKG_CONFIG) pkg-config --cflags libavformat libavcodec libavutil)
 SYS_FF_LIBS   = $(shell $(REGULAR_PKG_CONFIG) pkg-config --libs libavformat libavcodec libavutil)
@@ -22,7 +22,7 @@ EXTRACTOR_DIR = extractors
 EXTRACTOR_EXECUTABLES_DIR = executables
 WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors $(DUMP)
 
-VIDEO_FILE = $(CURRENT_DIR)/videos/stickman.mp4
+VIDEO_FILE = $(CURRENT_DIR)/videos/vid_h264.mp4
 LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/* | sort | tail -n 1)
 CSV_FILE_PATH = $(LAST_RESULTS_DIR)/all_motion_vectors.csv
 

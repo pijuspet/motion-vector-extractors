@@ -41,12 +41,12 @@ std::array<MethodInfo, N_METHODS> methods = {{
         // {"FFMPEG decode frames", "/extractors/executables/extractor6", "method6_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
         {"FFmpeg MV", "/extractors/executables/extractor0", "method0_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
         {"Same Code Not Patched", "/extractors/executables/extractor1", "method1_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
-        {"Optimized MV-Only - FFMPEG Patched", "/extractors/executables/extractor2", "method2_output", 1, "LD_LIBRARY_PATH=/home/ppet/Milestone/motion-vector-extractors-/ffmpeg-8.0/ffmpeg-8.0-ourversion/lib"},
+        {"Optimized MV-Only - FFMPEG Patched", "/extractors/executables/extractor2", "method2_output", 1, "LD_LIBRARY_PATH=/home/ppet/Milestone/motion-vector-extractors/ffmpeg/FFmpeg-8.0-custom/lib"},
         //{"Custom H.264 Parser", "/extractors/executables/extractor3", "method3_output", 0, "LD_LIBRARY_PATH=/usr/local/lib/"},
         //{"LIVE555 Parser", "/extractors/executables/extractor4", "method4_output", 0, "LD_LIBRARY_PATH=/usr/local/lib/"},
         {"Python mv-extractor", "/extractors/executables/extractor5", "method5_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
-        {"FFMPEG Patched - Minimal", "/extractors/executables/extractor7", "method7_output", 1, "LD_LIBRARY_PATH=/home/ppet/Milestone/motion-vector-extractors-/ffmpeg-8.0/ffmpeg-8.0-ourversion/lib"},
-        {"FFMPEG Patched!", "/extractors/executables/extractor8", "method8_output", 1, "LD_LIBRARY_PATH=/home/ppet/Milestone/motion-vector-extractors-/ffmpeg-8.0/ffmpeg-8.0-ourversion/lib"}
+        {"FFMPEG Patched - Minimal", "/extractors/executables/extractor7", "method7_output", 1, "LD_LIBRARY_PATH=/home/ppet/Milestone/motion-vector-extractors/ffmpeg/FFmpeg-8.0-custom/lib"},
+        {"FFMPEG Patched!", "/extractors/executables/extractor8", "method8_output", 1, "LD_LIBRARY_PATH=/home/ppet/Milestone/motion-vector-extractors/ffmpeg/FFmpeg-8.0-custom/lib"}
 }};
 
 double now_ms() {
