@@ -18,11 +18,9 @@ export RESULTS_DIR
 build() {
   echo "Building all extractors and tools..."
   make all
-  g++ -O2 -o benchmark_all_9 benchmarking.cpp \
-    `pkg-config --cflags --libs libavformat libavcodec libavutil libswscale` -lm
+  (cd benchmarking; g++ -O2 -o executables/benchmark_all_9 benchmarking.cpp \
+    `pkg-config --cflags --libs libavformat libavcodec libavutil libswscale` -lm)
   (cd utils; g++ -O2 -o executables/combine_csv combine_csv.cpp)
-  gcc -O2 -o complete_video_generator_9 vidgenerator.c \
-    `pkg-config --cflags --libs libavformat libavcodec libavutil libswscale` -lm
  
   echo "Build complete."
 }
@@ -33,7 +31,7 @@ extract() {
     return 1
   fi
   echo "Running 9-method benchmark suite..."
-  ./benchmark_all_9 "$INPUT" "$INPUT1" "$RESULTS_DIR"
+  (cd benchmarking/executables; ./benchmark_all_9 "$INPUT" "$INPUT1" "$RESULTS_DIR")
   echo "Benchmarks complete."
 }
 

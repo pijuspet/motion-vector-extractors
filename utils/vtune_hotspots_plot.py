@@ -86,148 +86,24 @@ def generate_tree_html(nodes, node_id):
 
 def generate_complete_html(nodes, roots, output_file):
     """Generate complete HTML file with working tree"""
-    
-    tree_html = ""
-    for root_id in roots:
-        tree_html += generate_tree_html(nodes, root_id)
-    
-    html_content = f'''<!DOCTYPE html>
-<html>
-<head>
-    <title>VTune Call Tree</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-            margin: 20px;
-            background-color: #f5f5f5;
-        }}
-        
-        .container {{
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }}
-        
-        .stats {{
-            background-color: #ecf0f1;
-            padding: 10px;
-            border-radius: 4px;
-            margin-bottom: 16px;
-        }}
-        
-        .header {{
-            display: flex;
-            align-items: center;
-            margin-bottom: 16px;
-            padding: 8px 12px;
-            background-color: #34495e;
-            color: white;
-            border-radius: 4px;
-            font-weight: bold;
-        }}
-        
-        .header .name {{ flex: 1; }}
-        .header .cpu-total {{ width: 80px; text-align: right; color: #f39c12; }}
-        .header .cpu-self {{ width: 60px; text-align: right; color: #bdc3c7; }}
-        
-        ul.tree-root, ul.children {{
-            list-style: none;
-            margin: 0;
-            padding: 0;
-        }}
-        
-        ul.children {{
-            padding-left: 20px;
-            border-left: 1px solid #ddd;
-            margin-left: 10px;
-        }}
-        
-        .tree-node {{
-            margin: 2px 0;
-        }}
-        
-        .node-content {{
-            display: flex;
-            align-items: center;
-            padding: 4px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }}
-        
-        .node-content:hover {{
-            background-color: #f0f8ff;
-        }}
-        
-        .arrow {{
-            width: 16px;
-            font-size: 12px;
-            color: #666;
-            margin-right: 6px;
-            user-select: none;
-        }}
-        
-        .name {{
-            flex: 1;
-            font-weight: 500;
-            color: #2c3e50;
-        }}
-        
-        .cpu-total {{
-            width: 80px;
-            text-align: right;
-            font-weight: bold;
-            color: #e74c3c;
-        }}
-        
-        .cpu-self {{
-            width: 60px;
-            text-align: right;
-            color: #7f8c8d;
-            font-size: 0.9em;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h2>VTune Function Call Tree</h2>
-        <div class="stats">
-            <strong>Tree Statistics:</strong> {len(nodes)} total function calls, {len(roots)} root nodes
-        </div>
-        <div class="header">
-            <span class="name">Function Name</span>
-            <span class="cpu-total">CPU Total</span>
-            <span class="cpu-self">CPU Self</span>
-        </div>
-        <ul class="tree-root">
-            {tree_html}
-        </ul>
-    </div>
-    
-    <script>
-        function toggleNode(nodeId) {{
-            const childrenContainer = document.getElementById('children_' + nodeId);
-            const arrow = document.querySelector(`[data-node="${{nodeId}}"] .arrow`);
-            
-            if (childrenContainer) {{
-                if (childrenContainer.style.display === 'none') {{
-                    // Expand
-                    childrenContainer.style.display = 'block';
-                    arrow.textContent = '▼';
-                }} else {{
-                    // Collapse
-                    childrenContainer.style.display = 'none';
-                    arrow.textContent = '▶';
-                }}
-            }}
-        }}
-    </script>
-</body>
-</html>'''
-    
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(html_content)
+    tree_html = "".join(generate_tree_html(nodes, r) for r in roots)
+
+    template_path = os.path.join(
+        os.path.dirname(__file__),
+        "vtune.html"
+    )
+
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
+
+    html = (template
+            .replace("{{TREE_HTML}}", tree_html)
+            .replace("{{NODES_COUNT}}", str(len(nodes)))
+            .replace("{{ROOTS_COUNT}}", str(len(roots))))
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write(html)
+
 
 def generate_hotspots_chart(csv_file, output_dir):
     """Generate PNG bar chart of top hotspots"""
