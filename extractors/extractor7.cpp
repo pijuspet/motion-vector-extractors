@@ -1,20 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavutil/motion_vector.h>
-#include <libavutil/opt.h>
+#include "writer.h"
 
-void print_mv(const AVMotionVector* mv, int frame_idx, FILE* out) {
-    fprintf(out, "%d,2,%d,%d,%d,%d,%d,%d,%d,0x%" PRIx64 ",%d,%d,%d\n",
-           frame_idx,
-           mv->source,
-           mv->w, mv->h,
-           mv->src_x, mv->src_y,
-           mv->dst_x, mv->dst_y,
-           (uint64_t)mv->flags,
-           mv->motion_x, mv->motion_y, mv->motion_scale);
+extern "C" {
+    #include <libavcodec/avcodec.h>
+    #include <libavformat/avformat.h>
+    #include <libavutil/motion_vector.h>
+    #include <libavutil/opt.h>
 }
 
 int main(int argc, char** argv) {
@@ -23,9 +16,10 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    char* file_name = "\0";
+    std::string file_name = "";
+    int do_print = 1;
+    if (argc >= 3) do_print = atoi(argv[2]);
     if (argc >= 4) file_name = argv[3];
-    
     avformat_network_init();
 
     AVFormatContext* fmt_ctx = NULL;
@@ -51,7 +45,7 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    AVCodec* codec = avcodec_find_decoder(fmt_ctx->streams[video_stream_index]->codecpar->codec_id);
+    const AVCodec* codec = avcodec_find_decoder(fmt_ctx->streams[video_stream_index]->codecpar->codec_id);
     if(!codec){
         fprintf(stderr, "Codec not found.\n");
         return -1;
@@ -68,8 +62,10 @@ int main(int argc, char** argv) {
     }
 
     // Enable multi-threaded decoding
-    codec_ctx->thread_count = 1; // 0 lets ffmpeg decide based on CPU cores
+    // codec_ctx->thread_count = 1; // extractor7.c
+    codec_ctx->thread_count = 0; // 0 lets ffmpeg decide based on CPU cores
     codec_ctx->export_side_data |= AV_CODEC_EXPORT_DATA_MVS;
+    av_opt_set_int(codec_ctx, "motion_vectors_only", 1, 0);  // CUSTOM PATCHED FLAG
 
     if (avcodec_open2(codec_ctx, codec, NULL) < 0) {
         fprintf(stderr, "Could not open codec.\n");
@@ -85,16 +81,14 @@ int main(int argc, char** argv) {
 
     int frame_idx = 0;
     // Buffer output to a file (stdout could be slow)
-    FILE* out = stdout;
 
-
-    printf("%s\n", argv[3]);
-    if (file_name[0] != '\0')
-        out = fopen(file_name, "w");
-
-
-
-    fprintf(out, "frame,method_id,source,w,h,src_x,src_y,dst_x,dst_y,flags,motion_x,motion_y,motion_scale\n");
+    MotionVectorWriter writer;
+    if(do_print){
+        if (!writer.Open(file_name)) {
+            fprintf(stderr, "Failed to open output file\n");
+            return 1;
+        }
+    }
 
     while (av_read_frame(fmt_ctx, pkt) >= 0) {
         if (pkt->stream_index == video_stream_index) {
@@ -116,12 +110,8 @@ int main(int argc, char** argv) {
 
                 AVFrameSideData* sd = av_frame_get_side_data(frame, AV_FRAME_DATA_MOTION_VECTORS);
                 if (sd) {
-                    const AVMotionVector* mvs = (const AVMotionVector*)sd->data;
-                    int nb_mvs = sd->size / sizeof(AVMotionVector);
-                    for (int i = 0; i < nb_mvs; ++i) {
-                        i=i;
-                        print_mv(&mvs[i], frame_idx, out);
-                    }
+                    if(do_print)
+                        writer.Write(frame_idx, (const AVMotionVector*)sd->data, 7, sd->size);
                 }
 
                 av_frame_unref(frame);
@@ -136,12 +126,8 @@ int main(int argc, char** argv) {
     while (avcodec_receive_frame(codec_ctx, frame) == 0) {
         AVFrameSideData* sd = av_frame_get_side_data(frame, AV_FRAME_DATA_MOTION_VECTORS);
         if (sd) {
-            const AVMotionVector* mvs = (const AVMotionVector*)sd->data;
-            int nb_mvs = sd->size / sizeof(AVMotionVector);
-            for (int i = 0; i < nb_mvs; ++i) {
-                i=i;
-                print_mv(&mvs[i], frame_idx, out);
-            }
+            if(do_print)
+                writer.Write(frame_idx, (const AVMotionVector*)sd->data, 7, sd->size);
         }
         av_frame_unref(frame);
         frame_idx++;

@@ -1,6 +1,6 @@
 CURRENT_DIR=${shell pwd}
 
-CC = gcc
+CC = g++
 
 # Custom FFmpeg install path
 CUSTOM_PREFIX = $(CURRENT_DIR)/ffmpeg-8.0/ffmpeg-8.0-ourversion/FFmpeg
@@ -26,28 +26,32 @@ VIDEO_FILE = $(CURRENT_DIR)/videos/stickman.mp4
 LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/* | sort | tail -n 1)
 CSV_FILE_PATH = $(LAST_RESULTS_DIR)/all_motion_vectors.csv
 
+PARENT_DIR  := $(shell dirname $(CURRENT_DIR))
+VENV_FOLDER = $(PARENT_DIR)/venv-motion-vectors
+
 install:
-	pip install -r requirements.txt
+	mkdir -p $(VENV_FOLDER)
+	. $(VENV_FOLDER)/bin/activate && pip install -r requirements.txt
 
 all:
 	@echo "ex0"
-	g++ -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor0 $(EXTRACTOR_DIR)/extractor0.cpp $(WRITER_SRC) $(SYS_FF)
-# 	@echo "ex1"
-# 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor1 $(EXTRACTOR_DIR)/extractor1.c  $(SYS_FF)
-# 	@echo "ex2"
-# 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor2 $(EXTRACTOR_DIR)/extractor2.c  $(CUST_FF)
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor0 $(EXTRACTOR_DIR)/extractor0.cpp $(WRITER_SRC) $(SYS_FF)
+	@echo "ex1"
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor1 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
+	@echo "ex2"
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor2 $(EXTRACTOR_DIR)/extractor2.cpp $(WRITER_SRC) $(CUST_FF)
 # 	@echo "ex3"
 # 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor3 $(EXTRACTOR_DIR)/extractor3.c  $(SYS_FF)
 # 	@echo "ex4"
 # 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor4 $(EXTRACTOR_DIR)/extractor4.c  $(SYS_FF)
-# 	@echo "ex5"
-# 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor5 $(EXTRACTOR_DIR)/extractor5.c  $(SYS_FF)
-# 	@echo "ex6"	
-# 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor6 $(EXTRACTOR_DIR)/extractor6.c  $(SYS_FF)
+	@echo "ex5"
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor5 $(EXTRACTOR_DIR)/extractor5.cpp  $(SYS_FF)
+	@echo "ex6"	
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor6 $(EXTRACTOR_DIR)/extractor6.cpp  $(SYS_FF)
 	@echo "ex7"
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor7 $(EXTRACTOR_DIR)/extractor7.c  $(CUST_FF)
-# 	@echo "ex8"
-# 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor8 $(EXTRACTOR_DIR)/extractor8.c  $(CUST_FF)
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor7 $(EXTRACTOR_DIR)/extractor7.cpp $(WRITER_SRC) $(CUST_FF)
+	@echo "ex8"
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor8 $(EXTRACTOR_DIR)/extractor8.cpp $(WRITER_SRC) $(CUST_FF)
 	@echo "DONE"
 
 benchmark:

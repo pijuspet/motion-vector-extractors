@@ -1,16 +1,24 @@
-#include <libavutil/motion_vector.h>
-#include <libavutil/opt.h>
-#include <libavformat/avformat.h>
-#include <libavcodec/avcodec.h>
+extern "C" {
+    #include <libavutil/motion_vector.h>
+    #include <libavutil/opt.h>
+    #include <libavformat/avformat.h>
+    #include <libavcodec/avcodec.h>
+}
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h> // for PRIx64
+#include "writer.h"
 
 int main(int argc, char **argv) {
-    if (argc != 2) {
+    if (argc < 2) {
         fprintf(stderr, "usage: %s rtsp://host:port/stream\n", argv[0]);
         return 1;
     }
+    
+    std::string file_name = "";
+    int do_print = 1;
+    if (argc >= 3) do_print = atoi(argv[2]);
+    if (argc >= 4) file_name = argv[3];
 
     AVFormatContext *fmt_ctx = NULL;
     AVCodecContext *dec_ctx = NULL;
@@ -64,7 +72,14 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    printf("frame,method_id,source,w,h,src_x,src_y,dst_x,dst_y,flags,motion_x,motion_y,motion_scale\n");
+    MotionVectorWriter writer;
+    if (do_print){
+        if (!writer.Open(file_name)) {
+            fprintf(stderr, "Failed to open output file\n");
+            return 1;
+        }
+    }
+
 
     while (av_read_frame(fmt_ctx, pkt) >= 0) {
         if (pkt->stream_index == video_stream_idx) {
@@ -76,17 +91,19 @@ int main(int argc, char **argv) {
             while (avcodec_receive_frame(dec_ctx, frame) >= 0) {
                 AVFrameSideData *sd = av_frame_get_side_data(frame, AV_FRAME_DATA_MOTION_VECTORS);
                 if (sd) {
-                    const AVMotionVector *mvs = (const AVMotionVector *)sd->data;
-                    int n = sd->size / sizeof(*mvs);
-                    for (int i = 0; i < n; i++) {
-                        const AVMotionVector *mv = &mvs[i];
-                        printf("%d,2,%d,%d,%d,%d,%d,%d,%d,0x%" PRIx64 ",%d,%d,%d\n",
-                            frame_count, mv->source, mv->w, mv->h,
-                            mv->src_x, mv->src_y,
-                            mv->dst_x, mv->dst_y,
-                            (uint64_t)mv->flags,
-                            mv->motion_x, mv->motion_y, mv->motion_scale);
-                    }
+                    // const AVMotionVector *mvs = (const AVMotionVector *)sd->data;
+                    // int n = sd->size / sizeof(*mvs);
+                    // for (int i = 0; i < n; i++) {
+                    //     const AVMotionVector *mv = &mvs[i];
+                    //     /*printf("%d,2,%d,%d,%d,%d,%d,%d,%d,0x%" PRIx64 ",%d,%d,%d\n",
+                    //         frame_count, mv->source, mv->w, mv->h,
+                    //         mv->src_x, mv->src_y,
+                    //         mv->dst_x, mv->dst_y,
+                    //         (uint64_t)mv->flags,
+                    //         mv->motion_x, mv->motion_y, mv->motion_scale);*/
+                    // }
+                    if(do_print)
+                        writer.Write(frame_count, (const AVMotionVector*)sd->data, 2, sd->size);
                 }
                 frame_count++;
                 av_frame_unref(frame);

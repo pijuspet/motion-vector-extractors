@@ -17,7 +17,7 @@ bool MotionVectorWriter::Open(std::string const& filename) {
   
 }
 
-int MotionVectorWriter::Write(int frame_num, const AVMotionVector *mvs, size_t size) {
+int MotionVectorWriter::Write(int frame_num, const AVMotionVector *mvs, int method_id, size_t size) {
 
     if (!file.is_open()) {
         fprintf(stderr, "File not open for writing\n");
@@ -48,7 +48,7 @@ int MotionVectorWriter::Write(int frame_num, const AVMotionVector *mvs, size_t s
             fprintf(stderr, "Invalid motion vector dimensions: %d x %d\n", mv->w, mv->h);
             continue;
         }
-        file << frame_num << ",0," << mv->source << ","
+        file << frame_num << "," << method_id << "," << mv->source << ","
             << int(mv->w) << "," << int(mv->h) << ","
             << mv->src_x << "," << mv->src_y << ","
             << mv->dst_x << "," << mv->dst_y << ","

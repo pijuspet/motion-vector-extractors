@@ -11,9 +11,8 @@ RESULTS_DIR="$RESULTS_BASE/$RUN_TIMESTAMP"
 mkdir -p "$RESULTS_DIR"
 export RESULTS_DIR
 
-# VIDEO_DIR="${PWD}"
-# BENCHMARKING_DIR="${PWD}/benchmarking"
-# BENCHMARKING_EXECUTABLES="$BENCHMARKING_DIR/executables"
+PARENT_DIR=$(dirname $CURRENT_DIR)
+VENV_FOLDER="$PARENT_DIR/venv-motion-vectors"
 
 build() {
   echo "Building all extractors and tools..."
@@ -31,7 +30,7 @@ extract() {
     return 1
   fi
   echo "Running 9-method benchmark suite..."
-  (cd benchmarking/executables; ./benchmark_all_9 "$INPUT" "$INPUT1" "$RESULTS_DIR")
+  (cd benchmarking/executables; ./benchmark_all_9 "$INPUT" "$INPUT1" "$RESULTS_DIR" "$CURRENT_DIR" "$VENV_FOLDER")
   echo "Benchmarks complete."
 }
 
@@ -65,7 +64,7 @@ plot() {
   fi
   mkdir -p "$RESULTS_DIR/plots"
   echo "Running Python benchmark visualization and PPT generation..."
-  (cd benchmarking; python3 benchmark_python.py "$INPUT" "$INPUT1" "$CURRENT_DIR" "$RESULTS_DIR" "$RESULTS_DIR/plots")
+  (cd benchmarking; python3 benchmark_python.py "$INPUT" "$INPUT1" "$CURRENT_DIR" "$RESULTS_DIR" "$VENV_FOLDER" "$RESULTS_DIR/plots")
   echo "Plotting complete. Plots and PPTX in $RESULTS_DIR/plots."
 }
 

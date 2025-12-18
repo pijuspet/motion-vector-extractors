@@ -21,7 +21,6 @@ int main(int argc, char **argv) {
     if (argc >= 3) do_print = atoi(argv[2]);
     if (argc >= 4) file_name = argv[3];
 
-    std::cout<<"file name:"<< file_name << std::endl;
 
     avformat_network_init();
     avformat_open_input(&fmt_ctx, argv[1], NULL, NULL);
@@ -38,7 +37,6 @@ int main(int argc, char **argv) {
     MotionVectorWriter writer;
     if (do_print) {
         if (!writer.Open(file_name)) {
-    std::cout<<"file name:"<< file_name << std::endl;
             fprintf(stderr, "Failed to open output file\n");
             return 1;
         }
@@ -50,7 +48,7 @@ int main(int argc, char **argv) {
                 AVFrameSideData *sd = av_frame_get_side_data(frame, AV_FRAME_DATA_MOTION_VECTORS);
                 if (do_print){
                     if (sd && sd->data && sd->size > 0) {
-                        writer.Write(frame_num, (const AVMotionVector*)sd->data, sd->size);
+                        writer.Write(frame_num, (const AVMotionVector*)sd->data, 0, sd->size);
                     } else {
                         std::cerr << "frame " << frame_num << ": no motion vectors\n";
                     }

@@ -16,7 +16,7 @@ public:
         Close();
     }
     bool Open (std::string const& filename);
-    int Write(int frame_num, const AVMotionVector *mv, size_t size);
+    int Write(int frame_num, const AVMotionVector *mv, int method_id, size_t size);
     void Close();
 private:    
     std::ofstream file;

@@ -15,7 +15,7 @@
 #include <sys/resource.h>
 #include <sys/wait.h>
 
-constexpr int N_METHODS = 2;
+constexpr int N_METHODS = 6;
 
 struct MethodInfo {
     std::string name;
@@ -40,13 +40,13 @@ struct BenchmarkResult {
 std::array<MethodInfo, N_METHODS> methods = {{
     // {"FFMPEG decode frames", "/extractors/executables/extractor6", "method6_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
     {"FFmpeg MV", "/extractors/executables/extractor0", "method0_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
-    // {"Same Code Not Patched", "/extractors/executables/extractor1", "method1_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
-    //{"Optimized MV-Only - FFMPEG Patched", "/extractors/executables/extractor2", "method2_output", 1, "LD_LIBRARY_PATH=/home/loab/Documents/MotionVectors/ffmpeg-mvonly/lib"},
+    {"Same Code Not Patched", "/extractors/executables/extractor1", "method1_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
+    {"Optimized MV-Only - FFMPEG Patched", "/extractors/executables/extractor2", "method2_output", 1, "LD_LIBRARY_PATH=/home/ppet/Milestone/motion-vector-extractors-/ffmpeg-8.0/ffmpeg-8.0-ourversion/lib"},
     //{"Custom H.264 Parser", "/extractors/executables/extractor3", "method3_output", 0, "LD_LIBRARY_PATH=/usr/local/lib/"},
     //{"LIVE555 Parser", "/extractors/executables/extractor4", "method4_output", 0, "LD_LIBRARY_PATH=/usr/local/lib/"},
-    // {"Python mv-extractor", "/extractors/executables/extractor5", "method5_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
+    {"Python mv-extractor", "/extractors/executables/extractor5", "method5_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
     {"FFMPEG Patched - Minimal", "/extractors/executables/extractor7", "method7_output", 1, "LD_LIBRARY_PATH=/home/ppet/Milestone/motion-vector-extractors-/ffmpeg-8.0/ffmpeg-8.0-ourversion/lib"},
-    //{"FFMPEG Patched!", "./extractors/executables/extractor8", "method8_output", 1, "LD_LIBRARY_PATH=/home/loab/Documents/MotionVectors/ffmpeg-mvonly/lib"}
+    {"FFMPEG Patched!", "/extractors/executables/extractor8", "method8_output", 1, "LD_LIBRARY_PATH=/home/ppet/Milestone/motion-vector-extractors-/ffmpeg-8.0/ffmpeg-8.0-ourversion/lib"}
 }};
 
 double now_ms() {
@@ -102,7 +102,7 @@ void print_env_vars(pid_t pid) {
     }
 }
 
-BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& input, int par_streams, std::string& absolute_path) {
+BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& input, int par_streams, std::string& absolute_path, std::string& current_dir, std::string& venv_dir) {
     BenchmarkResult r;
     r.name = m.name;
     r.supports_high_profile = m.supports_high_profile;
@@ -131,14 +131,14 @@ BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& i
             // Need to cast to char* because execle expects char* const envp[].
             char* const envvec[] = { const_cast<char*>(m.path.c_str()), nullptr };
 
-            std::string exe_str = "." + absolute_path + "/" + m.exe;
+            std::string exe_str = current_dir + m.exe;
             printf("%s\n", exe_str.c_str());
             char* exe = const_cast<char*>(exe_str.c_str()); 
             char* arg0 = exe;
             char* arg1 = const_cast<char*>(input.c_str());
 
             // Exec with correct sentinels: terminate args with nullptr before env
-            execle(exe, arg0, arg1, "1", csv_filename, nullptr, envvec);
+            execle(exe, arg0, arg1, "1", csv_filename, current_dir.c_str(), venv_dir.c_str(), nullptr, envvec);
 
             std::cerr << "Child " << i << ": exec failed for command " << m.exe << " " << input << ": " << strerror(errno) << std::endl;
             exit(127);
@@ -181,9 +181,6 @@ BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& i
         parse_csv(csv_filename, &frames, &mvs);
         std::cout << "Parsed file '" << csv_filename << "': frames=" << frames << ", mvs=" << mvs << std::endl;
         total_mvs += mvs;
-        // if (remove(csv_filename) != 0) {
-        //     std::cerr << "Warning: failed to remove file '" << csv_filename << "'" << std::endl;
-        // }
     }
     // Fixed frames per stream as requested
     int fixed_frames_per_stream = 298;
@@ -228,12 +225,14 @@ void print_complete_results(const std::array<BenchmarkResult, N_METHODS>& r, int
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2 || argc > 4) {
+    if (argc < 2 || argc > 6) {
         std::cerr << "Usage: " << argv[0] << " <video_file_or_rtsp_url> [streams]" << std::endl;
         return 1;
     }
     std::string input = argv[1];
     std::string absolute_path = argv[3];
+    std::string current_dir = argv[4];
+    std::string venv_dir = argv[5];
     int par_streams = 1;
     if (argc == 3)
         par_streams = std::atoi(argv[2]);
@@ -246,7 +245,7 @@ int main(int argc, char** argv) {
     std::cout << "   Streams per method: " << par_streams << "\n\n";
     for (int i = 0; i < N_METHODS; ++i) {
         std::cout << "▶️  Running: " << methods[i].name << std::endl;
-        results[i] = run_benchmark_parallel(methods[i], input, par_streams, absolute_path);
+        results[i] = run_benchmark_parallel(methods[i], input, par_streams, absolute_path, current_dir, venv_dir);
         std::cout << "✅ Done: " << results[i].frame_count << " frames, "
                   << results[i].avg_time_per_frame_ms << " ms/frame, "
                   << results[i].throughput_fps << " FPS\n\n";
