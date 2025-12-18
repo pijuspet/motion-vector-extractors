@@ -20,6 +20,7 @@ int main(int argc, char** argv) {
     int do_print = 1;
     if (argc >= 3) do_print = atoi(argv[2]);
     if (argc >= 4) file_name = argv[3];
+    
     avformat_network_init();
 
     AVFormatContext* fmt_ctx = NULL;
