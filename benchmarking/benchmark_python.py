@@ -201,7 +201,6 @@ def run_benchmark(input_file, streams, project_absolute_path, results_absolute_p
         stderr=subprocess.PIPE,
         encoding='utf-8'
     )
-    print(result)
     if result.returncode != 0:
         print(f"Error running benchmark: {result.stderr}")
         return pd.DataFrame(), result.stdout

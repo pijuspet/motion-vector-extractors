@@ -15,14 +15,11 @@
 #include <sys/resource.h>
 #include <sys/wait.h>
 
-constexpr int N_METHODS = 6;
-
 struct MethodInfo {
     std::string name;
     std::string exe;
     std::string output_csv;
     int supports_high_profile;
-    std::string path;
 };
 
 struct BenchmarkResult {
@@ -37,17 +34,17 @@ struct BenchmarkResult {
     int supports_high_profile = 0;
 };
 
-std::array<MethodInfo, N_METHODS> methods = {{
-        // {"FFMPEG decode frames", "/extractors/executables/extractor6", "method6_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
-        {"FFmpeg MV", "/extractors/executables/extractor0", "method0_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
-        {"Same Code Not Patched", "/extractors/executables/extractor1", "method1_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
-        {"Optimized MV-Only - FFMPEG Patched", "/extractors/executables/extractor2", "method2_output", 1, "LD_LIBRARY_PATH=/home/ppet/Milestone/motion-vector-extractors/ffmpeg/FFmpeg-8.0-custom/lib"},
-        //{"Custom H.264 Parser", "/extractors/executables/extractor3", "method3_output", 0, "LD_LIBRARY_PATH=/usr/local/lib/"},
-        //{"LIVE555 Parser", "/extractors/executables/extractor4", "method4_output", 0, "LD_LIBRARY_PATH=/usr/local/lib/"},
-        {"Python mv-extractor", "/extractors/executables/extractor5", "method5_output", 1, "LD_LIBRARY_PATH=/usr/local/lib/"},
-        {"FFMPEG Patched - Minimal", "/extractors/executables/extractor7", "method7_output", 1, "LD_LIBRARY_PATH=/home/ppet/Milestone/motion-vector-extractors/ffmpeg/FFmpeg-8.0-custom/lib"},
-        {"FFMPEG Patched!", "/extractors/executables/extractor8", "method8_output", 1, "LD_LIBRARY_PATH=/home/ppet/Milestone/motion-vector-extractors/ffmpeg/FFmpeg-8.0-custom/lib"}
-}};
+std::vector<MethodInfo> methods = {
+        {"FFMPEG decode frames", "/extractors/executables/extractor6", "method6_output", 1},
+        {"FFmpeg MV", "/extractors/executables/extractor0", "method0_output", 1},
+        {"Same Code Not Patched", "/extractors/executables/extractor1", "method1_output", 1},
+        {"Optimized MV-Only - FFMPEG Patched", "/extractors/executables/extractor2", "method2_output", 1},
+        {"Custom H.264 Parser", "/extractors/executables/extractor3", "method3_output", 0},
+        {"LIVE555 Parser", "/extractors/executables/extractor4", "method4_output", 0},
+        {"Python mv-extractor", "/extractors/executables/extractor5", "method5_output", 1},
+        {"FFMPEG Patched - Minimal", "/extractors/executables/extractor7", "method7_output", 1},
+        {"FFMPEG Patched!", "/extractors/executables/extractor8", "method8_output", 1}
+};
 
 double now_ms() {
     struct timeval tv;
@@ -61,7 +58,7 @@ double now_ms() {
 void parse_csv(const std::string& fname, int* frames, int* mvs) {
     std::ifstream file(fname);
     if (!file) {
-        std::cerr << "Warning: cannot open CSV file '" << fname << "': " << strerror(errno) << std::endl;
+        fprintf(stderr, "Warning: cannot open CSV file '%s': %s\n", fname.c_str(), strerror(errno));
         *frames = 0;
         *mvs = 0;
         return;
@@ -85,28 +82,11 @@ void parse_csv(const std::string& fname, int* frames, int* mvs) {
     }
 }
 
-void print_env_vars(pid_t pid) {
-    char path[256];
-    snprintf(path, sizeof(path), "/proc/%d/environ", pid);
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
-        perror("Failed to open environ file");
-        return;
-    }
-    char ch;
-    while (file.get(ch)) {
-        if (ch == '\0')
-            std::cout << '\n';
-        else
-            std::cout << ch;
-    }
-}
-
 BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& input, int par_streams, std::string& absolute_path, std::string& current_dir, std::string& venv_dir) {
     BenchmarkResult r;
     r.name = m.name;
     r.supports_high_profile = m.supports_high_profile;
-    std::cout << "Starting " << par_streams << " parallel streams for method: " << m.name << std::endl;
+    printf("Starting %d parallel streams for method: %s\n", par_streams, m.name.c_str());
     double t_start = now_ms();
 
     std::vector<pid_t> pids(par_streams);
@@ -123,32 +103,18 @@ BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& i
             char csv_filename[256];
             snprintf(csv_filename, sizeof(csv_filename), "%s/%s_%d.csv", absolute_path.c_str(), m.output_csv.c_str(), i);
 
-            /*if (!freopen(csv_filename, "w", stdout)) {
-                std::cerr << "Child " << i << ": freopen to '" << csv_filename << "' failed: " << strerror(errno) << std::endl;
-                exit(1);
-            }*/
-
-            // Prepare environment array with one element + null terminator.
-            // Need to cast to char* because execle expects char* const envp[].
-            char* const envvec[] = { const_cast<char*>(m.path.c_str()), nullptr };
-
             std::string exe_str = current_dir + m.exe;
-            printf("%s\n", exe_str.c_str());
             char* exe = const_cast<char*>(exe_str.c_str());
-            char* arg0 = exe;
             char* arg1 = const_cast<char*>(input.c_str());
 
-            // Exec with correct sentinels: terminate args with nullptr before env
-            execle(exe, arg0, arg1, "1", csv_filename, current_dir.c_str(), venv_dir.c_str(), nullptr, envvec);
+            execl(exe, exe, arg1, "1", csv_filename, current_dir.c_str(), venv_dir.c_str(), nullptr);
 
-            std::cerr << "Child " << i << ": exec failed for command " << m.exe << " " << input << ": " << strerror(errno) << std::endl;
+            fprintf(stderr, "Child %d: exec failed for command %s %s: %s\n", i, m.exe.c_str(), input.c_str(), strerror(errno));
             exit(127);
         }
         else {
             pids[i] = pid;
-            std::cout << "Forked child " << i << " with pid " << pid << std::endl;
-            const char* value = getenv("LD_LIBRARY_PATH");
-            std::cout << "Env: " << (value ? value : "") << std::endl;
+            printf("Forked child %d with pid %d\n", i, pid);
         }
     }
     for (int i = 0; i < par_streams; ++i) {
@@ -158,18 +124,16 @@ BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& i
         }
         else {
             if (WIFEXITED(statuses[i])) {
-                std::cout << "Child " << i << " (pid " << pids[i] << ") exited with code " << WEXITSTATUS(statuses[i]) << std::endl;
-            }
-            else if (WIFSIGNALED(statuses[i])) {
-                std::cout << "Child " << i << " (pid " << pids[i] << ") killed by signal " << WTERMSIG(statuses[i]) << std::endl;
-            }
-            else {
-                std::cout << "Child " << i << " (pid " << pids[i] << ") ended abnormally" << std::endl;
+                printf("Child %d (pid %d) exited with code %d\n", i, pids[i], WEXITSTATUS(statuses[i]));
+            } else if (WIFSIGNALED(statuses[i])) {
+                printf("Child %d (pid %d) killed by signal %d\n", i, pids[i], WTERMSIG(statuses[i]));
+            } else {
+                printf("Child %d (pid %d) ended abnormally\n", i, pids[i]);
             }
         }
     }
     double t_end = now_ms();
-    std::cout << "All children done; total wall time elapsed: " << (t_end - t_start) << " ms" << std::endl;
+    printf("All children done; total wall time elapsed: %.2f ms\n", t_end - t_start);
 
     long max_rss_kb = 0;
     double total_user_cpu_sec = 0;
@@ -184,7 +148,7 @@ BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& i
         snprintf(csv_filename, sizeof(csv_filename), "%s/%s_%d.csv", absolute_path.c_str(), m.output_csv.c_str(), i);
         int frames = 0, mvs = 0;
         parse_csv(csv_filename, &frames, &mvs);
-        std::cout << "Parsed file '" << csv_filename << "': frames=" << frames << ", mvs=" << mvs << std::endl;
+        printf("Parsed file '%s': frames=%d, mvs=%d\n", csv_filename, frames, mvs);
         total_mvs += mvs;
     }
     // Fixed frames per stream as requested
@@ -200,38 +164,27 @@ BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& i
     return r;
 }
 
-void print_complete_results(const std::array<BenchmarkResult, N_METHODS>& r, int par_streams) {
-    std::cout << "\n======================\n";
-    std::cout << "                                   COMPLETE MOTION VECTOR EXTRACTION BENCHMARK\n";
-    std::cout << "                              Streams per Method: " << par_streams << "\n";
-    std::cout << "======================\n\n";
-    std::cout << std::left
-        << std::setw(30) << "Method"
-        << " | " << std::setw(10) << "Time/Frame"
-        << " | " << std::setw(6) << "FPS"
-        << " | " << std::setw(9) << "CPU Usage"
-        << " | " << std::setw(9) << "Mem Δ KB"
-        << " | " << std::setw(10) << "Total MVs"
-        << " | " << std::setw(8) << "Frames"
-        << " | " << "High Profile\n";
-    std::cout << "------------------------------------------------------------------------------------------------------------\n";
+void print_complete_results(const std::vector<BenchmarkResult>& r, int par_streams) {
+    printf("\n==========================================================================================================\n");
+    printf("                                   COMPLETE MOTION VECTOR EXTRACTION BENCHMARK\n");
+    printf("                              Streams per Method: %d\n", par_streams);
+    printf("==========================================================================================================\n\n");
+    printf("%-30s | %-12s | %-6s | %-10s | %-9s | %-12s | %-8s | %s\n",
+           "Method", "Time/Frame", "FPS", "CPU Usage", "Mem Δ KB", "Total MVs", "Frames", "High Profile");
+    printf("------------------------------------------------------------------------------------------------------------\n");
 
-    for (const auto& result : r) {
-        std::cout << std::left << std::setw(30) << result.name
-            << " | " << std::setw(10) << std::fixed << std::setprecision(2) << result.avg_time_per_frame_ms << " ms"
-            << " | " << std::setw(6) << std::fixed << std::setprecision(1) << result.throughput_fps
-            << " | " << std::setw(8) << std::fixed << std::setprecision(1) << result.cpu_usage_percent << "%"
-            << " | " << std::setw(9) << result.memory_peak_kb
-            << " | " << std::setw(10) << result.total_motion_vectors
-            << " | " << std::setw(8) << result.frame_count
-            << " | " << (result.supports_high_profile ? "✅" : "❌")
-            << std::endl;
+    for (int i = 0; i < r.size(); i++) {
+        printf("%-30s | %10.2f ms | %6.1f | %8.1f%% | %9ld | %10d | %8d | %s\n",
+               r[i].name.c_str(), r[i].avg_time_per_frame_ms, r[i].throughput_fps,
+               r[i].cpu_usage_percent, r[i].memory_peak_kb,
+               r[i].total_motion_vectors, r[i].frame_count,
+               r[i].supports_high_profile ? "✅" : "❌");
     }
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2 || argc > 6) {
-        std::cerr << "Usage: " << argv[0] << " <video_file_or_rtsp_url> [streams]" << std::endl;
+     if (argc < 2 || argc > 6) {
+        fprintf(stderr, "Usage: %s <video_file_or_rtsp_url> [streams]\n", argv[0]);
         return 1;
     }
     std::string input = argv[1];
@@ -245,15 +198,14 @@ int main(int argc, char** argv) {
         std::cerr << "Streams must be between 1 and 100." << std::endl;
         return 1;
     }
-    std::array<BenchmarkResult, N_METHODS> results;
-    std::cout << "🔍 Starting benchmarking on: " << input << std::endl;
-    std::cout << "   Streams per method: " << par_streams << "\n\n";
-    for (int i = 0; i < N_METHODS; ++i) {
-        std::cout << "▶️  Running: " << methods[i].name << std::endl;
-        results[i] = run_benchmark_parallel(methods[i], input, par_streams, absolute_path, current_dir, venv_dir);
-        std::cout << "✅ Done: " << results[i].frame_count << " frames, "
-            << results[i].avg_time_per_frame_ms << " ms/frame, "
-            << results[i].throughput_fps << " FPS\n\n";
+    std::vector<BenchmarkResult> results;
+    printf("🔍 Starting benchmarking on: %s\n", input.c_str());
+    printf("   Streams per method: %d\n\n", par_streams);
+    for (int i = 0; i < methods.size(); ++i) {
+        printf("▶️  Running: %s\n", methods[i].name.c_str());
+        results.push_back(run_benchmark_parallel(methods[i], input, par_streams, absolute_path, current_dir, venv_dir));
+        printf("✅ Done: %d frames, %.2f ms/frame, %.1f FPS\n\n",
+               results[i].frame_count, results[i].avg_time_per_frame_ms, results[i].throughput_fps);
     }
     print_complete_results(results, par_streams);
     return 0;

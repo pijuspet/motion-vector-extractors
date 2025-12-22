@@ -4,10 +4,10 @@
 #include "writer.h"
 
 extern "C" {
-    #include <libavcodec/avcodec.h>
-    #include <libavformat/avformat.h>
-    #include <libavutil/motion_vector.h>
-    #include <libavutil/opt.h>
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/motion_vector.h>
+#include <libavutil/opt.h>
 }
 
 int main(int argc, char** argv) {
@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
     int do_print = 1;
     if (argc >= 3) do_print = atoi(argv[2]);
     if (argc >= 4) file_name = argv[3];
-    
+
     avformat_network_init();
 
     AVFormatContext* fmt_ctx = NULL;
@@ -73,6 +73,7 @@ int main(int argc, char** argv) {
         return -1;
     }
 
+    fprintf(stderr, "FFmpeg version: %s\n", av_version_info());
     AVPacket* pkt = av_packet_alloc();
     AVFrame* frame = av_frame_alloc();
     if (!pkt || !frame) {
@@ -141,4 +142,3 @@ int main(int argc, char** argv) {
 
     return 0;
 }
-

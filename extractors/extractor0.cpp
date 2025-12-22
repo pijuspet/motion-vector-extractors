@@ -41,6 +41,7 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
+    fprintf(stderr, "FFmpeg version: %s\n", av_version_info());
     while (av_read_frame(fmt_ctx, pkt) >= 0) {
         if (pkt->stream_index == video_idx) {
             avcodec_send_packet(dec_ctx, pkt);

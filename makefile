@@ -20,7 +20,7 @@ SYS_FF = $(SYS_FF_CFLAGS) $(SYS_FF_LIBS) $(SYS_RPATH)
 
 EXTRACTOR_DIR = extractors
 EXTRACTOR_EXECUTABLES_DIR = executables
-WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors $(DUMP)
+WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors
 
 VIDEO_FILE = $(CURRENT_DIR)/videos/vid_h264.mp4
 LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/* | sort | tail -n 1)
@@ -34,25 +34,25 @@ install:
 	. $(VENV_FOLDER)/bin/activate && pip install -r requirements.txt
 
 all:
-	@echo "ex0"
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor0 $(EXTRACTOR_DIR)/extractor0.cpp $(WRITER_SRC) $(SYS_FF)
-	@echo "ex1"
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor1 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
-	@echo "ex2"
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor2 $(EXTRACTOR_DIR)/extractor2.cpp $(WRITER_SRC) $(CUST_FF)
-	@echo "ex3"
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor3 $(EXTRACTOR_DIR)/extractor3.cpp $(WRITER_SRC) $(SYS_FF)
-	@echo "ex4"
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor4 $(EXTRACTOR_DIR)/extractor4.cpp  $(SYS_FF)
-	@echo "ex5"
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor5 $(EXTRACTOR_DIR)/extractor5.cpp  $(SYS_FF)
-	@echo "ex6"	
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor6 $(EXTRACTOR_DIR)/extractor6.cpp  $(SYS_FF)
-	@echo "ex7"
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor7 $(EXTRACTOR_DIR)/extractor7.cpp $(WRITER_SRC) $(CUST_FF)
-	@echo "ex8"
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXTRACTOR_EXECUTABLES_DIR)/extractor8 $(EXTRACTOR_DIR)/extractor8.cpp $(WRITER_SRC) $(CUST_FF)
-	@echo "DONE"
+
+FFMPEG_BUILD = \
+	cd $1 && \
+	chmod +x ./configure ./ffbuild/*.sh && \
+	./configure --prefix=../ --enable-shared --pkg-config-flags="--static" && \
+	make && make install
+
+setup_ffmpeg:
+	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX)/FFmpeg)
+	$(call FFMPEG_BUILD,$(REGULAR_PREFIX)/FFmpeg)
 
 benchmark:
 	./run_full_benchmark.sh $(VIDEO_FILE) 5
