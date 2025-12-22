@@ -6,16 +6,22 @@ To set up and use this project, follow these steps:
 
 1. **Clone the repository**
 2. **Install the required Python packages**
-pip install -r requirements.txt
+```bash
+make install
+```
 
+3. Setup ffmpeg project:
+```
+make setup_ffmpeg
+```
 ## Running the Benchmark
 
-To run the full benchmark, use the provided shell script. For example:
+To run the full benchmark run:
+```
+make run_benchmark
+```
 
-./run_full_benchmark.sh videofile.h264 [num_executions]
-
-- Replace `videofile.h264` with your input video file.
-- `[num_executions]` is optional and specifies how many times you want to run the algorithm in parallel. The default is 1 if you don't specify it.
+- Replace video with your input video file from the videos in `videos/`.
 
 During execution, you’ll be presented with options. If you select **option `0`**, the script will:
 - Run all benchmarks.
@@ -28,6 +34,7 @@ During execution, you’ll be presented with options. If you select **option `0`
 
 After the benchmarks are complete:
 - All plot images (`.png`) and the PowerPoint presentation (`.ppt`), including the results, will be available in the `plot` folder.
+- Motion vectors, vtune results are saved in `/results/[date]/` folder.
 
 ## Current Results 
 
