@@ -14,6 +14,11 @@ make install
 ```
 make setup_ffmpeg
 ```
+
+4. turn on venv:
+```
+source ../venv-motion-vectors/bin/activate
+```
 ## Running the Benchmark
 
 To run the full benchmark run:
@@ -29,6 +34,13 @@ During execution, you’ll be presented with options. If you select **option `0`
 - Create a PowerPoint presentation (PPT).
 
 > **Note:** Selecting option 0 will take longer because it performs both the benchmarks and the full reporting.
+
+## Generate motion vector video
+```
+make generate_video
+```
+
+videos are saved in `/results/[date]` folder (requires `all_motion_vectors.csv` file, run `make benchmark` with flag 0 beforehand).
 
 ## Results Output
 
