@@ -38,8 +38,8 @@ std::vector<MethodInfo> methods = {
     {"Original FFmpeg MV extraction", "/extractors/executables/extractor0", "method0_output", 1}, // Original FFmpeg, takes out motion vectors out of video
     {"Same Code Not Patched", "/extractors/executables/extractor1", "method1_output", 1}, // Original FFmpeg, but custom flags are passed? ask Louise
     {"Custom FFmpeg MV-Only - FFMPEG Patched", "/extractors/executables/extractor2", "method2_output", 1}, // Custom FFmpeg RTSP protocol
-    // {"Custom H.264 Parser", "/extractors/executables/extractor3", "method3_output", 0}, // no clue what was the intention of this (not going deeper)
-    // {"LIVE555 Parser", "/extractors/executables/extractor4", "method4_output", 0}, // no clue what was the intention of this (not going deeper)
+    {"Custom H.264 Parser", "/extractors/executables/extractor3", "method3_output", 0}, // no clue what was the intention of this (not going deeper)
+    {"LIVE555 Parser", "/extractors/executables/extractor4", "method4_output", 0}, // no clue what was the intention of this (not going deeper)
     {"Python mv-extractor", "/extractors/executables/extractor5", "method5_output", 1}, // super slow, remove in future
     // {"FFMPEG decode frames", "/extractors/executables/extractor6", "method6_output", 1}, // why this one is used? produces no csv
     {"Custom FFmpeg - Flush decoder", "/extractors/executables/extractor7", "method7_output", 1},
@@ -176,11 +176,11 @@ void print_complete_results(const std::vector<BenchmarkResult>& r, int par_strea
     printf("------------------------------------------------------------------------------------------------------------\n");
 
     for (int i = 0; i < r.size(); i++) {
-        printf("%-30s | %10.2f ms | %6.1f | %8.1f%% | %9ld | %10d | %8d | %s\n",
+        printf("%-30s | %10.2f ms | %6.1f | %8.1f%% | %9ld | %10d | %8d | %d\n",
             r[i].name.c_str(), r[i].avg_time_per_frame_ms, r[i].throughput_fps,
             r[i].cpu_usage_percent, r[i].memory_peak_kb,
             r[i].total_motion_vectors, r[i].frame_count,
-            r[i].supports_high_profile ? "✅" : "❌");
+            r[i].supports_high_profile);
     }
 }
 
