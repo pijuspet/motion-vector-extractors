@@ -76,7 +76,7 @@ publish_confluence() {
   fi
   
   echo "Calling Python script with parameters..."
-  python3 publish_to_confluence.py "$first_dir" "$latest_dir" "$git_commit_run1" "$git_commit_run2"
+  (cd publishing; python3 publish_to_confluence.py "$first_dir" "$latest_dir" "$git_commit_run1" "$git_commit_run2")
 
   PUBLISHED_DIR="${latest_dir/\/results\//\/published\/}"
 
