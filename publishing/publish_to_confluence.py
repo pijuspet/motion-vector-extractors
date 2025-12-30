@@ -14,30 +14,23 @@ load_dotenv("../.env")
 import confluence_report_generator as conf
 
 
-def create_report(generator, directory, dashboard_id, commit_url, latest=True):
+def create_report(generator, directory, commit_url, latest=True):
+    print("[DEBUG DIRECTORY]", directory)
+    if not os.path.isdir(directory):
+        print(f"[ERROR] results directory does not exist: {directory}")
+        return
+
     if latest:
         print_str = "Latest"
     else:
         print_str = "First"
     print(f"[DEBUG] {print_str} results dir: {directory}")
-    if not os.path.isdir(directory):
-        print(f"[ERROR] {print_str} results directory does not exist: {directory}")
-    else:
-        m = re.search(r"(\d{8})_(\d{4})", os.path.basename(directory))
-        if m:
-            date_str = m.group(1)
-            time_str = m.group(2)
-            report_title = f"Automated Report: {date_str[:4]}-{date_str[4:6]}-{date_str[6:]} {time_str[:2]}:{time_str[2:4]}:00"
-        else:
-            report_title = f"Automated Report: {os.path.basename(directory)}"
-        print(
-            f"[DEBUG] Creating detailed report for {print_str.lower()} run: {report_title}"
-        )
-        generator.create_detailed_report_page(
-            directory, report_title, parent_id=dashboard_id, git_commit_url=commit_url
-        )
-        print(f"[DEBUG] Finished creating detailed report for {print_str.lower()} run.")
-        return report_title
+    report_title = generator.generate_report_title(directory)
+    
+    generator.create_detailed_report_page(
+        directory, report_title,  git_commit_url=commit_url
+    )
+    print(f"[DEBUG] Finished creating detailed report for {print_str.lower()} run.")
 
 
 def cli():
@@ -71,24 +64,15 @@ def cli():
     )
     print("[DEBUG] ConfluenceReportGenerator initialized.")
 
-    # Get dashboard page id to use as parent
-    dashboard_page = generator.get_page_by_title()
-    print("[DEBUG] Got dashboard page.")
-    if not dashboard_page:
-        print(f"[ERROR] Main dashboard page '{main_page_title}' not found.")
-        raise Exception(f"Main dashboard page '{main_page_title}' not found.")
-    dashboard_id = dashboard_page["id"]
-    print(f"[DEBUG] Dashboard ID: {dashboard_id}")
-
     # Debug and check existence for first run (first argument)
     first_dir = args.first_results_dir.rstrip("/")
     create_report(
-        generator, first_dir, dashboard_id, args.git_commit_run1, latest=False
+        generator, first_dir, args.git_commit_run1, latest=False
     )
 
     latest_dir = args.latest_results_dir.rstrip("/")
-    report_title = create_report(
-        generator, latest_dir, dashboard_id, args.git_commit_run2, latest=True
+    create_report(
+        generator, latest_dir, args.git_commit_run2, latest=True
     )
 
     # Always update dashboard summary
@@ -96,7 +80,6 @@ def cli():
     generator.update_main_dashboard_summary(
         first_results_dir=args.first_results_dir,
         latest_results_dir=args.latest_results_dir,
-        report_title=report_title,
         git_commit_run1=args.git_commit_run1,
         git_commit_run2=args.git_commit_run2,
     )

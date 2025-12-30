@@ -5,6 +5,7 @@ import glob
 import requests
 from bs4 import BeautifulSoup
 import re
+from jinja2 import Template
 
 
 class ConfluenceReportGenerator:
@@ -15,126 +16,8 @@ class ConfluenceReportGenerator:
         self.space_key = space_key
         self.main_page_title = main_page_title
 
-    def get_page_by_title(self):
+    def __get_page_by_title__(self):
         return self.confluence.get_page_by_title(self.space_key, self.main_page_title)
-
-    def create_detailed_report_page(
-        self, results_dir, report_title, parent_id=None, git_commit_url=None
-    ):
-        print(f"[DEBUG] git_commit_url in detailed report: {git_commit_url}")
-        # Check if a child page with the same title exists under the dashboard
-
-        # region page deletion
-        if parent_id:  # ??  why this deletion
-            children = self.confluence.get_child_pages(parent_id)
-            for child in children:
-                if child["title"] == report_title:
-                    print(
-                        f"[INFO] Deleting existing detailed report page '{report_title}' under dashboard."
-                    )
-                    self.confluence.remove_page(child["id"])
-                    break
-        # Otherwise, create the page as a child of the dashboard if parent_id is given
-        # endregion
-
-        # region create page
-        create_kwargs = dict(
-            space=self.space_key,
-            title=report_title,
-            body="<p>Uploading attachments...</p>",
-            representation="storage",
-        )
-        if parent_id:
-            create_kwargs["parent_id"] = parent_id
-        new_page = self.confluence.create_page(**create_kwargs)
-        # endregion
-
-        page_id = new_page["id"]
-        plots_dir = os.path.join(results_dir, "plots")
-        vtune_dir = os.path.join(results_dir, "vtune_results")
-
-        # Attach mv_comparison_result.txt and call_tree.html if present before other files
-        mv_cmp_path = os.path.join(results_dir, "mv_comparison_result.txt")
-        if os.path.isfile(mv_cmp_path):
-            self.confluence.attach_file(
-                filename=mv_cmp_path, page_id=page_id, name="mv_comparison_result.txt"
-            )
-
-        self.attach_detailed_report_files(page_id, plots_dir, vtune_dir)
-
-        # Compose the detailed report body referencing attachments
-        body = self.generate_detailed_report_body(
-            plots_dir, vtune_dir, page_id, git_commit_url=git_commit_url
-        )
-
-        self.generate_detailed_report(page_id, report_title, body)
-
-    def generate_detailed_report(
-        self,
-        page_id,
-        report_title,
-        body,
-    ):
-        page_info = self.confluence.get_page_by_id(page_id, expand="version")
-        version_number = page_info["version"]["number"] + 1
-        update_data = {
-            "id": page_id,
-            "type": "page",
-            "title": report_title,
-            "space": {"key": self.space_key},
-            "body": {"storage": {"value": body, "representation": "storage"}},
-            "version": {"number": version_number},
-            "metadata": {
-                "properties": {
-                    "content-appearance-draft": {"value": "full-width"},
-                    "content-appearance-published": {"value": "full-width"},
-                }
-            },
-        }
-        print(
-            "[DEBUG] Detailed report body being sent to Confluence:\n"
-            + body[:2000]
-            + ("..." if len(body) > 2000 else "")
-        )
-        self.confluence.put(f"/rest/api/content/{page_id}", data=update_data)
-        print(f"[INFO] Created detailed report page '{report_title}' (id={page_id})")
-
-    def attach_detailed_report_files(self, page_id, plots_dir, vtune_dir):
-        vtune_file_names = ["vtune_hotspots.png", "call_tree.html"]
-
-        for file_name in vtune_file_names:
-            file_path = os.path.join(vtune_dir, file_name) if vtune_dir else None
-            if file_path and os.path.exists(file_path):
-                self.confluence.attach_file(
-                    filename=file_path, page_id=page_id, name=file_name
-                )
-
-        plots_file_names = [
-            "fastest_high_profile_methods.png",
-            "scaling_fps.png",
-            "scaling_timeperframe.png",
-            "scaling_cpu.png",
-            "scaling_memory.png",
-            "grouped_barchart_fps.png",
-            "grouped_barchart_timeperframe.png",
-            "grouped_barchart_cpu.png",
-            "grouped_barchart_memory.png",
-        ]
-
-        for file_name in plots_file_names:
-            file_path = os.path.join(plots_dir, file_name)
-            if os.path.exists(file_path):
-                self.confluence.attach_file(
-                    filename=file_path, page_id=page_id, name=file_name
-                )
-
-        # Detailed Tables per Streams Count
-        for img in sorted(
-            glob.glob(os.path.join(plots_dir, "detail_table_*streams.png"))
-        ):
-            self.confluence.attach_file(
-                filename=img, page_id=page_id, name=os.path.basename(img)
-            )
 
     def __embed_images__(self, images, directory) -> str:
         body = ""
@@ -146,54 +29,51 @@ class ConfluenceReportGenerator:
         return body
 
     def __get_mv_cmp_attachment__(self, page_id, file_name):
-        try:
-            attachments = self.confluence.get_attachments_from_content(
-                page_id, filename=file_name
+        attachments = self.confluence.get_attachments_from_content(
+            page_id, filename=file_name
+        )
+        att = attachments["results"][0] if attachments["size"] > 0 else None
+        if att and "download" in att["_links"]:
+            url = self.confluence.url + att["_links"]["download"]
+            resp = requests.get(
+                url, auth=(self.confluence.username, self.confluence.password)
             )
-            att = attachments["results"][0] if attachments["size"] > 0 else None
-            if att and "download" in att["_links"]:
-                url = self.confluence.url + att["_links"]["download"]
-                resp = requests.get(
-                    url, auth=(self.confluence.username, self.confluence.password)
-                )
-                if resp.ok and resp.text.strip():
-                    return f'<pre style="background:#f4f4f4; border:1px solid #ccc; padding:10px;">{resp.text.strip()}</pre>'
-        except Exception:
-            pass
+            if resp.ok and resp.text.strip():
+                return f'<pre style="background:#f4f4f4; border:1px solid #ccc; padding:10px;">{resp.text.strip()}</pre>'
         return "<em>No motion vector comparison result available</em>"
 
     def __get_calltree_html_interactive__(self, page_id, file_name, add_macro=True):
-        try:
-            attachments = self.confluence.get_attachments_from_content(
-                page_id, filename=file_name
+        attachments = self.confluence.get_attachments_from_content(
+            page_id, filename=file_name
+        )
+        att = attachments["results"][0] if attachments["size"] > 0 else None
+        if att and "download" in att["_links"]:
+            url = self.confluence.url + att["_links"]["download"]
+            resp = requests.get(
+                url, auth=(self.confluence.username, self.confluence.password)
             )
-            att = attachments["results"][0] if attachments["size"] > 0 else None
-            if att and "download" in att["_links"]:
-                url = self.confluence.url + att["_links"]["download"]
-                resp = requests.get(
-                    url, auth=(self.confluence.username, self.confluence.password)
-                )
-                if resp.ok:
-                    html = resp.text
-                    if add_macro == False:
-                        return (
-                            html.strip()
-                            if html.strip()
-                            else "<em>No call tree HTML available</em>"
-                        )
-                    macro = f'<ac:structured-macro ac:name="html"><ac:plain-text-body><![CDATA[{html}]]></ac:plain-text-body></ac:structured-macro>'
-                    return (
-                        macro
-                        if html.strip()
-                        else "<em>No call tree HTML available</em>"
-                    )
-        except Exception:
-            pass
+            if not resp.ok:
+                return "<em>No call tree HTML available</em>"
+
+            html = resp.text.strip()
+            if not html:
+                return "<em>No call tree HTML available</em>"
+
+            if not add_macro:
+                return html
+
+            return (
+                f'<ac:structured-macro ac:name="html">'
+                f"<ac:plain-text-body><![CDATA[{html}]]></ac:plain-text-body>"
+                f"</ac:structured-macro>"
+            )
         return "<em>No call tree HTML available</em>"
 
     def __get_calltree_html_non_interactive__(self, page_id, file_name):
         body = ""
-        call_tree = self.__get_calltree_html_interactive__(page_id, file_name, add_macro=False)
+        call_tree = self.__get_calltree_html_interactive__(
+            page_id, file_name, add_macro=False
+        )
         if call_tree != "<em>No call tree HTML available</em>":
             try:
                 soup = BeautifulSoup(call_tree, "html.parser")
@@ -231,7 +111,107 @@ class ConfluenceReportGenerator:
             body += "<em>No call tree data available</em>"
         return body
 
-    def generate_detailed_report_body(
+    def __add_files__(self, results_dir, is_latest=False):
+        file_list = []
+
+        # Latest version has current_ prefix for a filename
+        prefix = ""
+        if is_latest:
+            prefix = "current_"
+
+        # Helper function
+        def add_if_exists(path, name):
+            directory = os.path.join(path, name)
+            if path and os.path.isfile(directory):
+                file_list.append((directory, prefix + name))
+
+        plots_dir = os.path.join(results_dir, "plots")
+        vtune_dir = os.path.join(results_dir, "vtune_results")
+
+        plots_files = [
+            "detail_table_5streams_highlighted.png",
+            "grouped_barchart_cpu.png",
+            "grouped_barchart_memory.png",
+        ]
+
+        vtune_files = [
+            "vtune_hotspots.png",
+            "call_tree.html",
+        ]
+
+        for file in plots_files:
+            add_if_exists(plots_dir, file)
+        for file in vtune_files:
+            add_if_exists(vtune_dir, file)
+
+        add_if_exists(
+            results_dir,
+            "mv_comparison_result.txt",
+        )
+        return file_list
+
+    def __generate_detailed_report__(
+        self,
+        page_id,
+        report_title,
+        body,
+    ):
+        page_info = self.confluence.get_page_by_id(page_id, expand="version")
+        version_number = page_info["version"]["number"] + 1
+        update_data = {
+            "id": page_id,
+            "type": "page",
+            "title": report_title,
+            "space": {"key": self.space_key},
+            "body": {"storage": {"value": body, "representation": "storage"}},
+            "version": {"number": version_number},
+            "metadata": {
+                "properties": {
+                    "content-appearance-draft": {"value": "full-width"},
+                    "content-appearance-published": {"value": "full-width"},
+                }
+            },
+        }
+
+        self.confluence.put(f"/rest/api/content/{page_id}", data=update_data)
+
+    def __attach_detailed_report_files__(self, page_id, plots_dir, vtune_dir):
+        file_list = []
+
+        # Helper function
+        def add_if_exists(path, name):
+            directory = os.path.join(path, name)
+            if path and os.path.isfile(directory):
+                file_list.append((directory, name))
+
+        vtune_file_names = ["vtune_hotspots.png", "call_tree.html"]
+
+        plots_file_names = [
+            "fastest_high_profile_methods.png",
+            "scaling_fps.png",
+            "scaling_timeperframe.png",
+            "scaling_cpu.png",
+            "scaling_memory.png",
+            "grouped_barchart_fps.png",
+            "grouped_barchart_timeperframe.png",
+            "grouped_barchart_cpu.png",
+            "grouped_barchart_memory.png",
+        ]
+
+        for file_name in plots_file_names:
+            add_if_exists(plots_dir, file_name)
+
+        for file_name in vtune_file_names:
+            add_if_exists(vtune_dir, file_name)
+
+        # Detailed Tables per Streams Count
+        for img in glob.glob(os.path.join(plots_dir, "detail_table_*streams.png")):
+            file_list.append((img, os.path.basename(img)))
+
+        for fpath, fname in file_list:
+            self.confluence.attach_file(filename=fpath, page_id=page_id, name=fname)
+
+    def __generate_detailed_report_body__(
         self, plots_dir, vtune_dir, page_id=None, git_commit_url=None
     ):
         body = '<div style="text-align: left; width: 100vw; max-width: 100vw; margin: 0; padding: 0;">'
@@ -287,224 +267,181 @@ class ConfluenceReportGenerator:
         body += "</div>"
         return body
 
+    def __get_main_dashboard_body__(
+        self,
+        dashboard_id,
+        first_results_dir,
+        latest_results_dir,
+        git_commit_run1=None,
+        git_commit_run2=None,
+    ):
+        # Load template from file
+        with open("templates/main_dashboard_template.html.jinja", "r") as f:
+            template = Template(f.read())
+
+        # Prepare data
+        context = {
+            "mv_first": self.__get_mv_cmp_attachment__(
+                dashboard_id, "mv_comparison_result.txt"
+            ),
+            "mv_latest": self.__get_mv_cmp_attachment__(
+                dashboard_id, "current_mv_comparison_result.txt"
+            ),
+            "img_vtune_first": self._get_img_tag("vtune_hotspots.png"),
+            "img_vtune_latest": self._get_img_tag("current_vtune_hotspots.png"),
+            "git_commit_run1": git_commit_run1,
+            "git_commit_run2": git_commit_run2,
+            "calltree_first_interactive": self.__get_calltree_html_interactive__(
+                dashboard_id, "call_tree.html"
+            ),
+            "calltree_latest_interactive": self.__get_calltree_html_interactive__(
+                dashboard_id, "current_call_tree.html"
+            ),
+            "calltree_first_non_interactive": self.__get_calltree_html_non_interactive__(
+                dashboard_id, "call_tree.html"
+            ),
+            "calltree_latest_non_interactive": self.__get_calltree_html_non_interactive__(
+                dashboard_id, "current_call_tree.html"
+            ),
+            "table_first": self._get_img_tag("detail_table_1streams_highlighted.png"),
+            "table_latest": self._get_img_tag(
+                "current_detail_table_1streams_highlighted.png"
+            ),
+            "cpu_first": self._get_img_tag("grouped_barchart_cpu.png"),
+            "cpu_latest": self._get_img_tag("current_grouped_barchart_cpu.png"),
+            "mem_first": self._get_img_tag("grouped_barchart_memory.png"),
+            "mem_latest": self._get_img_tag("current_grouped_barchart_memory.png"),
+            "first_report_title": (
+                self.generate_report_title(
+                    os.path.basename(first_results_dir.rstrip("/"))
+                )
+                if first_results_dir
+                else None
+            ),
+            "latest_report_title": (
+                self.generate_report_title(
+                    os.path.basename(latest_results_dir.rstrip("/"))
+                )
+                if latest_results_dir
+                else None
+            ),
+        }
+
+        return template.render(context)
+
+    def _get_img_tag(self, fname):
+        return f'<ac:image ac:thumbnail="true" ac:width="450"><ri:attachment ri:filename="{fname}" /></ac:image>'
+
+    def create_detailed_report_page(
+        self, results_dir, report_title, git_commit_url=None
+    ):
+        dashboard_page = self.__get_page_by_title__()
+        print("[DEBUG] Got dashboard page.")
+        if not dashboard_page:
+            print(f"[ERROR] Main dashboard page '{self.main_page_title}' not found.")
+            raise Exception(f"Main dashboard page '{self.main_page_title}' not found.")
+        parent_id = dashboard_page["id"]
+
+        print(f"[DEBUG] git_commit_url in detailed report: {git_commit_url}")
+        # Check if a child page with the same title exists under the dashboard
+
+        # region page deletion
+        if parent_id:  # ??  why this deletion
+            children = self.confluence.get_child_pages(parent_id)
+            for child in children:
+                if child["title"] == report_title:
+                    print(
+                        f"[INFO] Deleting existing detailed report page '{report_title}' under dashboard."
+                    )
+                    self.confluence.remove_page(child["id"])
+                    break
+        # Otherwise, create the page as a child of the dashboard if parent_id is given
+        # endregion
+
+        # region create page
+        create_kwargs = dict(
+            space=self.space_key,
+            title=report_title,
+            body="<p>Uploading attachments...</p>",
+            representation="storage",
+        )
+        if parent_id:
+            create_kwargs["parent_id"] = parent_id
+        new_page = self.confluence.create_page(**create_kwargs)
+        # endregion
+
+        page_id = new_page["id"]
+        plots_dir = os.path.join(results_dir, "plots")
+        vtune_dir = os.path.join(results_dir, "vtune_results")
+
+        # Attach mv_comparison_result.txt and call_tree.html if present before other files
+        mv_cmp_path = os.path.join(results_dir, "mv_comparison_result.txt")
+        if os.path.isfile(mv_cmp_path):
+            self.confluence.attach_file(
+                filename=mv_cmp_path, page_id=page_id, name="mv_comparison_result.txt"
+            )
+
+        self.__attach_detailed_report_files__(page_id, plots_dir, vtune_dir)
+
+        # Compose the detailed report body referencing attachments
+        body = self.__generate_detailed_report_body__(
+            plots_dir, vtune_dir, page_id, git_commit_url=git_commit_url
+        )
+
+        print(
+            "[DEBUG] Detailed report body being sent to Confluence:\n"
+            + body[:2000]
+            + ("..." if len(body) > 2000 else "")
+        )
+        self.__generate_detailed_report__(page_id, report_title, body)
+        print(f"[INFO] Created detailed report page '{report_title}' (id={page_id})")
+
     def update_main_dashboard_summary(
         self,
         first_results_dir,
         latest_results_dir,
-        report_title,
         git_commit_run1=None,
         git_commit_run2=None,
     ):
-        dashboard_page = self.get_page_by_title()
+        dashboard_page = self.__get_page_by_title__()
         if not dashboard_page:
             raise Exception(f"Main dashboard page '{self.main_page_title}' not found.")
         dashboard_id = dashboard_page["id"]
-        page_body = f'<div style="text-align: left; width: 100vw; max-width: 100vw; margin: 0; padding: 0;">'
+
         files_to_attach = []
 
-        def add_if_exists(path, name):
-            if path and os.path.isfile(path):
-                files_to_attach.append((path, name))
-
         if first_results_dir:
-            plots_first = os.path.join(first_results_dir, "plots")
-            vtune_dir_first = os.path.join(first_results_dir, "vtune_results")
-            add_if_exists(
-                os.path.join(plots_first, "detail_table_5streams_highlighted.png"),
-                "detail_table_5streams_highlighted.png",
-            )
-            add_if_exists(
-                os.path.join(plots_first, "grouped_barchart_cpu.png"),
-                "grouped_barchart_cpu.png",
-            )
-            add_if_exists(
-                os.path.join(plots_first, "grouped_barchart_memory.png"),
-                "grouped_barchart_memory.png",
-            )
-            add_if_exists(
-                os.path.join(vtune_dir_first, "vtune_hotspots.png"),
-                "vtune_hotspots.png",
-            )
-            # Attach mv_comparison_result.txt and call_tree.html from first run with unique names
-            mv_cmp_first_path = os.path.join(
-                first_results_dir, "mv_comparison_result.txt"
-            )
-            if os.path.isfile(mv_cmp_first_path):
-                files_to_attach.append(
-                    (mv_cmp_first_path, "mv_comparison_result_first.txt")
-                )
-            calltree_first_path = os.path.join(vtune_dir_first, "call_tree.html")
-            if os.path.isfile(calltree_first_path):
-                files_to_attach.append((calltree_first_path, "call_tree_first.html"))
+            files_to_attach.extend(self.__add_files__(first_results_dir))
         if latest_results_dir:
-            plots_latest = os.path.join(latest_results_dir, "plots")
-            vtune_dir_latest = os.path.join(latest_results_dir, "vtune_results")
-            # Attach latest run's files with 'current_' prefix to avoid collision
-            detail_latest_path = os.path.join(
-                plots_latest, "detail_table_5streams_highlighted.png"
+            files_to_attach.extend(
+                self.__add_files__(latest_results_dir, is_latest=True)
             )
-            if os.path.isfile(detail_latest_path):
-                files_to_attach.append(
-                    (
-                        detail_latest_path,
-                        "current_detail_table_5streams_highlighted.png",
-                    )
-                )
-            cpu_latest_path = os.path.join(plots_latest, "grouped_barchart_cpu.png")
-            if os.path.isfile(cpu_latest_path):
-                files_to_attach.append(
-                    (cpu_latest_path, "current_grouped_barchart_cpu.png")
-                )
-            mem_latest_path = os.path.join(plots_latest, "grouped_barchart_memory.png")
-            if os.path.isfile(mem_latest_path):
-                files_to_attach.append(
-                    (mem_latest_path, "current_grouped_barchart_memory.png")
-                )
-            add_if_exists(
-                os.path.join(vtune_dir_latest, "vtune_hotspots.png"),
-                "current_vtune_hotspots.png",
-            )
-            # Attach mv_comparison_result.txt and call_tree.html from latest run with unique names
-            mv_cmp_latest_path = os.path.join(
-                latest_results_dir, "mv_comparison_result.txt"
-            )
-            if os.path.isfile(mv_cmp_latest_path):
-                files_to_attach.append((mv_cmp_latest_path, "mv_comparison_result.txt"))
-            calltree_latest_path = os.path.join(vtune_dir_latest, "call_tree.html")
-            if os.path.isfile(calltree_latest_path):
-                files_to_attach.append((calltree_latest_path, "call_tree.html"))
-            add_if_exists(
-                os.path.join(latest_results_dir, "decoded_output.mp4"),
-                "decoded_output.mp4",
-            )
+
         for fpath, fname in files_to_attach:
             print(
                 f"[DEBUG] Attaching file: {fpath} as {fname} to dashboard {dashboard_id}"
             )
-            try:
-                self.confluence.attach_file(
-                    filename=fpath, page_id=dashboard_id, name=fname
-                )
-            except Exception as e:
-                print(f"[ERROR] Failed to attach {fname} to dashboard: {e}")
+            self.confluence.attach_file(
+                filename=fpath, page_id=dashboard_id, name=fname
+            )
         time.sleep(5)
 
-        def get_img_tag(fname):
-            return f'<ac:image ac:thumbnail="true" ac:width="450"><ri:attachment ri:filename="{fname}" /></ac:image>'
-
-        page_body += "<h3>Motion Vector Comparison (Frames 10-100)</h3>"
-        mv_first = self.__get_mv_cmp_attachment__(
-            dashboard_id, "mv_comparison_result_first.txt"
-        )
-        mv_latest = self.__get_mv_cmp_attachment__(
-            dashboard_id, "mv_comparison_result.txt"
-        )
-        page_body += '<table class="mv-mini-table"><tr><th>First Run</th><th>Latest Run</th></tr>'
-        page_body += f"<tr><td>{mv_first}</td><td>{mv_latest}</td></tr></table>"
-
-        # 2. VTune Hotspots
-        page_body += "<h3>VTune Hotspots (Top 30)</h3>"
-        img_first = get_img_tag("vtune_hotspots.png")
-        img_latest = get_img_tag("current_vtune_hotspots.png")
-        page_body += '<table class="mv-mini-table"><tr><th>First Run</th><th>Latest Run</th></tr>'
-        page_body += f"<tr><td>{img_first}</td><td>{img_latest}</td></tr></table>"
-
-        # 3. GitHub Commit (per run)
-        page_body += "<h3>GitHub Commit</h3>"
-        page_body += '<table class="mv-mini-table"><tr><th>First Run</th><th>Latest Run</th></tr>'
-        page_body += "<tr>"
-        if git_commit_run1:
-            page_body += f'<td><a href="{git_commit_run1}" target="_blank">{git_commit_run1}</a></td>'
-        else:
-            page_body += "<td>N/A</td>"
-        if git_commit_run2:
-            page_body += f'<td><a href="{git_commit_run2}" target="_blank">{git_commit_run2}</a></td>'
-        else:
-            page_body += "<td>N/A</td>"
-        page_body += "</tr></table>"
-
-        # 4. VTune Call Tree (Interactive)
-        page_body += "<h3>VTune Call Tree (Interactive)</h3>"
-        calltree_first = self.__get_calltree_html_interactive__(
-            dashboard_id, "call_tree_first.html"
-        )
-        calltree_latest = self.__get_calltree_html_interactive__(
-            dashboard_id, "call_tree.html"
-        )
-        page_body += "<h3>VTune Call Tree (Non Interactive)</h3>"
-        page_body += '<table class="mv-mini-table"><tr><th>First Run</th><th>Latest Run</th></tr>'
-        page_body += (
-            f"<tr><td>{calltree_first}</td><td>{calltree_latest}</td></tr></table>"
-        )
-        calltree_first = self.__get_calltree_html_non_interactive__(
-            dashboard_id, "call_tree_first.html"
-        )
-        calltree_latest = self.__get_calltree_html_non_interactive__(
-            dashboard_id, "call_tree.html"
-        )
-        page_body += '<table class="mv-mini-table"><tr><th>First Run</th><th>Latest Run</th></tr>'
-        page_body += (
-            f"<tr><td>{calltree_first}</td><td>{calltree_latest}</td></tr></table>"
+        body = self.__get_main_dashboard_body__(
+            dashboard_id,
+            first_results_dir,
+            latest_results_dir,
+            git_commit_run1,
+            git_commit_run2,
         )
 
-        # 5. Detailed Table
-        page_body += "<h3>Detailed Table</h3>"
-        table_first = get_img_tag("detail_table_1streams_highlighted.png")
-        table_latest = get_img_tag("current_detail_table_1streams_highlighted.png")
-        page_body += '<table class="mv-mini-table"><tr><th>First Run</th><th>Latest Run</th></tr>'
-        page_body += f"<tr><td>{table_first}</td><td>{table_latest}</td></tr></table>"
+        print(f"[DEBUG] Updating dashboard page {dashboard_id} with summary body...")
+        self.__generate_detailed_report__(dashboard_id, self.main_page_title, body)
+        print(f"[DEBUG] Dashboard page update complete.")
 
-        # 6. Grouped CPU Usage
-        page_body += "<h3>Grouped CPU Usage (All Streams)</h3>"
-        cpu_first = get_img_tag("grouped_barchart_cpu.png")
-        cpu_latest = get_img_tag("current_grouped_barchart_cpu.png")
-        page_body += '<table class="mv-mini-table"><tr><th>First Run</th><th>Latest Run</th></tr>'
-        page_body += f"<tr><td>{cpu_first}</td><td>{cpu_latest}</td></tr></table>"
-
-        # 7. Grouped Memory Usage
-        page_body += "<h3>Grouped Memory Usage (All Streams)</h3>"
-        mem_first = get_img_tag("grouped_barchart_memory.png")
-        mem_latest = get_img_tag("current_grouped_barchart_memory.png")
-        page_body += '<table class="mv-mini-table"><tr><th>First Run</th><th>Latest Run</th></tr>'
-        page_body += f"<tr><td>{mem_first}</td><td>{mem_latest}</td></tr></table>"
-
-        # 9. Detailed Reports (link to both runs if available)
-        page_body += "<h3>Detailed Reports</h3>"
-        page_body += "<ul>"
-        if first_results_dir:
-            first_dir = os.path.basename(first_results_dir.rstrip("/"))
-            m1 = re.search(r"(\d{8})_(\d{6})", first_dir)
-            if m1:
-                date_str = m1.group(1)
-                time_str = m1.group(2)
-                first_report_title = f"Automated Report: {date_str[:4]}-{date_str[4:6]}-{date_str[6:]} {time_str[:2]}:{time_str[2:4]}:{time_str[4:]}"
-            else:
-                first_report_title = f"Automated Report: {first_dir}"
-            page_body += f'<li><b>First Run:</b> <ac:link><ri:page ri:content-title="{first_report_title}" /></ac:link></li>'
-        page_body += f'<li><b>Latest Run:</b> <ac:link><ri:page ri:content-title="{report_title}" /></ac:link></li>'
-        page_body += "</ul>"
-        page_body += "</div>"
-        try:
-            print(
-                f"[DEBUG] Updating dashboard page {dashboard_id} with summary body..."
-            )
-            page_info = self.confluence.get_page_by_id(dashboard_id, expand="version")
-            version_number = page_info["version"]["number"] + 1
-            update_data = {
-                "id": dashboard_id,
-                "type": "page",
-                "title": self.main_page_title,
-                "space": {"key": self.space_key},
-                "body": {"storage": {"value": page_body, "representation": "storage"}},
-                "version": {"number": version_number},
-                "metadata": {
-                    "properties": {
-                        "content-appearance-draft": {"value": "full-width"},
-                        "content-appearance-published": {"value": "full-width"},
-                    }
-                },
-            }
-            self.confluence.put(f"/rest/api/content/{dashboard_id}", data=update_data)
-            print(f"[DEBUG] Dashboard page update complete.")
-        except Exception as e:
-            print(f"[ERROR] Failed to update dashboard page: {e}")
+    def generate_report_title(self, directory):
+        m = re.search(r"(\d{8})_(\d{4})", os.path.basename(directory))
+        if m:
+            date_str = m.group(1)
+            time_str = m.group(2)
+            return f"Automated Report: {date_str[:4]}-{date_str[4:6]}-{date_str[6:]} {time_str[:2]}:{time_str[2:4]}:00"
+        return f"Automated Report: {os.path.basename(directory)}"
