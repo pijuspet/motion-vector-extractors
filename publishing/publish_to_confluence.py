@@ -22,9 +22,9 @@ def create_report(generator, directory, commit_url, latest=True):
         print_str = "First"
     print(f"[DEBUG] {print_str} results dir: {directory}")
     report_title = generator.generate_report_title(directory)
-    
+
     generator.create_detailed_report_page(
-        directory, report_title,  git_commit_url=commit_url
+        directory, report_title, git_commit_url=commit_url
     )
     print(f"[DEBUG] Finished creating detailed report for {print_str.lower()} run.")
 
@@ -61,23 +61,22 @@ def cli():
     print("[DEBUG] ConfluenceReportGenerator initialized.")
 
     # Debug and check existence for first run (first argument)
-    # first_dir = args.first_results_dir.rstrip("/")
-    # create_report(
-    #     generator, first_dir, args.git_commit_run1, latest=False
-    # )
+    first_dir = args.first_results_dir.rstrip("/")
+    create_report(
+        generator, first_dir, args.git_commit_run1, latest=False
+    )
 
-    # latest_dir = args.latest_results_dir.rstrip("/")
-    # create_report(
-    #     generator, latest_dir, args.git_commit_run2, latest=True
-    # )
+    latest_dir = args.latest_results_dir.rstrip("/")
+    create_report(
+        generator, latest_dir, args.git_commit_run2, latest=True
+    )
 
     # Always update dashboard summary
     print("[DEBUG] Updating dashboard summary...")
     generator.update_main_dashboard_summary(
-        first_results_dir=args.first_results_dir,
-        latest_results_dir=args.latest_results_dir,
-        git_commit_run1=args.git_commit_run1,
-        git_commit_run2=args.git_commit_run2,
+        results_dirs=[args.first_results_dir, args.latest_results_dir],
+        git_commits=[args.git_commit_run1, args.git_commit_run2],
+        run_titles=["First run", "Latest run"],
     )
     print("Dashboard summary updated.")
 

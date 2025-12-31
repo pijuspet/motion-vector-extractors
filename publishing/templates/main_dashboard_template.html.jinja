@@ -3,203 +3,170 @@
     <h3>Motion Vector Comparison (Frames 10-100)</h3>
     <table class="mv-mini-table">
         <tr>
-            <th>First Run</th>
-            <th>Latest Run</th>
+            {% for run in runs %}
+            <th>{{ run.title }}</th>
+            {% endfor %}
         </tr>
         <tr>
+            {% for run in runs %}
             <td>
-                {% if mv_first %}
-                <pre style="background:#f4f4f4; border:1px solid #ccc; padding:10px;">{{ mv_first }}</pre>
+                {% if run.mv_comparison %}
+                <pre style="background:#f4f4f4; border:1px solid #ccc; padding:10px;">{{ run.mv_comparison }}</pre>
                 {% else %}
                 <em>No motion vector comparison result available</em>
                 {% endif %}
             </td>
-            <td>
-                {% if mv_latest %}
-                <pre style="background:#f4f4f4; border:1px solid #ccc; padding:10px;">{{ mv_latest }}</pre>
-                {% else %}
-                <em>No motion vector comparison result available</em>
-                {% endif %}
-            </td>
+            {% endfor %}
         </tr>
     </table>
 
     <h3>VTune Hotspots (Top 30)</h3>
     <table class="mv-mini-table">
         <tr>
-            <th>First Run</th>
-            <th>Latest Run</th>
+            {% for run in runs %}
+            <th>{{ run.title }}</th>
+            {% endfor %}
         </tr>
         <tr>
+            {% for run in runs %}
             <td>
                 <ac:image ac:thumbnail="true" ac:width="450">
-                    <ri:attachment ri:filename="{{img_vtune_first}}" />
+                    <ri:attachment ri:filename="{{ run.vtune_hotspots }}" />
                 </ac:image>
             </td>
-            <td>
-                <ac:image ac:thumbnail="true" ac:width="450">
-                    <ri:attachment ri:filename="{{img_vtune_latest}}" />
-                </ac:image>
-            </td>
+            {% endfor %}
         </tr>
     </table>
 
     <h3>GitHub Commit</h3>
     <table class="mv-mini-table">
         <tr>
-            <th>First Run</th>
-            <th>Latest Run</th>
+            {% for run in runs %}
+            <th>{{ run.title }}</th>
+            {% endfor %}
         </tr>
         <tr>
+            {% for run in runs %}
             <td>
-                {% if git_commit_run1 %}
-                <a href="{{ git_commit_run1 }}" target="_blank">{{ git_commit_run1 }}</a>
+                {% if run.git_commit %}
+                <a href="{{ run.git_commit }}" target="_blank">{{ run.git_commit }}</a>
                 {% else %}
                 N/A
                 {% endif %}
             </td>
-            <td>
-                {% if git_commit_run2 %}
-                <a href="{{ git_commit_run2 }}" target="_blank">{{ git_commit_run2 }}</a>
-                {% else %}
-                N/A
-                {% endif %}
-            </td>
+            {% endfor %}
         </tr>
     </table>
 
     <h3>VTune Call Tree (Interactive)</h3>
     <table class="mv-mini-table">
         <tr>
-            <th>First Run</th>
-            <th>Latest Run</th>
+            {% for run in runs %}
+            <th>{{ run.title }}</th>
+            {% endfor %}
         </tr>
         <tr>
+            {% for run in runs %}
             <td>
-                {% if calltree_first_interactive %}
+                {% if run.calltree_interactive %}
                 <ac:structured-macro ac:name="html">
                     <ac:plain-text-body>
-                        <![CDATA[{{ calltree_first_interactive.html }}]]>
+                        <![CDATA[{{ run.calltree_interactive.html }}]]>
                     </ac:plain-text-body>
                 </ac:structured-macro>
                 {% else %}
                 <em>No call tree HTML available</em>
                 {% endif %}
             </td>
-            <td>
-                {% if calltree_latest_interactive %}
-                <ac:structured-macro ac:name="html">
-                    <ac:plain-text-body>
-                        <![CDATA[{{ calltree_latest_interactive.html }}]]>
-                    </ac:plain-text-body>
-                </ac:structured-macro>
-                {% else %}
-                <em>No call tree HTML available</em>
-                {% endif %}
-            </td>
+            {% endfor %}
         </tr>
     </table>
+
     <h3>VTune Call Tree (Non Interactive)</h3>
     <table class="mv-mini-table">
         <tr>
-            <th>First Run</th>
-            <th>Latest Run</th>
+            {% for run in runs %}
+            <th>{{ run.title }}</th>
+            {% endfor %}
         </tr>
         <tr>
+            {% for run in runs %}
             <td>
-                {% if calltree_first_non_interactive %}
+                {% if run.calltree_non_interactive %}
                 <pre
-                    style="background:#f4f4f4; border:1px solid #ccc; padding:10px; max-height:400px; overflow-y:auto;">{{ calltree_first_non_interactive }}</pre>
+                    style="background:#f4f4f4; border:1px solid #ccc; padding:10px; max-height:400px; overflow-y:auto;">{{ run.calltree_non_interactive }}</pre>
                 {% else %}
                 <em>No call tree data available</em>
                 {% endif %}
             </td>
-            <td>
-                {% if calltree_latest_non_interactive %}
-                <pre
-                    style="background:#f4f4f4; border:1px solid #ccc; padding:10px; max-height:400px; overflow-y:auto;">{{ calltree_latest_non_interactive }}</pre>
-                {% else %}
-                <em>No call tree data available</em>
-                {% endif %}
-            </td>
+            {% endfor %}
         </tr>
     </table>
 
     <h3>Detailed Table</h3>
     <table class="mv-mini-table">
         <tr>
-            <th>First Run</th>
-            <th>Latest Run</th>
+            {% for run in runs %}
+            <th>{{ run.title }}</th>
+            {% endfor %}
         </tr>
         <tr>
+            {% for run in runs %}
             <td>
                 <ac:image ac:thumbnail="true" ac:width="450">
-                    <ri:attachment ri:filename="{{table_first}}" />
+                    <ri:attachment ri:filename="{{ run.detail_table }}" />
                 </ac:image>
             </td>
-            <td>
-                <ac:image ac:thumbnail="true" ac:width="450">
-                    <ri:attachment ri:filename="{{table_latest}}" />
-                </ac:image>
-            </td>
+            {% endfor %}
         </tr>
     </table>
 
     <h3>Grouped CPU Usage (All Streams)</h3>
     <table class="mv-mini-table">
         <tr>
-            <th>First Run</th>
-            <th>Latest Run</th>
+            {% for run in runs %}
+            <th>{{ run.title }}</th>
+            {% endfor %}
         </tr>
         <tr>
+            {% for run in runs %}
             <td>
                 <ac:image ac:thumbnail="true" ac:width="450">
-                    <ri:attachment ri:filename="{{cpu_first}}" />
+                    <ri:attachment ri:filename="{{ run.cpu_chart }}" />
                 </ac:image>
             </td>
-            <td>
-                <ac:image ac:thumbnail="true" ac:width="450">
-                    <ri:attachment ri:filename="{{cpu_latest}}" />
-                </ac:image>
-            </td>
+            {% endfor %}
         </tr>
     </table>
 
     <h3>Grouped Memory Usage (All Streams)</h3>
     <table class="mv-mini-table">
         <tr>
-            <th>First Run</th>
-            <th>Latest Run</th>
+            {% for run in runs %}
+            <th>{{ run.title }}</th>
+            {% endfor %}
         </tr>
         <tr>
+            {% for run in runs %}
             <td>
                 <ac:image ac:thumbnail="true" ac:width="450">
-                    <ri:attachment ri:filename="{{mem_first}}" />
+                    <ri:attachment ri:filename="{{ run.memory_chart }}" />
                 </ac:image>
             </td>
-            <td>
-                <ac:image ac:thumbnail="true" ac:width="450">
-                    <ri:attachment ri:filename="{{mem_latest}}" />
-                </ac:image>
-            </td>
+            {% endfor %}
         </tr>
     </table>
 
     <h3>Detailed Reports</h3>
     <ul>
-        {% if first_report_title %}
-        <li><b>First Run:</b>
+        {% for run in runs %}
+        {% if run.report_title %}
+        <li><b>{{ run.title }}:</b>
             <ac:link>
-                <ri:page ri:content-title="{{ first_report_title }}" />
+                <ri:page ri:content-title="{{ run.report_title }}" />
             </ac:link>
         </li>
         {% endif %}
-        {% if latest_report_title %}
-        <li><b>Latest Run:</b>
-            <ac:link>
-                <ri:page ri:content-title="{{ latest_report_title }}" />
-            </ac:link>
-        </li>
-        {% endif %}
+        {% endfor %}
     </ul>
 </div>

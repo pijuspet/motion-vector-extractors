@@ -99,13 +99,8 @@ class ConfluenceReportGenerator:
         except Exception:
             return call_tree_data["html"][:2000]
 
-    def __add_files__(self, results_dir, is_latest=False):
+    def __add_files__(self, results_dir, prefix):
         file_list = []
-
-        # Latest version has current_ prefix for a filename
-        prefix = ""
-        if is_latest:
-            prefix = "current_"
 
         # Helper function
         def add_if_exists(path, name):
@@ -263,59 +258,54 @@ class ConfluenceReportGenerator:
     def __get_main_dashboard_body__(
         self,
         dashboard_id,
-        first_results_dir,
-        latest_results_dir,
-        git_commit_run1=None,
-        git_commit_run2=None,
+        results_dirs,
+        git_commits=None,
+        run_titles=None,
     ):
         with open("templates/main_dashboard_template.html.jinja", "r") as f:
             template = Template(f.read())
 
-        # Prepare data
-        context = {
-            "mv_first": self.__get_mv_cmp_attachment__(
-                dashboard_id, "mv_comparison_result.txt"
-            ),
-            "mv_latest": self.__get_mv_cmp_attachment__(
-                dashboard_id, "current_mv_comparison_result.txt"
-            ),
-            "img_vtune_first": "vtune_hotspots.png",
-            "img_vtune_latest": "current_vtune_hotspots.png",
-            "git_commit_run1": git_commit_run1,
-            "git_commit_run2": git_commit_run2,
-            "calltree_first_interactive": self.__get_calltree_html_interactive__(
-                dashboard_id, "call_tree.html"
-            ),
-            "calltree_latest_interactive": self.__get_calltree_html_interactive__(
-                dashboard_id, "current_call_tree.html"
-            ),
-            "calltree_first_non_interactive": self.__get_calltree_html_non_interactive__(
-                dashboard_id, "call_tree.html"
-            ),
-            "calltree_latest_non_interactive": self.__get_calltree_html_non_interactive__(
-                dashboard_id, "current_call_tree.html"
-            ),
-            "table_first": "detail_table_1streams_highlighted.png",
-            "table_latest": "current_detail_table_1streams_highlighted.png",
-            "cpu_first": "grouped_barchart_cpu.png",
-            "cpu_latest": "current_grouped_barchart_cpu.png",
-            "mem_first": "grouped_barchart_memory.png",
-            "mem_latest": "current_grouped_barchart_memory.png",
-            "first_report_title": (
-                self.generate_report_title(
-                    os.path.basename(first_results_dir.rstrip("/"))
-                )
-                if first_results_dir
-                else None
-            ),
-            "latest_report_title": (
-                self.generate_report_title(
-                    os.path.basename(latest_results_dir.rstrip("/"))
-                )
-                if latest_results_dir
-                else None
-            ),
-        }
+        if git_commits is None:
+            git_commits = [None] * len(results_dirs)
+
+        if run_titles is None:
+            run_titles = [f"Run {i+1}" for i in range(len(results_dirs))]
+
+        runs = []
+
+        for idx, (results_dir, git_commit, title) in enumerate(
+            zip(results_dirs, git_commits, run_titles)
+        ):
+            prefix = f"run{idx}_"
+
+            run_data = {
+                "title": title,
+                "mv_comparison": self.__get_mv_cmp_attachment__(
+                    dashboard_id, f"{prefix}mv_comparison_result.txt"
+                ),
+                "vtune_hotspots": f"{prefix}vtune_hotspots.png",
+                "git_commit": git_commit,
+                "calltree_interactive": self.__get_calltree_html_interactive__(
+                    dashboard_id, f"{prefix}call_tree.html"
+                ),
+                "calltree_non_interactive": self.__get_calltree_html_non_interactive__(
+                    dashboard_id, f"{prefix}call_tree.html"
+                ),
+                "detail_table": f"{prefix}detail_table_1streams_highlighted.png",
+                "cpu_chart": f"{prefix}grouped_barchart_cpu.png",
+                "memory_chart": f"{prefix}grouped_barchart_memory.png",
+                "report_title": (
+                    self.generate_report_title(
+                        os.path.basename(results_dir.rstrip("/"))
+                    )
+                    if results_dir
+                    else None
+                ),
+            }
+
+            runs.append(run_data)
+
+        context = {"runs": runs}
 
         return template.render(context)
 
@@ -385,10 +375,9 @@ class ConfluenceReportGenerator:
 
     def update_main_dashboard_summary(
         self,
-        first_results_dir,
-        latest_results_dir,
-        git_commit_run1=None,
-        git_commit_run2=None,
+        results_dirs,
+        git_commits=None,
+        run_titles=None,
     ):
         dashboard_page = self.__get_page_by_title__()
         if not dashboard_page:
@@ -397,12 +386,8 @@ class ConfluenceReportGenerator:
 
         files_to_attach = []
 
-        if first_results_dir:
-            files_to_attach.extend(self.__add_files__(first_results_dir))
-        if latest_results_dir:
-            files_to_attach.extend(
-                self.__add_files__(latest_results_dir, is_latest=True)
-            )
+        for idx, results_dir in enumerate(results_dirs):
+            files_to_attach.extend(self.__add_files__(results_dir, prefix=f"run{idx}_"))
 
         for fpath, fname in files_to_attach:
             print(
@@ -414,11 +399,7 @@ class ConfluenceReportGenerator:
         time.sleep(5)
 
         body = self.__get_main_dashboard_body__(
-            dashboard_id,
-            first_results_dir,
-            latest_results_dir,
-            git_commit_run1,
-            git_commit_run2,
+            dashboard_id, results_dirs, git_commits, run_titles
         )
 
         print(f"[DEBUG] Updating dashboard page {dashboard_id} with summary body...")
