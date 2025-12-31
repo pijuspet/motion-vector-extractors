@@ -1,0 +1,57 @@
+<div style="text-align: left; width: 100vw; max-width: 100vw; margin: 0; padding: 0;">
+    {# Motion Vector Comparison #}
+    <h3>Motion Vector Comparison (Frames 10-100)</h3>
+    {% if mv_comparison %}
+    <pre style="background:#f4f4f4; border:1px solid #ccc; padding:10px;">{{ mv_comparison }}</pre>
+    {% else %}
+    <em>No motion vector comparison result available</em>
+    {% endif %}
+
+    {% if git_commit_url %}
+    <h3>Git Commit Url</h3>
+    <a href="{{ git_commit_url }}" style="font-size:1.1em;color:#1976d2;">{{ git_commit_url }}</a>
+    {% endif %}
+
+    {# VTune Profiler Results #}
+    {% for image in vtune_images %}
+    <h3>{{ image.title }}</h3>
+    <ac:image ac:thumbnail="true" ac:width="600">
+        <ri:attachment ri:filename="{{ image.filename }}" />
+    </ac:image>
+    {% endfor %}
+
+    <h3>VTune Call Tree (Interactive)</h3>
+    {% if calltree_interactive %}
+    <ac:structured-macro ac:name="html">
+        <ac:plain-text-body>
+            <![CDATA[{{ calltree_interactive.html }}]]>
+        </ac:plain-text-body>
+    </ac:structured-macro>
+    {% else %}
+    <em>No call tree HTML available</em>
+    {% endif %}
+
+    <h3>VTune Call Tree (Non-Interactive)</h3>
+    {% if calltree_non_interactive %}
+    <pre
+        style="background:#f4f4f4; border:1px solid #ccc; padding:10px; max-height:400px; overflow-y:auto;">{{ calltree_non_interactive }}</pre>
+    {% else %}
+    <em>No call tree data available</em>
+    {% endif %}
+
+    {# Performance Plots #}
+    {% for image in plots_images %}
+    <h3>{{ image.title }}</h3>
+    <ac:image ac:thumbnail="true" ac:width="600">
+        <ri:attachment ri:filename="{{ image.filename }}" />
+    </ac:image>
+    {% endfor %}
+
+    {# Detailed Tables per Stream Count #}
+    {% for table in detail_tables %}
+    <h3>Performance Table: Streams={{ table.streams }}</h3>
+    <ac:image ac:thumbnail="true" ac:width="600">
+        <ri:attachment ri:filename="{{ table.filename }}" />
+    </ac:image>
+    {% endfor %}
+</div>

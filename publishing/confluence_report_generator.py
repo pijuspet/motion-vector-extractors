@@ -19,14 +19,13 @@ class ConfluenceReportGenerator:
     def __get_page_by_title__(self):
         return self.confluence.get_page_by_title(self.space_key, self.main_page_title)
 
-    def __embed_images__(self, images, directory) -> str:
-        body = ""
+    def __embed_images__(self, images, directory):
+        image_list = []
         for title, fname in images:
             img_path = os.path.join(directory, fname)
             if os.path.exists(img_path):
-                body += f"<h3>{title}</h3>"
-                body += f'<ac:image ac:thumbnail="true" ac:width="600"><ri:attachment ri:filename="{fname}" /></ac:image>'
-        return body
+                image_list.append({"title": title, "filename": fname})
+        return image_list
 
     def __get_mv_cmp_attachment__(self, page_id, file_name):
         attachments = self.confluence.get_attachments_from_content(
@@ -39,8 +38,8 @@ class ConfluenceReportGenerator:
                 url, auth=(self.confluence.username, self.confluence.password)
             )
             if resp.ok and resp.text.strip():
-                return f'<pre style="background:#f4f4f4; border:1px solid #ccc; padding:10px;">{resp.text.strip()}</pre>'
-        return "<em>No motion vector comparison result available</em>"
+                return resp.text.strip()
+        return None
 
     def __get_calltree_html_interactive__(self, page_id, file_name, add_macro=True):
         attachments = self.confluence.get_attachments_from_content(
@@ -52,64 +51,53 @@ class ConfluenceReportGenerator:
             resp = requests.get(
                 url, auth=(self.confluence.username, self.confluence.password)
             )
-            if not resp.ok:
-                return "<em>No call tree HTML available</em>"
+            if not resp.ok or not resp.text.strip():
+                return None
 
             html = resp.text.strip()
-            if not html:
-                return "<em>No call tree HTML available</em>"
-
-            if not add_macro:
-                return html
-
-            return (
-                f'<ac:structured-macro ac:name="html">'
-                f"<ac:plain-text-body><![CDATA[{html}]]></ac:plain-text-body>"
-                f"</ac:structured-macro>"
-            )
-        return "<em>No call tree HTML available</em>"
+            return {"html": html, "add_macro": add_macro}
+        return None
 
     def __get_calltree_html_non_interactive__(self, page_id, file_name):
-        body = ""
-        call_tree = self.__get_calltree_html_interactive__(
+        call_tree_data = self.__get_calltree_html_interactive__(
             page_id, file_name, add_macro=False
         )
-        if call_tree != "<em>No call tree HTML available</em>":
-            try:
-                soup = BeautifulSoup(call_tree, "html.parser")
-                tree_container = soup.find("ul", class_="tree-root")
-                if tree_container:
 
-                    def extract_tree_text(ul_element, indent=0):
-                        result = []
-                        for li in ul_element.find_all(
-                            "li", class_="tree-node", recursive=False
-                        ):
-                            name_span = li.find("span", class_="name")
-                            cpu_total = li.find("span", class_="cpu-total")
-                            cpu_self = li.find("span", class_="cpu-self")
-                            if name_span:
-                                line = "  " * indent + name_span.get_text(strip=True)
-                                if cpu_total:
-                                    line += f" {cpu_total.get_text(strip=True)}"
-                                if cpu_self:
-                                    line += f" {cpu_self.get_text(strip=True)}"
-                                result.append(line)
-                            child_ul = li.find("ul", class_="children")
-                            if child_ul:
-                                result.extend(extract_tree_text(child_ul, indent + 1))
-                        return result
+        if not call_tree_data:
+            return None
 
-                    tree_lines = extract_tree_text(tree_container)
-                    tree_text = "\n".join(tree_lines[:100])  # Limit to first 100 lines
-                    body += f'<pre style="background:#f4f4f4; border:1px solid #ccc; padding:10px; max-height:400px; overflow-y:auto;">{tree_text}</pre>'
-                else:
-                    body += f'<pre style="background:#f4f4f4; border:1px solid #ccc; padding:10px;">{soup.get_text()[:2000]}</pre>'
-            except Exception:
-                body += f'<pre style="background:#f4f4f4; border:1px solid #ccc; padding:10px;">{calltree_content[:2000]}...</pre>'
-        else:
-            body += "<em>No call tree data available</em>"
-        return body
+        try:
+            soup = BeautifulSoup(call_tree_data["html"], "html.parser")
+            tree_container = soup.find("ul", class_="tree-root")
+
+            if tree_container:
+
+                def extract_tree_text(ul_element, indent=0):
+                    result = []
+                    for li in ul_element.find_all(
+                        "li", class_="tree-node", recursive=False
+                    ):
+                        name_span = li.find("span", class_="name")
+                        cpu_total = li.find("span", class_="cpu-total")
+                        cpu_self = li.find("span", class_="cpu-self")
+                        if name_span:
+                            line = "  " * indent + name_span.get_text(strip=True)
+                            if cpu_total:
+                                line += f" {cpu_total.get_text(strip=True)}"
+                            if cpu_self:
+                                line += f" {cpu_self.get_text(strip=True)}"
+                            result.append(line)
+                        child_ul = li.find("ul", class_="children")
+                        if child_ul:
+                            result.extend(extract_tree_text(child_ul, indent + 1))
+                    return result
+
+                tree_lines = extract_tree_text(tree_container)
+                return "\n".join(tree_lines[:100])  # Limit to first 100 lines
+            else:
+                return soup.get_text()[:2000]
+        except Exception:
+            return call_tree_data["html"][:2000]
 
     def __add_files__(self, results_dir, is_latest=False):
         file_list = []
@@ -129,7 +117,7 @@ class ConfluenceReportGenerator:
         vtune_dir = os.path.join(results_dir, "vtune_results")
 
         plots_files = [
-            "detail_table_5streams_highlighted.png",
+            "detail_table_1streams_highlighted.png",
             "grouped_barchart_cpu.png",
             "grouped_barchart_memory.png",
         ]
@@ -214,30 +202,21 @@ class ConfluenceReportGenerator:
     def __generate_detailed_report_body__(
         self, plots_dir, vtune_dir, page_id=None, git_commit_url=None
     ):
-        body = '<div style="text-align: left; width: 100vw; max-width: 100vw; margin: 0; padding: 0;">'
+        mv_comparison = self.__get_mv_cmp_attachment__(
+            page_id, "mv_comparison_result.txt"
+        )
 
-        # 1. Motion Vector Comparison (always first)
-        body += "<h3>Motion Vector Comparison (Frames 10-100)</h3>"
-        body += self.__get_mv_cmp_attachment__(page_id, "mv_comparison_result.txt")
+        vtune_img = [("Profiler Results", "vtune_hotspots.png")]
+        vtune_images = self.__embed_images__(vtune_img, vtune_dir)
 
-        print(f"[DEBUG] git_commit_url in detailed report: {git_commit_url}")
-        if git_commit_url:
-            body += "<h3>Git Commit Url</h3>"
-            body += f'<a href="{git_commit_url}" style="font-size:1.1em;color:#1976d2;">{git_commit_url}</a></div>'
+        calltree_interactive = self.__get_calltree_html_interactive__(
+            page_id, "call_tree.html"
+        )
+        calltree_non_interactive = self.__get_calltree_html_non_interactive__(
+            page_id, "call_tree.html"
+        )
 
-        # 2. Profiler Results (VTune Hotspots)
-        vtune_images = [("Profiler Results", "vtune_hotspots.png")]
-        body += self.__embed_images__(vtune_images, vtune_dir)
-
-        # # 3. VTune Call Tree HTML (interactive and non-interactive, always after profiler)
-        body += "<h3>VTune Call Tree (Interactive)</h3>"
-        body += self.__get_calltree_html_interactive__(page_id, "call_tree.html")
-
-        body += "<h3>VTune Call Tree (Non-Interactive)</h3>"
-        body += self.__get_calltree_html_non_interactive__(page_id, "call_tree.html")
-
-        # region image embedding
-        plots_images = [
+        plots_img = [
             ("Fastest Methods", "fastest_high_profile_methods.png"),
             ("Throughput Scaling", "scaling_fps.png"),
             ("Latency Scaling", "scaling_timeperframe.png"),
@@ -248,24 +227,38 @@ class ConfluenceReportGenerator:
                 "Grouped Latency Comparison (All Streams)",
                 "grouped_barchart_timeperframe.png",
             ),
-            ("Grouped CPU Usage Comparison (All Streams)", "grouped_barchart_cpu.png"),
+            (
+                "Grouped CPU Usage Comparison (All Streams)",
+                "grouped_barchart_cpu.png",
+            ),
             (
                 "Grouped Memory Usage Comparison (All Streams)",
                 "grouped_barchart_memory.png",
             ),
         ]
+        plots_images = self.__embed_images__(plots_img, plots_dir)
 
-        body += self.__embed_images__(plots_images, plots_dir)
-        # Detailed Tables per Streams Count
+        detail_tables = []
         for img in sorted(
             glob.glob(os.path.join(plots_dir, "detail_table_*streams.png"))
         ):
             streams = os.path.basename(img).split("_")[2].replace("streams.png", "")
-            body += f"<h3>Performance Table: Streams={streams}</h3>"
-            body += f'<ac:image ac:thumbnail="true" ac:width="600"><ri:attachment ri:filename="{os.path.basename(img)}" /></ac:image>'
-        # endregion
-        body += "</div>"
-        return body
+            detail_tables.append(
+                {"streams": streams, "filename": os.path.basename(img)}
+            )
+
+        with open("templates/detailed_report_template.html.jinja", "r") as f:
+            template = Template(f.read())
+
+        return template.render(
+            mv_comparison=mv_comparison,
+            git_commit_url=git_commit_url,
+            vtune_images=vtune_images,
+            calltree_interactive=calltree_interactive,
+            calltree_non_interactive=calltree_non_interactive,
+            plots_images=plots_images,
+            detail_tables=detail_tables,
+        )
 
     def __get_main_dashboard_body__(
         self,
@@ -286,8 +279,8 @@ class ConfluenceReportGenerator:
             "mv_latest": self.__get_mv_cmp_attachment__(
                 dashboard_id, "current_mv_comparison_result.txt"
             ),
-            "img_vtune_first": self._get_img_tag("vtune_hotspots.png"),
-            "img_vtune_latest": self._get_img_tag("current_vtune_hotspots.png"),
+            "img_vtune_first": "vtune_hotspots.png",
+            "img_vtune_latest": "current_vtune_hotspots.png",
             "git_commit_run1": git_commit_run1,
             "git_commit_run2": git_commit_run2,
             "calltree_first_interactive": self.__get_calltree_html_interactive__(
@@ -302,14 +295,12 @@ class ConfluenceReportGenerator:
             "calltree_latest_non_interactive": self.__get_calltree_html_non_interactive__(
                 dashboard_id, "current_call_tree.html"
             ),
-            "table_first": self._get_img_tag("detail_table_1streams_highlighted.png"),
-            "table_latest": self._get_img_tag(
-                "current_detail_table_1streams_highlighted.png"
-            ),
-            "cpu_first": self._get_img_tag("grouped_barchart_cpu.png"),
-            "cpu_latest": self._get_img_tag("current_grouped_barchart_cpu.png"),
-            "mem_first": self._get_img_tag("grouped_barchart_memory.png"),
-            "mem_latest": self._get_img_tag("current_grouped_barchart_memory.png"),
+            "table_first": "detail_table_1streams_highlighted.png",
+            "table_latest": "current_detail_table_1streams_highlighted.png",
+            "cpu_first": "grouped_barchart_cpu.png",
+            "cpu_latest": "current_grouped_barchart_cpu.png",
+            "mem_first": "grouped_barchart_memory.png",
+            "mem_latest": "current_grouped_barchart_memory.png",
             "first_report_title": (
                 self.generate_report_title(
                     os.path.basename(first_results_dir.rstrip("/"))
@@ -327,9 +318,6 @@ class ConfluenceReportGenerator:
         }
 
         return template.render(context)
-
-    def _get_img_tag(self, fname):
-        return f'<ac:image ac:thumbnail="true" ac:width="450"><ri:attachment ri:filename="{fname}" /></ac:image>'
 
     def create_detailed_report_page(
         self, results_dir, report_title, git_commit_url=None

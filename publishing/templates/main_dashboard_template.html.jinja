@@ -7,8 +7,20 @@
             <th>Latest Run</th>
         </tr>
         <tr>
-            <td>{{ mv_first }}</td>
-            <td>{{ mv_latest }}</td>
+            <td>
+                {% if mv_first %}
+                <pre style="background:#f4f4f4; border:1px solid #ccc; padding:10px;">{{ mv_first }}</pre>
+                {% else %}
+                <em>No motion vector comparison result available</em>
+                {% endif %}
+            </td>
+            <td>
+                {% if mv_latest %}
+                <pre style="background:#f4f4f4; border:1px solid #ccc; padding:10px;">{{ mv_latest }}</pre>
+                {% else %}
+                <em>No motion vector comparison result available</em>
+                {% endif %}
+            </td>
         </tr>
     </table>
 
@@ -19,8 +31,16 @@
             <th>Latest Run</th>
         </tr>
         <tr>
-            <td>{{ img_vtune_first }}</td>
-            <td>{{ img_vtune_latest }}</td>
+            <td>
+                <ac:image ac:thumbnail="true" ac:width="450">
+                    <ri:attachment ri:filename="{{img_vtune_first}}" />
+                </ac:image>
+            </td>
+            <td>
+                <ac:image ac:thumbnail="true" ac:width="450">
+                    <ri:attachment ri:filename="{{img_vtune_latest}}" />
+                </ac:image>
+            </td>
         </tr>
     </table>
 
@@ -49,6 +69,36 @@
     </table>
 
     <h3>VTune Call Tree (Interactive)</h3>
+    <table class="mv-mini-table">
+        <tr>
+            <th>First Run</th>
+            <th>Latest Run</th>
+        </tr>
+        <tr>
+            <td>
+                {% if calltree_first_interactive %}
+                <ac:structured-macro ac:name="html">
+                    <ac:plain-text-body>
+                        <![CDATA[{{ calltree_first_interactive.html }}]]>
+                    </ac:plain-text-body>
+                </ac:structured-macro>
+                {% else %}
+                <em>No call tree HTML available</em>
+                {% endif %}
+            </td>
+            <td>
+                {% if calltree_latest_interactive %}
+                <ac:structured-macro ac:name="html">
+                    <ac:plain-text-body>
+                        <![CDATA[{{ calltree_latest_interactive.html }}]]>
+                    </ac:plain-text-body>
+                </ac:structured-macro>
+                {% else %}
+                <em>No call tree HTML available</em>
+                {% endif %}
+            </td>
+        </tr>
+    </table>
     <h3>VTune Call Tree (Non Interactive)</h3>
     <table class="mv-mini-table">
         <tr>
@@ -56,18 +106,22 @@
             <th>Latest Run</th>
         </tr>
         <tr>
-            <td>{{ calltree_first_interactive }}</td>
-            <td>{{ calltree_latest_interactive }}</td>
-        </tr>
-    </table>
-    <table class="mv-mini-table">
-        <tr>
-            <th>First Run</th>
-            <th>Latest Run</th>
-        </tr>
-        <tr>
-            <td>{{ calltree_first_non_interactive }}</td>
-            <td>{{ calltree_latest_non_interactive }}</td>
+            <td>
+                {% if calltree_first_non_interactive %}
+                <pre
+                    style="background:#f4f4f4; border:1px solid #ccc; padding:10px; max-height:400px; overflow-y:auto;">{{ calltree_first_non_interactive }}</pre>
+                {% else %}
+                <em>No call tree data available</em>
+                {% endif %}
+            </td>
+            <td>
+                {% if calltree_latest_non_interactive %}
+                <pre
+                    style="background:#f4f4f4; border:1px solid #ccc; padding:10px; max-height:400px; overflow-y:auto;">{{ calltree_latest_non_interactive }}</pre>
+                {% else %}
+                <em>No call tree data available</em>
+                {% endif %}
+            </td>
         </tr>
     </table>
 
@@ -78,8 +132,16 @@
             <th>Latest Run</th>
         </tr>
         <tr>
-            <td>{{ table_first }}</td>
-            <td>{{ table_latest }}</td>
+            <td>
+                <ac:image ac:thumbnail="true" ac:width="450">
+                    <ri:attachment ri:filename="{{table_first}}" />
+                </ac:image>
+            </td>
+            <td>
+                <ac:image ac:thumbnail="true" ac:width="450">
+                    <ri:attachment ri:filename="{{table_latest}}" />
+                </ac:image>
+            </td>
         </tr>
     </table>
 
@@ -90,8 +152,16 @@
             <th>Latest Run</th>
         </tr>
         <tr>
-            <td>{{ cpu_first }}</td>
-            <td>{{ cpu_latest }}</td>
+            <td>
+                <ac:image ac:thumbnail="true" ac:width="450">
+                    <ri:attachment ri:filename="{{cpu_first}}" />
+                </ac:image>
+            </td>
+            <td>
+                <ac:image ac:thumbnail="true" ac:width="450">
+                    <ri:attachment ri:filename="{{cpu_latest}}" />
+                </ac:image>
+            </td>
         </tr>
     </table>
 
@@ -102,8 +172,16 @@
             <th>Latest Run</th>
         </tr>
         <tr>
-            <td>{{ mem_first }}</td>
-            <td>{{ mem_latest }}</td>
+            <td>
+                <ac:image ac:thumbnail="true" ac:width="450">
+                    <ri:attachment ri:filename="{{mem_first}}" />
+                </ac:image>
+            </td>
+            <td>
+                <ac:image ac:thumbnail="true" ac:width="450">
+                    <ri:attachment ri:filename="{{mem_latest}}" />
+                </ac:image>
+            </td>
         </tr>
     </table>
 
