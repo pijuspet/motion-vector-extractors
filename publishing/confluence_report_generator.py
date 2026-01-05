@@ -19,6 +19,93 @@ class ConfluenceReportGenerator:
     def __get_page_by_title__(self):
         return self.confluence.get_page_by_title(self.space_key, self.main_page_title)
 
+    def __collect_files__(
+        self,
+        results_dir,
+        plots_subdir,
+        vtune_subdir,
+        plots_files,
+        vtune_files,
+        additional_files=None,
+        glob_patterns=None,
+        prefix="",
+    ):
+        file_list = []
+
+        def add_if_exists(path, name, use_prefix=True):
+            directory = os.path.join(path, name)
+            if path and os.path.isfile(directory):
+                final_name = prefix + name if use_prefix else name
+                file_list.append((directory, final_name))
+
+        plots_dir = os.path.join(results_dir, plots_subdir) if plots_subdir else None
+        vtune_dir = os.path.join(results_dir, vtune_subdir) if vtune_subdir else None
+
+        for file in plots_files:
+            add_if_exists(plots_dir, file)
+
+        for file in vtune_files:
+            add_if_exists(vtune_dir, file)
+
+        if additional_files:
+            for subdir, filename in additional_files:
+                path = os.path.join(results_dir, subdir) if subdir else results_dir
+                add_if_exists(path, filename)
+
+        if glob_patterns:
+            for subdir, pattern in glob_patterns:
+                search_dir = (
+                    os.path.join(results_dir, subdir) if subdir else results_dir
+                )
+                for img in glob.glob(os.path.join(search_dir, pattern)):
+                    file_list.append((img, os.path.basename(img)))
+
+        return file_list
+
+    def __get_detailed_report_files__(self, page_id, results_dir):
+        plots_files = [
+            "fastest_high_profile_methods.png",
+            "scaling_fps.png",
+            "scaling_timeperframe.png",
+            "scaling_cpu.png",
+            "scaling_memory.png",
+            "grouped_barchart_fps.png",
+            "grouped_barchart_timeperframe.png",
+            "grouped_barchart_cpu.png",
+            "grouped_barchart_memory.png",
+        ]
+
+        vtune_files = ["vtune_hotspots.png", "call_tree.html"]
+
+        return self.__collect_files__(
+            results_dir=results_dir,
+            plots_subdir="plots",
+            vtune_subdir="vtune_results",
+            plots_files=plots_files,
+            vtune_files=vtune_files,
+            additional_files=[("", "mv_comparison_result.txt")],
+            glob_patterns=[("plots", "detail_table_*streams.png")],
+        )
+
+    def __get_main_dashboard_files__(self, results_dir, prefix):
+        plots_files = [
+            "detail_table_1streams_highlighted.png",
+            "grouped_barchart_cpu.png",
+            "grouped_barchart_memory.png",
+        ]
+
+        vtune_files = ["vtune_hotspots.png", "call_tree.html"]
+
+        return self.__collect_files__(
+            results_dir=results_dir,
+            plots_subdir="plots",
+            vtune_subdir="vtune_results",
+            plots_files=plots_files,
+            vtune_files=vtune_files,
+            additional_files=[("", "mv_comparison_result.txt")],
+            prefix=prefix,
+        )
+
     def __embed_images__(self, images):
         image_list = []
         for title, fname in images:
@@ -96,96 +183,6 @@ class ConfluenceReportGenerator:
                 return soup.get_text()[:2000]
         except Exception:
             return call_tree_data["html"][:2000]
-
-    def __collect_files__(
-        self,
-        results_dir,
-        plots_subdir,
-        vtune_subdir,
-        plots_files,
-        vtune_files,
-        additional_files=None,
-        glob_patterns=None,
-        prefix="",
-    ):
-        file_list = []
-
-        def add_if_exists(path, name, use_prefix=True):
-            directory = os.path.join(path, name)
-            if path and os.path.isfile(directory):
-                final_name = prefix + name if use_prefix else name
-                file_list.append((directory, final_name))
-
-        plots_dir = os.path.join(results_dir, plots_subdir) if plots_subdir else None
-        vtune_dir = os.path.join(results_dir, vtune_subdir) if vtune_subdir else None
-
-        for file in plots_files:
-            add_if_exists(plots_dir, file)
-
-        for file in vtune_files:
-            add_if_exists(vtune_dir, file)
-
-        if additional_files:
-            for subdir, filename in additional_files:
-                path = os.path.join(results_dir, subdir) if subdir else results_dir
-                add_if_exists(path, filename)
-
-        if glob_patterns:
-            for subdir, pattern in glob_patterns:
-                search_dir = (
-                    os.path.join(results_dir, subdir) if subdir else results_dir
-                )
-                for img in glob.glob(os.path.join(search_dir, pattern)):
-                    file_list.append((img, os.path.basename(img)))
-
-        return file_list
-
-    def __add_files__(self, results_dir, prefix):
-        plots_files = [
-            "detail_table_1streams_highlighted.png",
-            "grouped_barchart_cpu.png",
-            "grouped_barchart_memory.png",
-        ]
-
-        vtune_files = ["vtune_hotspots.png", "call_tree.html"]
-
-        return self.__collect_files__(
-            results_dir=results_dir,
-            plots_subdir="plots",
-            vtune_subdir="vtune_results",
-            plots_files=plots_files,
-            vtune_files=vtune_files,
-            additional_files=[("", "mv_comparison_result.txt")],
-            prefix=prefix,
-        )
-
-    def __attach_detailed_report_files__(self, page_id, results_dir):
-        plots_files = [
-            "fastest_high_profile_methods.png",
-            "scaling_fps.png",
-            "scaling_timeperframe.png",
-            "scaling_cpu.png",
-            "scaling_memory.png",
-            "grouped_barchart_fps.png",
-            "grouped_barchart_timeperframe.png",
-            "grouped_barchart_cpu.png",
-            "grouped_barchart_memory.png",
-        ]
-
-        vtune_files = ["vtune_hotspots.png", "call_tree.html"]
-
-        file_list = self.__collect_files__(
-            results_dir=results_dir,
-            plots_subdir="plots",
-            vtune_subdir="vtune_results",
-            plots_files=plots_files,
-            vtune_files=vtune_files,
-            additional_files=[("", "mv_comparison_result.txt")],
-            glob_patterns=[("plots", "detail_table_*streams.png")],
-        )
-
-        for fpath, fname in file_list:
-            self.confluence.attach_file(filename=fpath, page_id=page_id, name=fname)
 
     def __update_page__(
         self,
@@ -368,7 +365,9 @@ class ConfluenceReportGenerator:
         page_id = new_page["id"]
         plots_dir = os.path.join(results_dir, "plots")
 
-        self.__attach_detailed_report_files__(page_id, results_dir)
+        file_list = self.__get_detailed_report_files__(page_id, results_dir)
+        for fpath, fname in file_list:
+            self.confluence.attach_file(filename=fpath, page_id=page_id, name=fname)
 
         # Compose the detailed report body referencing attachments
         body = self.__generate_detailed_report_body__(
@@ -397,7 +396,9 @@ class ConfluenceReportGenerator:
         files_to_attach = []
 
         for idx, results_dir in enumerate(results_dirs):
-            files_to_attach.extend(self.__add_files__(results_dir, prefix=f"run{idx}_"))
+            files_to_attach.extend(
+                self.__get_main_dashboard_files__(results_dir, prefix=f"run{idx}_")
+            )
 
         for fpath, fname in files_to_attach:
             print(
