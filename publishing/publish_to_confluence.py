@@ -62,14 +62,10 @@ def cli():
 
     # Debug and check existence for first run (first argument)
     first_dir = args.first_results_dir.rstrip("/")
-    create_report(
-        generator, first_dir, args.git_commit_run1, latest=False
-    )
+    create_report(generator, first_dir, args.git_commit_run1, latest=False)
 
     latest_dir = args.latest_results_dir.rstrip("/")
-    create_report(
-        generator, latest_dir, args.git_commit_run2, latest=True
-    )
+    create_report(generator, latest_dir, args.git_commit_run2, latest=True)
 
     # Always update dashboard summary
     print("[DEBUG] Updating dashboard summary...")

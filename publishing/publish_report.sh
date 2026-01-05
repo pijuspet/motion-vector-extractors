@@ -76,6 +76,8 @@ publish_confluence() {
   PUBLISHED_DIR="${latest_dir/\/results\//\/published\/}"
 
   mkdir -p "$(dirname "$PUBLISHED_DIR")"
+
+  echo "Copying files to a published directory"
   cp -r "$latest_dir" "$PUBLISHED_DIR"
   echo "Published results copied to: $PUBLISHED_DIR"
 }

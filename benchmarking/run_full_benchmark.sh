@@ -29,6 +29,7 @@ extract() {
   fi
   echo "Running 9-method benchmark suite..."
   (cd benchmarking/executables; ./benchmark_all_9 "$VIDEO_FILE" "$STREAMS" "$RESULTS_DIR" "$CURRENT_DIR" "1")
+  find $RESULTS_DIR -type f -name "method*_output_*.csv" ! -name "*_0.csv" -delete
   echo "Benchmarks complete."
 }
 

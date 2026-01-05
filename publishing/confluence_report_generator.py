@@ -250,7 +250,8 @@ class ConfluenceReportGenerator:
 
         detail_tables = []
         for img in sorted(
-            glob.glob(os.path.join(plots_dir, "detail_table_*streams.png"))
+            glob.glob(os.path.join(plots_dir, "detail_table_*streams.png")),
+            key=lambda x: int(re.search(r"detail_table_(\d+)streams", x).group(1)),
         ):
             streams = os.path.basename(img).split("_")[2].replace("streams.png", "")
             detail_tables.append(
