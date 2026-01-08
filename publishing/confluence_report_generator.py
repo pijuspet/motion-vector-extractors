@@ -80,19 +80,8 @@ class ConfluenceReportGenerator:
 
         return file_list
 
-    def __get_detailed_report_files__(self, page_id, results_dir):
-        plots_files = [
-            "fastest_high_profile_methods.png",
-            "scaling_fps.png",
-            "scaling_timeperframe.png",
-            "scaling_cpu.png",
-            "scaling_memory.png",
-            "grouped_barchart_fps.png",
-            "grouped_barchart_timeperframe.png",
-            "grouped_barchart_cpu.png",
-            "grouped_barchart_memory.png",
-        ]
-
+    def __get_detailed_report_files__(self, results_dir, plots_img):
+        plots_files = [file for _, file in plots_img]
         vtune_files = ["vtune_hotspots.png", "call_tree.html"]
 
         return self.__collect_files__(
@@ -228,13 +217,12 @@ class ConfluenceReportGenerator:
         self.confluence.put(f"/rest/api/content/{page_id}", data=update_data)
 
     def __generate_detailed_report_body__(
-        self, plots_dir, page_id=None, git_commit_url=None
+        self, vtune_img, plots_img, plots_dir, page_id=None, git_commit_url=None
     ):
         mv_comparison = self.__get_mv_cmp_attachment__(
             page_id, "mv_comparison_result.txt"
         )
 
-        vtune_img = [("Profiler Results", "vtune_hotspots.png")]
         vtune_images = self.__embed_images__(vtune_img)
 
         calltree_interactive = self.__get_calltree_html_interactive__(
@@ -244,26 +232,6 @@ class ConfluenceReportGenerator:
             page_id, "call_tree.html"
         )
 
-        plots_img = [
-            ("Fastest Methods", "fastest_high_profile_methods.png"),
-            ("Throughput Scaling", "scaling_fps.png"),
-            ("Latency Scaling", "scaling_timeperframe.png"),
-            ("CPU Usage Scaling", "scaling_cpu.png"),
-            ("Memory Usage Scaling", "scaling_memory.png"),
-            ("Grouped FPS Comparison (All Streams)", "grouped_barchart_fps.png"),
-            (
-                "Grouped Latency Comparison (All Streams)",
-                "grouped_barchart_timeperframe.png",
-            ),
-            (
-                "Grouped CPU Usage Comparison (All Streams)",
-                "grouped_barchart_cpu.png",
-            ),
-            (
-                "Grouped Memory Usage Comparison (All Streams)",
-                "grouped_barchart_memory.png",
-            ),
-        ]
         plots_images = self.__embed_images__(plots_img)
 
         detail_tables = []
@@ -384,7 +352,28 @@ class ConfluenceReportGenerator:
         page_id = new_page["id"]
         plots_dir = os.path.join(results_dir, "plots")
 
-        file_list = self.__get_detailed_report_files__(page_id, results_dir)
+        plots_img = [
+            ("Fastest Methods", "fastest_high_profile_methods.png"),
+            ("Throughput Scaling", "scaling_fps.png"),
+            ("Latency Scaling", "scaling_timeperframe.png"),
+            ("CPU Usage Scaling", "scaling_cpu.png"),
+            ("Memory Usage Scaling", "scaling_memory.png"),
+            ("Grouped FPS Comparison (All Streams)", "grouped_barchart_fps.png"),
+            (
+                "Grouped Latency Comparison (All Streams)",
+                "grouped_barchart_timeperframe.png",
+            ),
+            (
+                "Grouped CPU Usage Comparison (All Streams)",
+                "grouped_barchart_cpu.png",
+            ),
+            (
+                "Grouped Memory Usage Comparison (All Streams)",
+                "grouped_barchart_memory.png",
+            ),
+        ]
+
+        file_list = self.__get_detailed_report_files__(results_dir, plots_img)
         for fpath, fname in file_list:
             self.confluence.attach_file(filename=fpath, page_id=page_id, name=fname)
 
