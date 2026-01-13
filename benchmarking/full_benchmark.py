@@ -6,7 +6,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-import benchmarking.benchmark_python as benchmarking
+import benchmarking.benchmark as benchmarking
 import utils.mv_compare as mv_compare
 import utils.vtune_hotspots_plot as vtune
 
@@ -25,7 +25,7 @@ class BenchmarkRunner:
 
         self.benchmarking_dir = self.current_dir / "benchmarking"
         self.benchmarking_dir_executables = self.benchmarking_dir / "executables"
-        self.benchmark_exec = self.benchmarking_dir_executables / "benchmark_all_9"
+        self.benchmark_exec = self.benchmarking_dir_executables / "benchmark_extractors"
 
         self.extractor_executables = self.current_dir / "extractors" / "executables"
 
@@ -76,7 +76,7 @@ class BenchmarkRunner:
         ).strip()
 
         compile_cmd = (
-            f"g++ -O2 -o {self.benchmark_exec} benchmarking.cpp {pkg_flags} -lm"
+            f"g++ -O2 -o {self.benchmark_exec} benchmark_extractors.cpp {pkg_flags} -lm"
         )
 
         if not self.run_command(compile_cmd, cwd=self.benchmarking_dir):
@@ -97,10 +97,6 @@ class BenchmarkRunner:
 
         if not self.run_command(cmd, cwd=self.benchmarking_dir_executables):
             return
-
-        for csv_file in self.results_dir.glob("method*_output_*.csv"):
-            if not csv_file.name.endswith("_0.csv"):
-                csv_file.unlink()
 
         print("Benchmarks complete.")
 

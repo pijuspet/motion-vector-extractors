@@ -12,7 +12,7 @@ bool MotionVectorWriter::Open(std::string const& filename) {
 
     file << "frame,method_id,source,w,h,src_x,src_y,dst_x,dst_y,flags,motion_x,"
         "motion_y,motion_scale\n";
-    frame_num = 0; // Reset frame number
+    frame_num = 0;
     return true;
 }
 
@@ -54,6 +54,8 @@ int MotionVectorWriter::Write(int frame_num, const AVMotionVector* mvs,
             << mv->src_y << "," << mv->dst_x << "," << mv->dst_y << "," << "0x"
             << std::hex << mv->flags << "," << std::dec << mv->motion_x << ","
             << mv->motion_y << "," << mv->motion_scale << "\n";
+        
+        total_mvs++;
     }
 
     return 0;

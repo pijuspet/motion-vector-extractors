@@ -61,7 +61,7 @@ setup_ffmpeg:
 	$(call FFMPEG_BUILD,$(REGULAR_PREFIX)/FFmpeg)
 
 benchmark:
-	$(PYTHON) -m benchmarking.run_full_benchmark $(VIDEO_FILE) 15
+	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15
 
 publish:
 	$(PYTHON) -m publishing.publish_report 2 $(CURRENT_DIR)/results/20251231_1312 $(CURRENT_DIR)/results/20260105_1115 test_git test_git

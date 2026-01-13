@@ -52,33 +52,6 @@ double now_ms() {
     return 1000.0 * tv.tv_sec + tv.tv_usec / 1000.0;
 }
 
-void parse_csv(const std::string& fname, int* frames, int* mvs) {
-    std::ifstream file(fname);
-    
-    if (!file) {
-        fprintf(stderr, "Warning: cannot open CSV file '%s': %s\n", fname.c_str(), strerror(errno));
-        return;
-    }
-
-    std::string line;
-    int last = -1;
-    
-    if (!std::getline(file, line))
-        return;
-        
-    while (std::getline(file, line)) {
-        std::istringstream iss(line);
-        int frame = -1;
-        if (iss >> frame) {
-            (*mvs)++;
-            if (frame != last) {
-                (*frames)++;
-                last = frame;
-            }
-        }
-    }
-}
-
 BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& video_file, int par_streams, int do_print, std::string& absolute_path, std::string& current_dir) {
     BenchmarkResult r;
     r.name = m.name;
@@ -89,14 +62,25 @@ BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& v
     std::vector<pid_t> pids(par_streams);
     std::vector<int> statuses(par_streams);
     std::vector<struct rusage> usage(par_streams);
+    int pipes_fd[par_streams][2];
+    int total_mvs = 0;
+    int total_frames = 0;
 
     for (int i = 0; i < par_streams; ++i) {
+        if (pipe(pipes_fd[i]) == -1) {
+            perror("Pipe failed");
+            exit(1);
+        }
         pid_t pid = fork();
         if (pid < 0) {
-            perror("fork failed");
+            perror("Fork failed");
             exit(1);
         }
         else if (pid == 0) {
+            close(pipes_fd[i][0]);
+            dup2(pipes_fd[i][1], STDOUT_FILENO);
+            close(pipes_fd[i][1]);
+
             char csv_filename[256];
             snprintf(csv_filename, sizeof(csv_filename), "%s/%s_%d.csv", absolute_path.c_str(), m.output_csv.c_str(), i);
 
@@ -110,6 +94,7 @@ BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& v
             exit(127);
         }
         else {
+            close(pipes_fd[i][1]);
             pids[i] = pid;
             printf("Forked child %d with pid %d\n", i, pid);
         }
@@ -121,13 +106,41 @@ BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& v
         }
         else {
             if (WIFEXITED(statuses[i])) {
-                printf("Child %d (pid %d) exited with code %d\n", i, pids[i], WEXITSTATUS(statuses[i]));
+                printf("Child %d (pid %d) exited with code %d", i, pids[i], WEXITSTATUS(statuses[i]));
+
+                char buffer[64];
+                ssize_t bytes_read = read(pipes_fd[i][0], buffer, sizeof(buffer) - 1);
+                if (bytes_read > 0) {
+                    buffer[bytes_read] = '\0';
+                    int frames = 0, mvs = 0;
+                    if (sscanf(buffer, "%d %d", &frames, &mvs) == 2) {
+                        printf("; reported %d frames and %d motion vectors\n", frames, mvs);
+                        total_frames += frames;
+                        total_mvs += mvs;
+                    }
+                    else {
+                        fprintf(stderr, "Warning: failed to parse output from child %d\n", i);
+                    }
+                }
             }
             else if (WIFSIGNALED(statuses[i])) {
                 printf("Child %d (pid %d) killed by signal %d\n", i, pids[i], WTERMSIG(statuses[i]));
             }
             else {
                 printf("Child %d (pid %d) ended abnormally\n", i, pids[i]);
+            }
+
+            close(pipes_fd[i][0]);
+
+            if (i != 0 && do_print) {
+                char csv_filename[256];
+                snprintf(csv_filename, sizeof(csv_filename),
+                    "%s/%s_%d.csv", absolute_path.c_str(),
+                    m.output_csv.c_str(), i);
+                if (remove(csv_filename) != 0) {
+                    fprintf(stderr, "Warning: failed to remove '%s': %s\n",
+                        csv_filename, strerror(errno));
+                }
             }
         }
     }
@@ -136,23 +149,14 @@ BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& v
 
     long max_rss_kb = 0;
     double total_user_cpu_sec = 0;
-    int total_mvs = 0;
     for (int i = 0; i < par_streams; ++i) {
         if (usage[i].ru_maxrss > max_rss_kb)
             max_rss_kb = usage[i].ru_maxrss;
 
         double u_sec = usage[i].ru_utime.tv_sec + usage[i].ru_utime.tv_usec / 1e6;
         total_user_cpu_sec += u_sec;
-        char csv_filename[256];
-        snprintf(csv_filename, sizeof(csv_filename), "%s/%s_%d.csv", absolute_path.c_str(), m.output_csv.c_str(), i);
-        int frames = 0, mvs = 0;
-        parse_csv(csv_filename, &frames, &mvs);
-        printf("Parsed file '%s': frames=%d, mvs=%d\n", csv_filename, frames, mvs);
-        total_mvs += mvs;
     }
-    // Fixed frames per stream as requested
-    int fixed_frames_per_stream = 298;
-    int total_frames = fixed_frames_per_stream * par_streams;
+
     r.total_time_ms = t_end - t_start;
     r.frame_count = total_frames;
     r.total_motion_vectors = total_mvs;
@@ -198,7 +202,7 @@ int main(int argc, char** argv) {
         do_print = std::atoi(argv[5]);
 
     if (par_streams < 1 || par_streams > 100) {
-        std::cerr << "Streams must be between 1 and 100." << std::endl;
+        fprintf(stderr, "Streams must be between 1 and 100");
         return 1;
     }
     std::vector<BenchmarkResult> results;

@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
     if (do_print) {
         if (!writer.Open(file_name)) {
             fprintf(stderr, "Failed to open output file\n");
-            return 1;
+            return -1;
         }
     }
 
@@ -118,7 +118,7 @@ int main(int argc, char** argv) {
                         writer.Write(frame_num, (const AVMotionVector*)sd->data, 0, sd->size);
                     }
                     else {
-                        fprintf(stderr, "frame %d: no motion vectors\n", frame_num);
+                        fprintf(stderr, "Frame %d: no motion vectors\n", frame_num);
                     }
                 }
 
@@ -133,5 +133,9 @@ int main(int argc, char** argv) {
     avformat_close_input(&fmt_ctx);
     av_frame_free(&frame);
     av_packet_free(&pkt);
+    
+    fprintf(stdout, "%d %d\n", frame_num, writer.GetTotalMVs());
+    fflush(stdout);
+    writer.Close();
     return 0;
 }

@@ -6,7 +6,7 @@ from typing import Optional
 from datetime import datetime
 
 import publishing.publish_to_confluence as ptc
-from benchmarking.run_full_benchmark import BenchmarkRunner
+from benchmarking.full_benchmark import BenchmarkRunner
 
 
 class BenchmarkPublisher:

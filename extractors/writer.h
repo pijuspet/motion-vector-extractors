@@ -16,8 +16,10 @@ public:
     }
     bool Open(std::string const& filename);
     int Write(int frame_num, const AVMotionVector* mv, int method_id, size_t size);
+    int GetTotalMVs() const { return total_mvs; }
     void Close();
 private:
     std::ofstream file;
-    int frame_num = 0; // Current frame number   
+    int frame_num = 0;
+    int total_mvs = 0;
 };
