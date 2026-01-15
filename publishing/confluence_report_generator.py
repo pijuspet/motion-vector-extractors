@@ -43,7 +43,7 @@ class ConfluenceReportGenerator:
         self.vtune_subdir = "vtune_results"
 
         self.detailed_report_plots = [
-            ("Fastest Methods", "fastest_high_profile_methods.png", self.plots_subdir),
+            ("Fastest Methods", "fastest_methods.png", self.plots_subdir),
             ("Throughput Scaling", "scaling_fps.png", self.plots_subdir),
             ("Latency Scaling", "scaling_timeperframe.png", self.plots_subdir),
             ("CPU Usage Scaling", "scaling_cpu.png", self.plots_subdir),

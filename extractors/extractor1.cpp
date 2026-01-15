@@ -18,6 +18,7 @@ int main(int argc, char** argv) {
     int video_stream_index = -1;
     int frame_num = 0;
     int do_print = 1;
+    int extractor_index = -1;
     std::string file_name = "";
 
     if (argc < 2) {
@@ -28,7 +29,9 @@ int main(int argc, char** argv) {
         do_print = atoi(argv[2]);
     if (argc >= 4)
         file_name = argv[3];
-
+    if (argc >= 5)
+        extractor_index = atoi(argv[4]);
+    
     avformat_network_init();
 
     if (avformat_open_input(&fmt_ctx, argv[1], NULL, NULL) < 0) {
@@ -126,7 +129,7 @@ int main(int argc, char** argv) {
                 AVFrameSideData* sd = av_frame_get_side_data(frame, AV_FRAME_DATA_MOTION_VECTORS);
                 if (do_print) {
                     if (sd && sd->data && sd->size > 0) {
-                        writer.Write(frame_num, (const AVMotionVector*)sd->data, 1, sd->size);
+                        writer.Write(frame_num, (const AVMotionVector*)sd->data, extractor_index, sd->size);
                     }
                     else {
                         fprintf(stderr, "Frame %d: no motion vectors\n", frame_num);
@@ -146,7 +149,7 @@ int main(int argc, char** argv) {
         AVFrameSideData* sd = av_frame_get_side_data(frame, AV_FRAME_DATA_MOTION_VECTORS);
         if (sd) {
             if (do_print)
-                writer.Write(frame_num, (const AVMotionVector*)sd->data, 1, sd->size);
+                writer.Write(frame_num, (const AVMotionVector*)sd->data, extractor_index, sd->size);
         }
         av_frame_unref(frame);
         frame_num++;

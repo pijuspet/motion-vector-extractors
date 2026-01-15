@@ -19,7 +19,14 @@ struct MethodInfo {
     std::string name;
     std::string exe;
     std::string output_csv;
-    int supports_high_profile;
+    int index;
+
+    MethodInfo(int id, const std::string& name)
+        : name(name)
+        , exe("/extractors/executables/extractor" + std::to_string(id))
+        , output_csv("method" + std::to_string(id) + "_output")
+        , index(id)
+    {}
 };
 
 struct BenchmarkResult {
@@ -31,19 +38,18 @@ struct BenchmarkResult {
     long memory_peak_kb = 0;
     int total_motion_vectors = 0;
     int frame_count = 0;
-    int supports_high_profile = 0;
 };
 
 std::vector<MethodInfo> methods = {
-    {"Original FFmpeg MV extraction", "/extractors/executables/extractor0", "method0_output", 1}, // Original FFmpeg, takes out motion vectors out of video
-    {"Same Code Not Patched", "/extractors/executables/extractor1", "method1_output", 1}, // Original FFmpeg, but custom flags are passed? ask Louise
-    {"Custom FFmpeg MV-Only - FFMPEG Patched", "/extractors/executables/extractor2", "method2_output", 1}, // Custom FFmpeg RTSP protocol
-    // {"FFMPEG decode frames", "/extractors/executables/extractor3", "method3_output", 1}, // why this one is used? produces no csv
-    {"Custom FFmpeg - Flush decoder", "/extractors/executables/extractor4", "method4_output", 1},
-    {"Custom FFmpeg", "/extractors/executables/extractor5", "method5_output", 1}
+    {0, "Original FFmpeg MV extraction"}, // Original FFmpeg, takes out motion vectors out of video
+    {1, "Same Code Not Patched"}, // Original FFmpeg, but custom flags are passed? ask Louise
+    {2, "Custom FFmpeg MV-Only - FFMPEG Patched"}, // Custom FFmpeg RTSP protocol
+    // {3, "FFMPEG decode frames"}, // why this one is used? produces no csv
+    {4, "Custom FFmpeg - Flush decoder"},
+    {5, "Custom FFmpeg"}
 };
 
-double now_ms() {
+double get_timestamp_ms() {
     struct timeval tv;
     if (gettimeofday(&tv, nullptr) != 0) {
         perror("gettimeofday failed");
@@ -52,168 +58,222 @@ double now_ms() {
     return 1000.0 * tv.tv_sec + tv.tv_usec / 1000.0;
 }
 
-BenchmarkResult run_benchmark_parallel(const MethodInfo& m, const std::string& video_file, int par_streams, int do_print, std::string& absolute_path, std::string& current_dir) {
-    BenchmarkResult r;
-    r.name = m.name;
-    r.supports_high_profile = m.supports_high_profile;
-    printf("Starting %d parallel streams for method: %s\n", par_streams, m.name.c_str());
-    double t_start = now_ms();
+struct ChildProcess {
+    pid_t pid;
+    int pipe_fd;
+    int status = 0;
+    struct rusage usage = {};
+};
 
-    std::vector<pid_t> pids(par_streams);
-    std::vector<int> statuses(par_streams);
-    std::vector<struct rusage> usage(par_streams);
-    int pipes_fd[par_streams][2];
-    int total_mvs = 0;
-    int total_frames = 0;
 
-    for (int i = 0; i < par_streams; ++i) {
-        if (pipe(pipes_fd[i]) == -1) {
+std::vector<ChildProcess> spawn_processes(
+    const MethodInfo& method,
+    const std::string& video_file,
+    int stream_count,
+    bool print_csv,
+    const std::string& output_dir,
+    const std::string& exe_dir
+) {
+    std::vector<ChildProcess> processes(stream_count);
+
+    for (int i = 0; i < stream_count; ++i) {
+        int pipe_fds[2];
+        if (pipe(pipe_fds) == -1) {
             perror("Pipe failed");
             exit(1);
         }
+
         pid_t pid = fork();
         if (pid < 0) {
             perror("Fork failed");
             exit(1);
         }
-        else if (pid == 0) {
-            close(pipes_fd[i][0]);
-            dup2(pipes_fd[i][1], STDOUT_FILENO);
-            close(pipes_fd[i][1]);
 
-            char csv_filename[256];
-            snprintf(csv_filename, sizeof(csv_filename), "%s/%s_%d.csv", absolute_path.c_str(), m.output_csv.c_str(), i);
+        if (pid == 0) {
+            close(pipe_fds[0]);
+            dup2(pipe_fds[1], STDOUT_FILENO);
+            close(pipe_fds[1]);
 
-            std::string exe_str = current_dir + m.exe;
-            char* exe = const_cast<char*>(exe_str.c_str());
+            char csv_path[256];
+            snprintf(csv_path, sizeof(csv_path), "%s/%s_%d.csv",
+                output_dir.c_str(), method.output_csv.c_str(), i);
+
+            std::string exe_path = exe_dir + method.exe;
+            char* exe = const_cast<char*>(exe_path.c_str());
             char* video_file_input = const_cast<char*>(video_file.c_str());
-            std::string print_to_file = std::to_string(do_print);
-            execl(exe, exe, video_file_input, print_to_file.c_str(), csv_filename, nullptr);
+            std::string print_to_file = std::to_string(print_csv);
+            std::string extractor_index = std::to_string(method.index);
+            execl(exe, exe, video_file_input, print_to_file.c_str(), csv_path, extractor_index.c_str(), nullptr);
 
-            fprintf(stderr, "Child %d: exec failed for command %s %s: %s\n", i, m.exe.c_str(), video_file.c_str(), strerror(errno));
+            fprintf(stderr, "Child %d: exec failed: %s\n", i, strerror(errno));
             exit(127);
         }
-        else {
-            close(pipes_fd[i][1]);
-            pids[i] = pid;
-            printf("Forked child %d with pid %d\n", i, pid);
-        }
-    }
-    for (int i = 0; i < par_streams; ++i) {
-        if (wait4(pids[i], &statuses[i], 0, &usage[i]) == -1) {
-            perror("wait4 failed");
-            statuses[i] = -1;
-        }
-        else {
-            if (WIFEXITED(statuses[i])) {
-                printf("Child %d (pid %d) exited with code %d", i, pids[i], WEXITSTATUS(statuses[i]));
 
-                char buffer[64];
-                ssize_t bytes_read = read(pipes_fd[i][0], buffer, sizeof(buffer) - 1);
-                if (bytes_read > 0) {
-                    buffer[bytes_read] = '\0';
-                    int frames = 0, mvs = 0;
-                    if (sscanf(buffer, "%d %d", &frames, &mvs) == 2) {
-                        printf("; reported %d frames and %d motion vectors\n", frames, mvs);
-                        total_frames += frames;
-                        total_mvs += mvs;
-                    }
-                    else {
-                        fprintf(stderr, "Warning: failed to parse output from child %d\n", i);
-                    }
-                }
-            }
-            else if (WIFSIGNALED(statuses[i])) {
-                printf("Child %d (pid %d) killed by signal %d\n", i, pids[i], WTERMSIG(statuses[i]));
-            }
-            else {
-                printf("Child %d (pid %d) ended abnormally\n", i, pids[i]);
-            }
-
-            close(pipes_fd[i][0]);
-
-            if (i != 0 && do_print) {
-                char csv_filename[256];
-                snprintf(csv_filename, sizeof(csv_filename),
-                    "%s/%s_%d.csv", absolute_path.c_str(),
-                    m.output_csv.c_str(), i);
-                if (remove(csv_filename) != 0) {
-                    fprintf(stderr, "Warning: failed to remove '%s': %s\n",
-                        csv_filename, strerror(errno));
-                }
-            }
-        }
-    }
-    double t_end = now_ms();
-    printf("All children done; total wall time elapsed: %.2f ms\n", t_end - t_start);
-
-    long max_rss_kb = 0;
-    double total_user_cpu_sec = 0;
-    for (int i = 0; i < par_streams; ++i) {
-        if (usage[i].ru_maxrss > max_rss_kb)
-            max_rss_kb = usage[i].ru_maxrss;
-
-        double u_sec = usage[i].ru_utime.tv_sec + usage[i].ru_utime.tv_usec / 1e6;
-        total_user_cpu_sec += u_sec;
+        close(pipe_fds[1]);
+        processes[i].pid = pid;
+        processes[i].pipe_fd = pipe_fds[0];
+        printf("Forked child %d with pid %d\n", i, pid);
     }
 
-    r.total_time_ms = t_end - t_start;
-    r.frame_count = total_frames;
-    r.total_motion_vectors = total_mvs;
-    r.memory_peak_kb = max_rss_kb;
-    r.cpu_usage_percent = (r.total_time_ms > 0) ? (total_user_cpu_sec / (r.total_time_ms / 1000.0)) * 100.0 : 0.0;
-    r.avg_time_per_frame_ms = (total_frames > 0) ? (r.total_time_ms / total_frames) : 0;
-    r.throughput_fps = (r.avg_time_per_frame_ms > 0) ? 1000.0 / r.avg_time_per_frame_ms : 0;
-    return r;
+    return processes;
 }
 
-void print_complete_results(const std::vector<BenchmarkResult>& r, int par_streams) {
-    printf("\n==========================================================================================================\n");
-    printf("                                   COMPLETE MOTION VECTOR EXTRACTION BENCHMARK\n");
-    printf("                              Streams per Method: %d\n", par_streams);
-    printf("==========================================================================================================\n\n");
-    printf("%-30s | %-12s | %-6s | %-10s | %-9s | %-12s | %-8s | %s\n",
-        "Method", "Time/Frame", "FPS", "CPU Usage", "Mem Δ KB", "Total MVs", "Frames", "High Profile");
-    printf("------------------------------------------------------------------------------------------------------------\n");
+void collect_process_results(
+    std::vector<ChildProcess>& processes,
+    int& total_frames,
+    int& total_mvs,
+    const std::string& output_dir,
+    const std::string& output_prefix,
+    bool print_csv
+) {
+    for (size_t i = 0; i < processes.size(); ++i) {
+        auto& proc = processes[i];
 
-    for (int i = 0; i < r.size(); i++) {
-        printf("%-30s | %10.2f ms | %6.1f | %8.1f%% | %9ld | %10d | %8d | %d\n",
-            r[i].name.c_str(), r[i].avg_time_per_frame_ms, r[i].throughput_fps,
-            r[i].cpu_usage_percent, r[i].memory_peak_kb,
-            r[i].total_motion_vectors, r[i].frame_count,
-            r[i].supports_high_profile);
+        if (wait4(proc.pid, &proc.status, 0, &proc.usage) == -1) {
+            perror("wait4 failed");
+            continue;
+        }
+
+        if (WIFEXITED(proc.status)) {
+            printf("Child %zu (pid %d) exited with code %d",
+                i, proc.pid, WEXITSTATUS(proc.status));
+
+            char buffer[64];
+            ssize_t bytes = read(proc.pipe_fd, buffer, sizeof(buffer) - 1);
+            if (bytes > 0) {
+                buffer[bytes] = '\0';
+                int frames = 0, mvs = 0;
+                if (sscanf(buffer, "%d %d", &frames, &mvs) == 2) {
+                    printf("; %d frames, %d motion vectors\n", frames, mvs);
+                    total_frames += frames;
+                    total_mvs += mvs;
+                }
+                else {
+                    fprintf(stderr, "Warning: failed to parse output from child %zu\n", i);
+                }
+            }
+        }
+        else if (WIFSIGNALED(proc.status)) {
+            printf("Child %zu (pid %d) killed by signal %d\n",
+                i, proc.pid, WTERMSIG(proc.status));
+        }
+
+        close(proc.pipe_fd);
+
+        // Clean up CSV files from non-primary streams
+        if (i != 0 && print_csv) {
+            char csv_path[256];
+            snprintf(csv_path, sizeof(csv_path), "%s/%s_%zu.csv",
+                output_dir.c_str(), output_prefix.c_str(), i);
+            if (remove(csv_path) != 0) {
+                fprintf(stderr, "Warning: failed to remove '%s': %s\n",
+                    csv_path, strerror(errno));
+            }
+        }
+    }
+}
+
+BenchmarkResult run_benchmark(
+    const MethodInfo& method,
+    const std::string& video_file,
+    int stream_count,
+    bool print_csv,
+    const std::string& output_dir,
+    const std::string& exe_dir
+) {
+    BenchmarkResult result;
+    result.name = method.name;
+
+    printf("Starting %d parallel streams for: %s\n", stream_count, method.name.c_str());
+
+    double start_time = get_timestamp_ms();
+    auto processes = spawn_processes(method, video_file, stream_count, print_csv, output_dir, exe_dir);
+
+    int total_frames = 0, total_mvs = 0;
+    collect_process_results(processes, total_frames, total_mvs, output_dir, method.output_csv, print_csv);
+
+    double end_time = get_timestamp_ms();
+    printf("Completed in %.2f ms\n", end_time - start_time);
+
+    // Calculate metrics
+    result.total_time_ms = end_time - start_time;
+    result.frame_count = total_frames;
+    result.total_motion_vectors = total_mvs;
+
+    long max_memory = 0;
+    double total_cpu_time = 0;
+    for (const auto& proc : processes) {
+        max_memory = std::max(max_memory, proc.usage.ru_maxrss);
+        total_cpu_time += proc.usage.ru_utime.tv_sec + proc.usage.ru_utime.tv_usec / 1e6;
+    }
+
+    result.memory_peak_kb = max_memory;
+    result.cpu_usage_percent = (result.total_time_ms > 0)
+        ? (total_cpu_time / (result.total_time_ms / 1000.0)) * 100.0
+        : 0.0;
+    result.avg_time_per_frame_ms = (total_frames > 0)
+        ? result.total_time_ms / total_frames
+        : 0;
+    result.throughput_fps = (result.avg_time_per_frame_ms > 0)
+        ? 1000.0 / result.avg_time_per_frame_ms
+        : 0;
+
+    return result;
+}
+
+void print_results(const std::vector<BenchmarkResult>& results, int stream_count) {
+    int line_size = 104;
+    std::string title = "COMPLETE MOTION VECTOR EXTRACTION BENCHMARK";
+    int title_offset = (line_size - title.length()) / 2;
+    char streams_title[32];
+    snprintf(streams_title, sizeof(streams_title), "Streams per Method: %d\n", stream_count);
+    int streams_title_offset = (line_size - 32) / 2;
+    printf("\n%s\n", std::string(line_size, '=').c_str());
+    printf("%*s%s\n", title_offset, "", title.c_str());
+    printf("%*s%s\n", streams_title_offset, "", streams_title);
+    printf("%s\n\n", std::string(line_size, '=').c_str());
+
+    printf("%-30s | %12s | %6s | %10s | %9s | %12s | %8s\n",
+        "Method", "Time/Frame", "FPS", "CPU Usage", "Mem KB", "Total MVs", "Frames");
+    printf("%s\n", std::string(line_size, '-').c_str());
+
+    for (const auto& r : results) {
+        printf("%-30s | %10.2f ms | %6.1f | %8.1f%% | %9ld | %12d | %8d\n",
+            r.name.c_str(), r.avg_time_per_frame_ms, r.throughput_fps,
+            r.cpu_usage_percent, r.memory_peak_kb,
+            r.total_motion_vectors, r.frame_count);
     }
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2 || argc > 6) {
-        fprintf(stderr, "Usage: %s <video_file_or_rtsp_url> [streams]\n", argv[0]);
+    if (argc < 5) {
+        fprintf(stderr, "Usage: %s <video_file> <streams> <output_dir> <exe_dir> [print_csv]\n", argv[0]);
         return 1;
     }
+
     std::string video_file = argv[1];
-    std::string absolute_path = argv[3];
-    std::string current_dir = argv[4];
-    int par_streams = 1;
-    if (argc >= 3)
-        par_streams = std::atoi(argv[2]);
+    int stream_count = std::atoi(argv[2]);
+    std::string output_dir = argv[3];
+    std::string exe_dir = argv[4];
+    bool print_csv = (argc >= 6) ? std::atoi(argv[5]) : false;
 
-    int do_print = 0;
-    if (argc >= 6)
-        do_print = std::atoi(argv[5]);
-
-    if (par_streams < 1 || par_streams > 100) {
-        fprintf(stderr, "Streams must be between 1 and 100");
+    if (stream_count < 1 || stream_count > 100) {
+        fprintf(stderr, "Streams must be between 1 and 100\n");
         return 1;
     }
+
+    printf("Starting benchmark on: %s\n", video_file.c_str());
+    printf("Streams per method: %d\n\n", stream_count);
+
     std::vector<BenchmarkResult> results;
-    printf("Starting benchmarking on: %s\n", video_file.c_str());
-    printf("Streams per method: %d\n\n", par_streams);
-    for (int i = 0; i < methods.size(); ++i) {
-        printf("Running: %s\n", methods[i].name.c_str());
-        results.push_back(run_benchmark_parallel(methods[i], video_file, par_streams, do_print, absolute_path, current_dir));
+    for (const auto& method : methods) {
+        printf("Running: %s\n", method.name.c_str());
+        auto result = run_benchmark(method, video_file, stream_count, print_csv, output_dir, exe_dir);
+        results.push_back(result);
         printf("Done: %d frames, %.2f ms/frame, %.1f FPS\n\n",
-            results[i].frame_count, results[i].avg_time_per_frame_ms, results[i].throughput_fps);
+            result.frame_count, result.avg_time_per_frame_ms, result.throughput_fps);
     }
-    print_complete_results(results, par_streams);
+
+    print_results(results, stream_count);
     return 0;
 }

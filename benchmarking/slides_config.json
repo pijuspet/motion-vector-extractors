@@ -113,8 +113,8 @@
         {
             "title": "Fastest Methods",
             "subtitle": "Best (lowest time/frame) method at each streams value",
-            "filename": "fastest_high_profile_methods.png",
-            "highlighted_filename": "fastest_high_profile_methods_highlighted.png"
+            "filename": "fastest_methods.png",
+            "highlighted_filename": "fastest_high_methods_highlighted.png"
         }
     ]
 }

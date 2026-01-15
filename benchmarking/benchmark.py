@@ -50,7 +50,7 @@ def parse_output(output_text, stream_count):
             if line.startswith("—") or line == "" or line.startswith("---"):
                 continue
             parts = [x.strip() for x in line.split("|")]
-            if len(parts) < 8:
+            if len(parts) < 7:
                 continue
             try:
                 method = parts[0]
@@ -60,7 +60,6 @@ def parse_output(output_text, stream_count):
                 mem = float(parts[4])
                 mvs = int(parts[5])
                 frames = int(parts[6])
-                high_profile = parts[7]
                 results.append(
                     {
                         "method": method,
@@ -71,7 +70,6 @@ def parse_output(output_text, stream_count):
                         "memory": mem,
                         "mvs": mvs,
                         "frames": frames,
-                        "high_profile": high_profile,
                     }
                 )
             except Exception:
@@ -113,15 +111,10 @@ def run_all(
     full_df.to_csv(csv_path, index=False)
     print(f"Saved complete data table: {csv_path}")
 
-    df_hp = full_df[full_df["high_profile"] == "1"].copy()
-    if df_hp.empty:
-        print("No high profile algorithms found in results!")
-        return full_df
-
     sld.produce_slides(
-        df_hp,
+        full_df,
         slides_config,
-        "benchmark_comparison_slides_high_profile.pptx",
+        "benchmark_comparison_slides.pptx",
         plots_folder,
     )
 
