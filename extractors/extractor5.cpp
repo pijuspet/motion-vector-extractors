@@ -23,25 +23,23 @@ int main(int argc, char** argv) {
     bool is_verbose = 1;
     int extractor_index = -1;
     std::string file_name = "";
+    std::string video_file = "";
 
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <input>\n", argv[0]);
+   if (argc < 7) {
+        fprintf(stderr, "Usage: %s <input file> <print mv> <output file>, <extractor index> <is verbose> <is single threaded> \n", argv[0]);
         return -1;
     }
-    if (argc >= 3)
-        do_print = atoi(argv[2]);
-    if (argc >= 4)
-        file_name = argv[3];
-    if (argc >= 5)
-        extractor_index = atoi(argv[4]);
-    if (argc >= 6)
-        is_verbose = atoi(argv[5]);
-    if (argc >= 7)
-        is_single_threaded = atoi(argv[6]);
+
+    video_file = argv[1];
+    do_print = atoi(argv[2]);
+    file_name = argv[3];
+    extractor_index = atoi(argv[4]);
+    is_verbose = atoi(argv[5]);
+    is_single_threaded = atoi(argv[6]);
 
     avformat_network_init();
 
-    if (avformat_open_input(&fmt_ctx, argv[1], NULL, NULL) < 0) {
+    if (avformat_open_input(&fmt_ctx, video_file.c_str(), NULL, NULL) < 0) {
         fprintf(stderr, "Could not open input file.\n");
         return -1;
     }
