@@ -14,11 +14,13 @@ int main(int argc, char** argv) {
     AVFrame* frame = NULL;
     int video_stream_index = -1;
     int frame_num = 0;
-    int do_print = 1;
+    bool do_print = 1;
+    bool is_single_threaded = 0;
+    bool is_verbose = 1;
     int extractor_index = -1;
     std::string file_name = "";
 
-    if (argc < 2) {
+    if (argc < 7) {
         fprintf(stderr, "Usage: %s <input>\n", argv[0]);
         return -1;
     }
@@ -28,7 +30,11 @@ int main(int argc, char** argv) {
         file_name = argv[3];
     if (argc >= 5)
         extractor_index = atoi(argv[4]);
-        
+    if (argc >= 6)
+        is_verbose = atoi(argv[5]);
+    if (argc >= 7)
+        is_single_threaded = atoi(argv[6]);
+
     avformat_network_init();
 
     if (avformat_open_input(&fmt_ctx, argv[1], NULL, NULL) < 0) {
@@ -69,8 +75,7 @@ int main(int argc, char** argv) {
 
     //region flag setting
     AVDictionary* opts = NULL;
-    dec_ctx->thread_count = 0; // 0 lets ffmpeg decide based on CPU cores
-    // dec_ctx->thread_count = 1; // set in c version
+    dec_ctx->thread_count = is_single_threaded; // 0 lets ffmpeg decide based on CPU cores
     av_dict_set(&opts, "flags2", "+export_mvs", 0);
     //endregion
 
@@ -95,8 +100,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    // for debugging purposes
-    fprintf(stderr, "FFmpeg version: %s\n", av_version_info());
+    if (is_verbose)
+        fprintf(stderr, "FFmpeg version: %s\n", av_version_info());
 
     while (av_read_frame(fmt_ctx, pkt) >= 0) {
         if (pkt->stream_index == video_stream_index) {
@@ -121,7 +126,8 @@ int main(int argc, char** argv) {
                         writer.Write(frame_num, (const AVMotionVector*)sd->data, extractor_index, sd->size);
                     }
                     else {
-                        fprintf(stderr, "Frame %d: no motion vectors\n", frame_num);
+                        if (is_verbose)
+                            fprintf(stderr, "Frame %d: no motion vectors\n", frame_num);
                     }
                 }
 

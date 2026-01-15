@@ -18,7 +18,9 @@ int main(int argc, char** argv) {
     AVFrame* frame = NULL;
     int video_stream_index = -1;
     int frame_num = 0;
-    int do_print = 1;
+    bool do_print = 1;
+    bool is_single_threaded = 0;
+    bool is_verbose = 1;
     int extractor_index = -1;
     std::string file_name = "";
 
@@ -32,6 +34,10 @@ int main(int argc, char** argv) {
         file_name = argv[3];
     if (argc >= 5)
         extractor_index = atoi(argv[4]);
+    if (argc >= 6)
+        is_verbose = atoi(argv[5]);
+    if (argc >= 7)
+        is_single_threaded = atoi(argv[6]);
 
     avformat_network_init();
 
@@ -83,8 +89,7 @@ int main(int argc, char** argv) {
 
     //region flag setting
     AVDictionary* opts = NULL;
-    dec_ctx->thread_count = 0; // 0 lets ffmpeg decide based on CPU cores
-    // dec_ctx->thread_count = 1; // set in c version
+    dec_ctx->thread_count = is_single_threaded; // 0 lets ffmpeg decide based on CPU cores
     dec_ctx->export_side_data |= AV_CODEC_EXPORT_DATA_MVS;
     av_opt_set_int(dec_ctx, "motion_vectors_only", 1, 0); // CUSTOM PATCHED FLAG
     //endregion
@@ -110,6 +115,9 @@ int main(int argc, char** argv) {
         }
     }
 
+    if(is_verbose)
+        fprintf(stderr, "FFmpeg version: %s\n", av_version_info());
+    
     while (av_read_frame(fmt_ctx, pkt) >= 0) {
         if (pkt->stream_index == video_stream_index) {
             int ret = avcodec_send_packet(dec_ctx, pkt);
@@ -133,7 +141,8 @@ int main(int argc, char** argv) {
                         writer.Write(frame_num, (const AVMotionVector*)sd->data, extractor_index, sd->size);
                     }
                     else {
-                        fprintf(stderr, "Frame %d: no motion vectors\n", frame_num);
+                        if (is_verbose)
+                            fprintf(stderr, "Frame %d: no motion vectors\n", frame_num);
                     }
                 }
 

@@ -93,7 +93,10 @@ class BenchmarkRunner:
 
         print("Running 9-method benchmark suite...")
 
-        cmd = f"{self.benchmark_exec} {self.video_file} {self.streams} {self.results_dir} {self.current_dir} 1 "
+        is_single_threaded = 0
+        is_verbose = 1
+        write_to_csv = 1
+        cmd = f"{self.benchmark_exec} {self.video_file} {self.streams} {self.results_dir} {self.current_dir} {is_single_threaded} {is_verbose} {write_to_csv}"
 
         if not self.run_command(cmd, cwd=self.benchmarking_dir_executables):
             return
@@ -109,6 +112,9 @@ class BenchmarkRunner:
 
         print("Running Python benchmark visualization and PPT generation...")
 
+        is_single_threaded = 1
+        is_verbose = 0
+        write_to_csv = 0
         benchmarking.benchmark(
             self.video_file,
             self.streams,
@@ -118,6 +124,9 @@ class BenchmarkRunner:
             str(self.slides_config),
             str(self.plots_dir),
             str(self.benchmark_exec),
+            is_single_threaded,
+            is_verbose,
+            write_to_csv
         )
 
         print(f"Plotting complete. Plots and PPTX in {self.plots_dir}.")

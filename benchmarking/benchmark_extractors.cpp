@@ -41,10 +41,10 @@ struct BenchmarkResult {
 };
 
 std::vector<MethodInfo> methods = {
-    {0, "Original FFmpeg MV extraction"}, // Original FFmpeg, takes out motion vectors out of video
-    {1, "Same Code Not Patched"}, // Original FFmpeg, but custom flags are passed? ask Louise
-    {2, "Custom FFmpeg MV-Only - FFMPEG Patched"}, // Custom FFmpeg RTSP protocol
-    // {3, "FFMPEG decode frames"}, // why this one is used? produces no csv
+    {0, "Original FFmpeg MV extraction"},
+    {1, "Original FFmpeg MV extraction Custom video processing setup"}, // for loop was faster, check
+    {3, "Original FFMPEG decode frames"}, // To compare with no mv vs with extraction of mv, not changed
+    {2, "Custom FFmpeg MV-Only - RTSP protocol"}, // with rtsp should be faster
     {4, "Custom FFmpeg - Flush decoder"},
     {5, "Custom FFmpeg"}
 };
@@ -72,7 +72,9 @@ std::vector<ChildProcess> spawn_processes(
     int stream_count,
     bool print_csv,
     const std::string& output_dir,
-    const std::string& exe_dir
+    const std::string& exe_dir,
+    bool is_verbose,
+    bool single_threaded
 ) {
     std::vector<ChildProcess> processes(stream_count);
 
@@ -103,7 +105,9 @@ std::vector<ChildProcess> spawn_processes(
             char* video_file_input = const_cast<char*>(video_file.c_str());
             std::string print_to_file = std::to_string(print_csv);
             std::string extractor_index = std::to_string(method.index);
-            execl(exe, exe, video_file_input, print_to_file.c_str(), csv_path, extractor_index.c_str(), nullptr);
+            std::string verbose = std::to_string(i > 0 ? 0 : is_verbose); // print only 1st stream
+            std::string is_single_threated = std::to_string(single_threaded);
+            execl(exe, exe, video_file_input, print_to_file.c_str(), csv_path, extractor_index.c_str(), verbose.c_str(), is_single_threated.c_str(), nullptr);
 
             fprintf(stderr, "Child %d: exec failed: %s\n", i, strerror(errno));
             exit(127);
@@ -112,7 +116,8 @@ std::vector<ChildProcess> spawn_processes(
         close(pipe_fds[1]);
         processes[i].pid = pid;
         processes[i].pipe_fd = pipe_fds[0];
-        printf("Forked child %d with pid %d\n", i, pid);
+        if (is_verbose)
+            printf("Forked child %d with pid %d\n", i, pid);
     }
 
     return processes;
@@ -124,7 +129,8 @@ void collect_process_results(
     int& total_mvs,
     const std::string& output_dir,
     const std::string& output_prefix,
-    bool print_csv
+    bool print_csv,
+    bool is_verbose
 ) {
     for (size_t i = 0; i < processes.size(); ++i) {
         auto& proc = processes[i];
@@ -135,8 +141,9 @@ void collect_process_results(
         }
 
         if (WIFEXITED(proc.status)) {
-            printf("Child %zu (pid %d) exited with code %d",
-                i, proc.pid, WEXITSTATUS(proc.status));
+            if (is_verbose)
+                printf("Child %zu (pid %d) exited with code %d",
+                    i, proc.pid, WEXITSTATUS(proc.status));
 
             char buffer[64];
             ssize_t bytes = read(proc.pipe_fd, buffer, sizeof(buffer) - 1);
@@ -144,7 +151,8 @@ void collect_process_results(
                 buffer[bytes] = '\0';
                 int frames = 0, mvs = 0;
                 if (sscanf(buffer, "%d %d", &frames, &mvs) == 2) {
-                    printf("; %d frames, %d motion vectors\n", frames, mvs);
+                    if (is_verbose)
+                        printf("; %d frames, %d motion vectors\n", frames, mvs);
                     total_frames += frames;
                     total_mvs += mvs;
                 }
@@ -179,21 +187,26 @@ BenchmarkResult run_benchmark(
     int stream_count,
     bool print_csv,
     const std::string& output_dir,
-    const std::string& exe_dir
+    const std::string& exe_dir,
+    bool is_verbose,
+    bool single_threaded
 ) {
     BenchmarkResult result;
     result.name = method.name;
 
-    printf("Starting %d parallel streams for: %s\n", stream_count, method.name.c_str());
+    if (is_verbose)
+        printf("Starting %d parallel streams for: %s\n", stream_count, method.name.c_str());
 
     double start_time = get_timestamp_ms();
-    auto processes = spawn_processes(method, video_file, stream_count, print_csv, output_dir, exe_dir);
+    auto processes = spawn_processes(method, video_file, stream_count, print_csv, output_dir, exe_dir, is_verbose, single_threaded);
 
     int total_frames = 0, total_mvs = 0;
-    collect_process_results(processes, total_frames, total_mvs, output_dir, method.output_csv, print_csv);
+    collect_process_results(processes, total_frames, total_mvs, output_dir, method.output_csv, print_csv, is_verbose);
 
     double end_time = get_timestamp_ms();
-    printf("Completed in %.2f ms\n", end_time - start_time);
+
+    if (is_verbose)
+        printf("Completed in %.2f ms\n", end_time - start_time);
 
     // Calculate metrics
     result.total_time_ms = end_time - start_time;
@@ -255,23 +268,29 @@ int main(int argc, char** argv) {
     int stream_count = std::atoi(argv[2]);
     std::string output_dir = argv[3];
     std::string exe_dir = argv[4];
-    bool print_csv = (argc >= 6) ? std::atoi(argv[5]) : false;
+    bool single_threaded = std::atoi(argv[5]);
+    bool is_verbose = std::atoi(argv[6]);
+    bool print_csv = (argc >= 8) ? std::atoi(argv[7]) : false;
 
     if (stream_count < 1 || stream_count > 100) {
         fprintf(stderr, "Streams must be between 1 and 100\n");
         return 1;
     }
 
-    printf("Starting benchmark on: %s\n", video_file.c_str());
-    printf("Streams per method: %d\n\n", stream_count);
+    if (is_verbose) {
+        printf("Starting benchmark on: %s\n", video_file.c_str());
+        printf("Streams per method: %d\n\n", stream_count);
+    }
 
     std::vector<BenchmarkResult> results;
     for (const auto& method : methods) {
-        printf("Running: %s\n", method.name.c_str());
-        auto result = run_benchmark(method, video_file, stream_count, print_csv, output_dir, exe_dir);
+        if (is_verbose)
+            printf("Running: %s\n", method.name.c_str());
+        auto result = run_benchmark(method, video_file, stream_count, print_csv, output_dir, exe_dir, is_verbose, single_threaded);
         results.push_back(result);
-        printf("Done: %d frames, %.2f ms/frame, %.1f FPS\n\n",
-            result.frame_count, result.avg_time_per_frame_ms, result.throughput_fps);
+        if (is_verbose)
+            printf("Done: %d frames, %.2f ms/frame, %.1f FPS\n\n",
+                result.frame_count, result.avg_time_per_frame_ms, result.throughput_fps);
     }
 
     print_results(results, stream_count);

@@ -18,6 +18,9 @@ def run_benchmark(
     project_absolute_path,
     results_absolute_path,
     exe,
+    is_single_threaded,
+    is_verbose,
+    write_to_csv
 ):
     print(f"Running benchmark with {streams} streams...")
     result = subprocess.run(
@@ -27,6 +30,9 @@ def run_benchmark(
             str(streams),
             results_absolute_path,
             project_absolute_path,
+            str(is_single_threaded),
+            str(is_verbose),
+            str(write_to_csv)
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -85,6 +91,9 @@ def run_all(
     results_absolute_path,
     slides_config,
     plots_folder,
+    is_single_threaded,
+    is_verbose,
+    write_to_csv
 ):
     stream_steps = generate_stream_runs(max_streams)
     print(f"Stream ranges to test: {stream_steps}")
@@ -96,7 +105,10 @@ def run_all(
             s,
             project_absolute_path,
             results_absolute_path,
-            exe=exe,
+            exe,
+            is_single_threaded,
+            is_verbose,
+            write_to_csv
         )
         if df.empty:
             print(f"Warning: No data returned for streams={s}")
@@ -128,6 +140,9 @@ def benchmark(
     slides_config_path,
     plots_folder,
     exe,
+    is_single_threaded,
+    is_verbose,
+    write_to_csv
 ):
     exe_fullpath = os.path.join(executable_absolute_path, exe)
 
@@ -139,4 +154,7 @@ def benchmark(
         results_absolute_path,
         slides_config_path,
         plots_folder,
+        is_single_threaded,
+        is_verbose,
+        write_to_csv
     )
