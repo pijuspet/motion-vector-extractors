@@ -27,7 +27,7 @@ make setup_ffmpeg
 
 To run the full benchmark run:
 ```
-make run_benchmark
+make benchmark
 ```
 
 - Replace video with your input video file from the videos in `videos/`.
