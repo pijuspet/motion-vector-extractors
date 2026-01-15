@@ -73,7 +73,7 @@ def generate_tree_html(nodes: Dict[str, TreeNode], node_id: str) -> str:
     node = nodes[node_id]
     has_children = len(node.children) > 0
 
-    arrow = "▶" if has_children else ""
+    arrow = ">" if has_children else ""
     collapsed_class = "collapsed" if has_children else ""
 
     html_parts = [

@@ -20,23 +20,17 @@
     </ac:image>
     {% endfor %}
 
-    <h3>VTune Call Tree (Interactive)</h3>
-    {% if calltree_interactive %}
-    <ac:structured-macro ac:name="html">
+    <h3>VTune Call Tree</h3>
+    {% if calltree %}
+    <ac:structured-macro ac:name="hmpcost-html-macro-pro" ac:schema-version="1" ac:macro-id="{{ macro_id }}">
+        <ac:parameter ac:name="contentType">code</ac:parameter>
+        <ac:parameter ac:name="height">1024</ac:parameter>
         <ac:plain-text-body>
-            <![CDATA[{{ calltree_interactive.html }}]]>
+            <![CDATA[{{ calltree }}]]>
         </ac:plain-text-body>
     </ac:structured-macro>
     {% else %}
     <em>No call tree HTML available</em>
-    {% endif %}
-
-    <h3>VTune Call Tree (Non-Interactive)</h3>
-    {% if calltree_non_interactive %}
-    <pre
-        style="background:#f4f4f4; border:1px solid #ccc; padding:10px; max-height:400px; overflow-y:auto;">{{ calltree_non_interactive }}</pre>
-    {% else %}
-    <em>No call tree data available</em>
     {% endif %}
 
     {# Performance Plots #}

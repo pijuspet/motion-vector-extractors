@@ -3,10 +3,10 @@ import time
 from atlassian import Confluence
 import glob
 import requests
-from bs4 import BeautifulSoup
 import re
 from pathlib import Path
 from jinja2 import Template
+import uuid
 
 
 class ConfluenceReportGenerator:
@@ -150,51 +150,6 @@ class ConfluenceReportGenerator:
 
         return None
 
-    def __get_calltree_html_interactive__(self, page_id, file_name, add_macro=True):
-        content = self.__get_attachment_content__(page_id, file_name)
-
-        if content is None:
-            return None
-
-        return {"html": content, "add_macro": add_macro}
-
-    def __get_calltree_html_non_interactive__(self, page_id, file_name):
-        call_tree_data = self.__get_calltree_html_interactive__(
-            page_id, file_name, add_macro=False
-        )
-
-        if not call_tree_data:
-            return None
-
-        try:
-            soup = BeautifulSoup(call_tree_data["html"], "html.parser")
-            tree_container = soup.find("ul", class_="tree-root")
-
-            if not tree_container:
-                return soup.get_text()[: self.html_preview_limit]
-
-            def extract(ul, indent=0):
-                lines = []
-                for li in ul.find_all("li", class_="tree-node", recursive=False):
-                    name = li.find("span", class_="name")
-                    if name:
-                        text = "  " * indent + name.get_text(strip=True)
-                        for metric in ["cpu-total", "cpu-self"]:
-                            span = li.find("span", class_=metric)
-                            if span:
-                                text += f" {span.get_text(strip=True)}"
-                        lines.append(text)
-
-                    children = li.find("ul", class_="children")
-                    if children:
-                        lines.extend(extract(children, indent + 1))
-                return lines
-
-            tree_lines = extract(tree_container)
-            return "\n".join(tree_lines[: self.call_tree_line_limit])
-        except Exception:
-            return call_tree_data["html"][: self.html_preview_limit]
-
     def __update_page__(
         self,
         page_id,
@@ -229,12 +184,7 @@ class ConfluenceReportGenerator:
 
         vtune_images = self.__embed_images__(self.detailed_report_vtune)
 
-        calltree_interactive = self.__get_calltree_html_interactive__(
-            page_id, "call_tree.html"
-        )
-        calltree_non_interactive = self.__get_calltree_html_non_interactive__(
-            page_id, "call_tree.html"
-        )
+        calltree = self.__get_attachment_content__(page_id, "call_tree.html")
 
         plots_images = self.__embed_images__(self.detailed_report_plots)
 
@@ -255,10 +205,10 @@ class ConfluenceReportGenerator:
             mv_comparison=mv_comparison,
             git_commit_url=git_commit_url,
             vtune_images=vtune_images,
-            calltree_interactive=calltree_interactive,
-            calltree_non_interactive=calltree_non_interactive,
+            calltree=calltree,
             plots_images=plots_images,
             detail_tables=detail_tables,
+            macro_id=str(uuid.uuid4()),
         )
 
     def __get_main_dashboard_body__(
@@ -291,10 +241,7 @@ class ConfluenceReportGenerator:
                 ),
                 "vtune_hotspots": f"{prefix}vtune_hotspots.png",
                 "git_commit": git_commit,
-                "calltree_interactive": self.__get_calltree_html_interactive__(
-                    dashboard_id, f"{prefix}call_tree.html"
-                ),
-                "calltree_non_interactive": self.__get_calltree_html_non_interactive__(
+                "calltree": self.__get_attachment_content__(
                     dashboard_id, f"{prefix}call_tree.html"
                 ),
                 "detail_table": f"{prefix}detail_table_1streams_highlighted.png",
@@ -307,6 +254,7 @@ class ConfluenceReportGenerator:
                     if results_dir
                     else None
                 ),
+                "macro_id": str(uuid.uuid4()),
             }
 
             runs.append(run_data)
@@ -390,13 +338,17 @@ class ConfluenceReportGenerator:
         for idx, results_dir in enumerate(results_dirs):
             prefix = f"run{idx}_"
             all_files.extend(
-            self.__collect_files__(results_dir, self.main_dashboard_plots, prefix)
+                self.__collect_files__(results_dir, self.main_dashboard_plots, prefix)
             )
             all_files.extend(
                 self.__collect_files__(results_dir, self.detailed_report_vtune, prefix)
             )
-            all_files.extend(self.__collect_files__(results_dir, self.additional_files, prefix))
-            all_files.extend(self.__collect_files__(results_dir, self.vtune_files, prefix))
+            all_files.extend(
+                self.__collect_files__(results_dir, self.additional_files, prefix)
+            )
+            all_files.extend(
+                self.__collect_files__(results_dir, self.vtune_files, prefix)
+            )
 
         for fpath, fname, _ in all_files:
             print(

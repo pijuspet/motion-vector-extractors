@@ -126,7 +126,7 @@ class BenchmarkRunner:
             str(self.benchmark_exec),
             is_single_threaded,
             is_verbose,
-            write_to_csv
+            write_to_csv,
         )
 
         print(f"Plotting complete. Plots and PPTX in {self.plots_dir}.")
@@ -153,12 +153,18 @@ class BenchmarkRunner:
         extractor_exec = self.extractor_executables / "extractor4"
         output_csv = self.results_dir / "method4_output_vtune.csv"
 
-        vtune_collect_cmd = f"{self.setvars_cmd} && vtune -collect hotspots -result-dir {self.vtune_dir} -- {extractor_exec} {self.video_file} 0 {output_csv}"
+        do_print = 0
+        extractor_index = 4
+        is_verbose = 1
+        is_single_threaded = 0
+        vtune_collect_cmd = f"{self.setvars_cmd} && vtune -collect hotspots -result-dir {self.vtune_dir} -- {extractor_exec} {self.video_file} {do_print} {output_csv} {extractor_index} {is_verbose} {is_single_threaded}"
 
         env = os.environ.copy()
         env["LD_LIBRARY_PATH"] = ld_library_path
 
-        if not self.run_command(vtune_collect_cmd, env, cwd=self.extractor_executables, shell=True):
+        if not self.run_command(
+            vtune_collect_cmd, env, cwd=self.extractor_executables, shell=True
+        ):
             return
 
         vtune_report_hotspots = f"{self.setvars_cmd} && vtune -report hotspots -result-dir {self.vtune_dir} -format csv -report-output {self.vtune_hotspots_file}"
