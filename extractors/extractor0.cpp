@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
     avformat_close_input(&fmt_ctx);
     av_frame_free(&frame);
     av_packet_free(&pkt);
-    
+
     fprintf(stdout, "%d %d\n", frame_num, writer.GetTotalMVs());
     fflush(stdout);
     writer.Close();

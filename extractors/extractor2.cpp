@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
     int frame_num = 0;
     bool is_single_threaded = 0;
     std::string video_file = "";
-    
+
     if (argc < 7) {
         fprintf(stderr, "Usage: %s <input file> <print mv> <output file>, <extractor index> <is verbose> <is single threaded> \n", argv[0]);
         return -1;
@@ -38,7 +38,7 @@ int main(int argc, char** argv) {
 
     //region video stream 
     video_stream_index = av_find_best_stream(fmt_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
-    
+
     if (video_stream_index < 0) {
         fprintf(stderr, "Could not find video stream\n");
         return -1;

@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Usage: %s <input file> <print mv> <output file>, <extractor index> <is verbose> <is single threaded> \n", argv[0]);
         return -1;
     }
-    
+
     video_file = argv[1];
     do_print = atoi(argv[2]);
     file_name = argv[3];
@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
 
     //region codec
     const AVCodec* codec = avcodec_find_decoder(video_stream->codecpar->codec_id);
-    
+
     if (!codec) {
         fprintf(stderr, "Codec not found.\n");
         return -1;

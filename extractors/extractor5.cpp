@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include "writer.h"
 
 #include <inttypes.h>
@@ -25,7 +24,7 @@ int main(int argc, char** argv) {
     std::string file_name = "";
     std::string video_file = "";
 
-   if (argc < 7) {
+    if (argc < 7) {
         fprintf(stderr, "Usage: %s <input file> <print mv> <output file>, <extractor index> <is verbose> <is single threaded> \n", argv[0]);
         return -1;
     }
@@ -49,7 +48,7 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    //region video stream
+    //region video stream 
     for (unsigned i = 0; i < fmt_ctx->nb_streams; i++) {
         if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
             video_stream_index = i;
@@ -67,7 +66,7 @@ int main(int argc, char** argv) {
 
     //region codec
     const AVCodec* codec = avcodec_find_decoder(video_stream->codecpar->codec_id);
-    
+
     if (!codec) {
         fprintf(stderr, "Codec not found.\n");
         return -1;
@@ -113,9 +112,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    if(is_verbose)
+    if (is_verbose)
         fprintf(stderr, "FFmpeg version: %s\n", av_version_info());
-    
+
     while (av_read_frame(fmt_ctx, pkt) >= 0) {
         if (pkt->stream_index == video_stream_index) {
             int ret = avcodec_send_packet(dec_ctx, pkt);
@@ -155,7 +154,7 @@ int main(int argc, char** argv) {
     avformat_close_input(&fmt_ctx);
     av_frame_free(&frame);
     av_packet_free(&pkt);
-    
+
     fprintf(stdout, "%d %d\n", frame_num, writer.GetTotalMVs());
     fflush(stdout);
     writer.Close();

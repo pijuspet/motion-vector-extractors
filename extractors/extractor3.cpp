@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
     }
 
     //region flag setting
-    AVDictionary* opts = NULL; 
+    AVDictionary* opts = NULL;
     dec_ctx->thread_count = is_single_threaded; // 0 lets ffmpeg decide based on CPU cores
     dec_ctx->export_side_data |= AV_CODEC_EXPORT_DATA_MVS;
     av_opt_set_int(dec_ctx, "motion_vectors_only", 1, 0); // CUSTOM PATCHED FLAG
@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    if(is_verbose)
+    if (is_verbose)
         fprintf(stderr, "FFmpeg version: %s\n", av_version_info());
 
     while (av_read_frame(fmt_ctx, pkt) >= 0) {
@@ -142,7 +142,7 @@ int main(int argc, char** argv) {
                             fprintf(stderr, "Frame %d: no motion vectors\n", frame_num);
                     }
                 }
-                
+
                 av_frame_unref(frame);
                 frame_num++;
             }
