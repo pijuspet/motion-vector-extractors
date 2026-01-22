@@ -94,6 +94,14 @@ class ConfluenceReportGenerator:
     def __get_page_by_title__(self):
         return self.confluence.get_page_by_title(self.space_key, self.main_page_title)
 
+    def __generate_report_title__(self, directory):
+        name = os.path.basename(directory.rstrip(os.sep))
+        match = re.search(r"(\d{8})_(\d{4})", name)
+        if match:
+            d, t = match.groups()
+            return f"Automated Report: {d[:4]}-{d[4:6]}-{d[6:]} {t[:2]}:{t[2:4]}:00"
+        return f"Automated Report: {name}"
+
     def __collect_files__(self, results_dir, file_specs, prefix=""):
         file_list = []
 
@@ -248,7 +256,7 @@ class ConfluenceReportGenerator:
                 "cpu_chart": f"{prefix}grouped_barchart_cpu.png",
                 "memory_chart": f"{prefix}grouped_barchart_memory.png",
                 "report_title": (
-                    self.generate_report_title(
+                    self.__generate_report_title__(
                         os.path.basename(results_dir.rstrip("/"))
                     )
                     if results_dir
@@ -263,9 +271,8 @@ class ConfluenceReportGenerator:
 
         return template.render(context)
 
-    def create_detailed_report_page(
-        self, results_dir, report_title, git_commit_url=None
-    ):
+    def create_detailed_report_page(self, results_dir, git_commit_url=None):
+        report_title = self.__generate_report_title__(results_dir)
         dashboard_page = self.__get_page_by_title__()
         print("[DEBUG] Got dashboard page.")
         if not dashboard_page:
@@ -366,11 +373,3 @@ class ConfluenceReportGenerator:
         print(f"[DEBUG] Updating dashboard page {dashboard_id} with summary body...")
         self.__update_page__(dashboard_id, self.main_page_title, body)
         print(f"[DEBUG] Dashboard page update complete.")
-
-    def generate_report_title(self, directory):
-        name = os.path.basename(directory.rstrip(os.sep))
-        match = re.search(r"(\d{8})_(\d{4})", name)
-        if match:
-            d, t = match.groups()
-            return f"Automated Report: {d[:4]}-{d[4:6]}-{d[6:]} {t[:2]}:{t[2:4]}:00"
-        return f"Automated Report: {name}"

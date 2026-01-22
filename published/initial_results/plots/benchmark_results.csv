@@ -1,0 +1,31 @@
+method,streams,time_per_frame,fps,cpu,memory,mvs,frames
+Original FFmpeg MV extraction,1,1.71,583.6,97.2,18988.0,0,337
+Original FFmpeg MV extraction Custom video processing setup,1,1.54,649.7,98.3,19196.0,0,337
+Original FFMPEG decode frames,1,1.39,721.1,99.1,19072.0,0,337
+Custom FFmpeg MV-Only - RTSP protocol,1,0.59,1693.3,93.9,19200.0,0,337
+Custom FFmpeg - Flush decoder,1,0.57,1762.2,97.6,19200.0,0,337
+Custom FFmpeg,1,0.59,1690.1,97.8,19328.0,0,337
+Original FFmpeg MV extraction,3,0.69,1457.3,286.0,19192.0,0,1011
+Original FFmpeg MV extraction Custom video processing setup,3,0.67,1486.2,285.4,19196.0,0,1011
+Original FFMPEG decode frames,3,0.62,1604.2,284.9,18944.0,0,1011
+Custom FFmpeg MV-Only - RTSP protocol,3,0.26,3903.5,285.6,19200.0,0,1011
+Custom FFmpeg - Flush decoder,3,0.26,3891.6,272.9,19072.0,0,1011
+Custom FFmpeg,3,0.27,3643.8,268.7,19328.0,0,1011
+Original FFmpeg MV extraction,5,0.46,2167.7,459.3,19196.0,0,1685
+Original FFmpeg MV extraction Custom video processing setup,5,0.46,2194.3,490.0,19196.0,0,1685
+Original FFMPEG decode frames,5,0.46,2167.6,473.9,18944.0,0,1685
+Custom FFmpeg MV-Only - RTSP protocol,5,0.19,5359.2,465.9,19200.0,0,1685
+Custom FFmpeg - Flush decoder,5,0.19,5160.3,431.8,19200.0,0,1685
+Custom FFmpeg,5,0.19,5331.2,450.5,19200.0,0,1685
+Original FFmpeg MV extraction,10,0.4,2491.4,732.6,19196.0,0,3370
+Original FFmpeg MV extraction Custom video processing setup,10,0.4,2521.4,707.3,19324.0,0,3370
+Original FFMPEG decode frames,10,0.43,2327.7,704.9,19072.0,0,3370
+Custom FFmpeg MV-Only - RTSP protocol,10,0.17,6044.7,664.2,19200.0,0,3370
+Custom FFmpeg - Flush decoder,10,0.17,6031.4,676.8,19328.0,0,3370
+Custom FFmpeg,10,0.17,5907.8,635.4,19200.0,0,3370
+Original FFmpeg MV extraction,15,0.46,2163.7,761.7,19328.0,0,5055
+Original FFmpeg MV extraction Custom video processing setup,15,0.49,2029.1,753.2,19200.0,0,5055
+Original FFMPEG decode frames,15,0.44,2267.4,765.6,19072.0,0,5055
+Custom FFmpeg MV-Only - RTSP protocol,15,0.17,6036.1,730.0,19200.0,0,5055
+Custom FFmpeg - Flush decoder,15,0.17,6035.3,754.5,19200.0,0,5055
+Custom FFmpeg,15,0.16,6117.1,736.3,19328.0,0,5055

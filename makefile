@@ -5,13 +5,13 @@ PARENT_DIR  := $(shell dirname $(CURRENT_DIR))
 VENV_FOLDER = $(PARENT_DIR)/venv-motion-vectors
 PYTHON = $(VENV_FOLDER)/bin/python
 
-FF_PKGS := libavformat libavcodec libavutil
+FF_PKGS := libavformat libavcodec libavutil libswresample
 pkg_cmd = PKG_CONFIG_PATH=$(1)/lib/pkgconfig pkg-config
 
 # Functions to extract flags, libs, and rpath
 get_cflags = $(shell $(call pkg_cmd,$(1)) --cflags $(FF_PKGS))
 get_libs   = $(shell $(call pkg_cmd,$(1)) --libs $(FF_PKGS))
-get_rpath  = -Wl,-rpath,$(1)/lib
+get_rpath  = -Wl,-rpath,$(1)/lib -Wl,--disable-new-dtags
 
 define def_ff_flags
 $(2)_CFLAGS := $$(call get_cflags,$(1))
@@ -20,8 +20,8 @@ $(2)_RPATH  := $$(call get_rpath,$(1))
 $(2)        := $$($(2)_CFLAGS) $$($(2)_LIBS) $$($(2)_RPATH)
 endef
 
-CUSTOM_PREFIX    := $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0-custom
-REGULAR_PREFIX   := $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0
+CUSTOM_PREFIX    := $(abspath $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0-custom)
+REGULAR_PREFIX   := $(abspath $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0)
 $(eval $(call def_ff_flags,$(CUSTOM_PREFIX),CUST_FF))
 $(eval $(call def_ff_flags,$(REGULAR_PREFIX),SYS_FF))
 
@@ -46,20 +46,20 @@ install:
 all:
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0 $(EXTRACTOR_DIR)/extractor0.cpp $(WRITER_SRC) $(SYS_FF)
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor1 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor2 $(EXTRACTOR_DIR)/extractor2.cpp $(WRITER_SRC) $(CUST_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3 $(EXTRACTOR_DIR)/extractor3.cpp  $(SYS_FF)
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor2 $(EXTRACTOR_DIR)/extractor2.cpp  $(SYS_FF)
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3 $(EXTRACTOR_DIR)/extractor3.cpp $(WRITER_SRC) $(CUST_FF)
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor4 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(CUST_FF)
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor5 $(EXTRACTOR_DIR)/extractor5.cpp $(WRITER_SRC) $(CUST_FF)
 
 FFMPEG_BUILD = \
-	cd $1 && \
+	cd $1/FFmpeg && \
 	chmod +x ./configure ./ffbuild/*.sh && \
-	./configure --prefix=../ --enable-shared --pkg-config-flags="--static" && \
+	./configure --prefix=$(abspath $1) --enable-shared --enable-swresample --pkg-config-flags="--static" && \
 	make && make install
 
 setup_ffmpeg:
-	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX)/FFmpeg)
-	$(call FFMPEG_BUILD,$(REGULAR_PREFIX)/FFmpeg)
+	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
+	$(call FFMPEG_BUILD,$(REGULAR_PREFIX))
 
 benchmark:
 	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15

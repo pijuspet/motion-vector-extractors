@@ -173,10 +173,9 @@ void collect_process_results(
             char csv_path[256];
             snprintf(csv_path, sizeof(csv_path), "%s/%s_%zu.csv",
                 output_dir.c_str(), output_prefix.c_str(), i);
-            if (remove(csv_path) != 0) {
+            if (remove(csv_path) != 0)
                 fprintf(stderr, "Warning: failed to remove '%s': %s\n",
                     csv_path, strerror(errno));
-            }
         }
     }
 }

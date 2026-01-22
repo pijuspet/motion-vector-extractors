@@ -161,12 +161,11 @@ def add_grouped_bar_charts(slides, df_hp, plots_folder, config_list):
 
 
 def add_section_header(slides, title, subtitle):
-    """Add a section header slide."""
     slides.append(
         {
             "title": title,
             "subtitle": subtitle,
-            "filename": "blank.png",  ## why its used?
+            "filename": "blank.png",
         }
     )
 
@@ -220,7 +219,6 @@ def add_detailed_tables(slides, df_hp, streams_order, plots_folder, config_list)
 def add_per_stream_metric_charts(
     slides, df_hp, streams_order, plots_folder, config_list
 ):
-    """Add individual bar charts for each stream count and metric."""
     for streams in streams_order:
         df_sub = df_hp[df_hp["streams"] == streams]
 

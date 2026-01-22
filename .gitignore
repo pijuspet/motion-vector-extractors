@@ -2,3 +2,11 @@ __pycache__/
 executables/
 results/
 .env
+
+published/**/vtune_results/archive/
+published/**/vtune_results/config/
+published/**/vtune_results/data.0/
+published/**/vtune_results/log/
+published/**/vtune_results/sqlite-db/
+published/**/vtune_results/.norun
+published/**/vtune_results/vtune_results.vtune

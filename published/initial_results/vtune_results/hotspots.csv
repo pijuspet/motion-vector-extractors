@@ -1,0 +1,14 @@
+Function	CPU Time	CPU Time:Effective Time	CPU Time:Spin Time	CPU Time:Overhead Time	Module	Function (Full)	Source File	Start Address
+func@0x3c8330	0.051990	0.051990	0.0	0.0	libavcodec.so.62	func@0x3c8330	[Unknown]	0x3c8330
+func@0x3c34c0	0.040000	0.040000	0.0	0.0	libavcodec.so.62	func@0x3c34c0	[Unknown]	0x3c34c0
+func@0x3c3560	0.039946	0.039946	0.0	0.0	libavcodec.so.62	func@0x3c3560	[Unknown]	0x3c3560
+___pthread_cond_wait	0.032168	0.032168	0.0	0.0	libc.so.6	___pthread_cond_wait	pthread_cond_wait.c	0x9b5e0
+func@0x3c3830	0.030000	0.030000	0.0	0.0	libavcodec.so.62	func@0x3c3830	[Unknown]	0x3c3830
+func@0x3c75d0	0.030000	0.030000	0.0	0.0	libavcodec.so.62	func@0x3c75d0	[Unknown]	0x3c75d0
+___pthread_cond_signal	0.010000	0.010000	0.0	0.0	libc.so.6	___pthread_cond_signal	pthread_cond_signal.c	0x9afc0
+__posix_memalign	0.010000	0.010000	0.0	0.0	libc.so.6	__posix_memalign	malloc.c	0xaf430
+func@0x3c50a0	0.010000	0.010000	0.0	0.0	libavcodec.so.62	func@0x3c50a0	[Unknown]	0x3c50a0
+func@0x3c62e0	0.010000	0.010000	0.0	0.0	libavcodec.so.62	func@0x3c62e0	[Unknown]	0x3c62e0
+func@0x730a70	0.010000	0.010000	0.0	0.0	libavcodec.so.62	func@0x730a70	[Unknown]	0x730a70
+func@0x9ca47	0.008064	0.008064	0.0	0.0	libavcodec.so.62	func@0x9ca47	[Unknown]	0x9ca47
+func@0x40c5f0	0.007832	0.007832	0.0	0.0	libavcodec.so.62	func@0x40c5f0	[Unknown]	0x40c5f0

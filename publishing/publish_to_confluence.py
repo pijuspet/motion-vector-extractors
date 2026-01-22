@@ -17,10 +17,9 @@ def create_report(generator, directory, commit_url, latest=True):
     else:
         print_str = "First"
     print(f"[DEBUG] {print_str} results dir: {directory}")
-    report_title = generator.generate_report_title(directory)
 
     generator.create_detailed_report_page(
-        directory, report_title, git_commit_url=commit_url
+        directory, git_commit_url=commit_url
     )
     print(f"[DEBUG] Finished creating detailed report for {print_str.lower()} run.")
 

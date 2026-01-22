@@ -83,9 +83,10 @@ def parse_output(output_text, stream_count):
     return pd.DataFrame(results)
 
 
-def run_all(
-    input_path,
-    max_streams,
+def benchmark(
+    input,
+    streams,
+    executable_absolute_path,
     exe,
     project_absolute_path,
     results_absolute_path,
@@ -95,17 +96,19 @@ def run_all(
     is_verbose,
     write_to_csv
 ):
-    stream_steps = generate_stream_runs(max_streams)
+    exe_fullpath = os.path.join(executable_absolute_path, exe)
+
+    stream_steps = generate_stream_runs(streams)
     print(f"Stream ranges to test: {stream_steps}")
 
     all_results = []
     for s in stream_steps:
         df, _ = run_benchmark(
-            input_path,
+            input,
             s,
             project_absolute_path,
             results_absolute_path,
-            exe,
+            exe_fullpath,
             is_single_threaded,
             is_verbose,
             write_to_csv
@@ -116,9 +119,6 @@ def run_all(
 
     full_df = pd.concat(all_results, ignore_index=True)
 
-    exclude_methods = ["LIVE555 Parser", "Custom H.264 Parser"]
-    full_df = full_df[~full_df["method"].isin(exclude_methods)].copy()
-
     csv_path = os.path.join(plots_folder, "benchmark_results.csv")
     full_df.to_csv(csv_path, index=False)
     print(f"Saved complete data table: {csv_path}")
@@ -128,33 +128,4 @@ def run_all(
         slides_config,
         "benchmark_comparison_slides.pptx",
         plots_folder,
-    )
-
-
-def benchmark(
-    input,
-    streams,
-    executable_absolute_path,
-    project_absolute_path,
-    results_absolute_path,
-    slides_config_path,
-    plots_folder,
-    exe,
-    is_single_threaded,
-    is_verbose,
-    write_to_csv
-):
-    exe_fullpath = os.path.join(executable_absolute_path, exe)
-
-    run_all(
-        input,
-        streams,
-        exe_fullpath,
-        project_absolute_path,
-        results_absolute_path,
-        slides_config_path,
-        plots_folder,
-        is_single_threaded,
-        is_verbose,
-        write_to_csv
     )

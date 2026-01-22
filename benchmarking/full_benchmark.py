@@ -23,6 +23,9 @@ class BenchmarkRunner:
         self.results_dir = self.results_base / run_timestamp
         self.results_dir.mkdir(exist_ok=True)
 
+        self.ffmpeg_prefix = self.current_dir / "ffmpeg" / "FFmpeg-8.0"
+        self.pkg_config_path = self.ffmpeg_prefix / "lib" / "pkgconfig"
+
         self.benchmarking_dir = self.current_dir / "benchmarking"
         self.benchmarking_dir_executables = self.benchmarking_dir / "executables"
         self.benchmark_exec = self.benchmarking_dir_executables / "benchmark_extractors"
@@ -67,12 +70,15 @@ class BenchmarkRunner:
 
         if not self.run_command("make all"):
             return
-
+        
+        env = os.environ.copy()
+        env["PKG_CONFIG_PATH"] = self.pkg_config_path
+        
         pkg_config_cmd = (
             "pkg-config --cflags --libs libavformat libavcodec libavutil libswscale"
         )
         pkg_flags = subprocess.check_output(
-            pkg_config_cmd, shell=True, text=True
+            pkg_config_cmd, shell=True, text=True, env=env
         ).strip()
 
         compile_cmd = (
@@ -119,11 +125,11 @@ class BenchmarkRunner:
             self.video_file,
             self.streams,
             str(self.benchmarking_dir_executables),
+            str(self.benchmark_exec),
             str(self.current_dir),
             str(self.results_dir),
             str(self.slides_config),
             str(self.plots_dir),
-            str(self.benchmark_exec),
             is_single_threaded,
             is_verbose,
             write_to_csv,
@@ -133,10 +139,10 @@ class BenchmarkRunner:
 
     def generate_mv_comparison(self):
         method0_csv = self.results_dir / "method0_output_0.csv"
-        method6_csv = self.results_dir / "method4_output_0.csv"
+        method4_csv = self.results_dir / "method4_output_0.csv"
         mv_compare.compare(
             method0_csv,
-            method6_csv,
+            method4_csv,
             self.start_frame,
             self.end_frame,
             self.motion_vectors_comparison_file,
