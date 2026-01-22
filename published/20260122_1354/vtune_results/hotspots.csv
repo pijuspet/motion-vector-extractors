@@ -1,0 +1,22 @@
+Function	CPU Time	CPU Time:Effective Time	CPU Time:Spin Time	CPU Time:Overhead Time	Module	Function (Full)	Source File	Start Address
+ff_h264_decode_mb_cabac	0.075501	0.075501	0.0	0.0	libavcodec.so.62	ff_h264_decode_mb_cabac	h264_cabac.c	0x3c8330
+decode_significance_x86	0.050000	0.050000	0.0	0.0	libavcodec.so.62	decode_significance_x86	h264_cabac.c	0x3c50a0
+fill_decode_caches	0.040000	0.040000	0.0	0.0	libavcodec.so.62	fill_decode_caches	h264_mvpred.h	0x3c3830
+___pthread_cond_signal	0.030000	0.030000	0.0	0.0	libc.so.6	___pthread_cond_signal	pthread_cond_signal.c	0x9afc0
+get_cabac_inline_x86	0.030000	0.030000	0.0	0.0	libavcodec.so.62	get_cabac_inline_x86	cabac.h	0x3c3560
+decode_cabac_mb_mvd	0.020000	0.020000	0.0	0.0	libavcodec.so.62	decode_cabac_mb_mvd	h264_cabac.c	0x3c7d60
+ff_print_debug_info2	0.020000	0.020000	0.0	0.0	libavcodec.so.62	ff_print_debug_info2	mpegutils.c	0x730a70
+get_cabac_inline_x86	0.020000	0.020000	0.0	0.0	libavcodec.so.62	get_cabac_inline_x86	cabac.h	0x3c34c0
+..@5753.end	0.012013	0.012013	0.0	0.0	libavcodec.so.62	..@5753.end	x86inc.asm	0xc6f340
+__GI___libc_free	0.010000	0.010000	0.0	0.0	libc.so.6	__GI___libc_free	malloc.c	0xadd30
+___pthread_mutex_unlock	0.010000	0.010000	0.0	0.0	libc.so.6	___pthread_mutex_unlock	pthread_mutex_unlock.c	0xa1a70
+__posix_memalign	0.010000	0.010000	0.0	0.0	libc.so.6	__posix_memalign	malloc.c	0xaf430
+_dl_runtime_resolve_xsavec	0.010000	0.010000	0.0	0.0	ld-linux-x86-64.so.2	_dl_runtime_resolve_xsavec	dl-trampoline.h	0x152f0
+add_mb	0.010000	0.010000	0.0	0.0	libavcodec.so.62	add_mb	mpegutils.c	0x730c4f
+decode_cabac_mb_skip	0.010000	0.010000	0.0	0.0	libavcodec.so.62	decode_cabac_mb_skip	h264_cabac.c	0x3c5590
+fill_decode_neighbors	0.010000	0.010000	0.0	0.0	libavcodec.so.62	fill_decode_neighbors	h264_mvpred.h	0x3c3600
+get_cabac_bypass_x86	0.010000	0.010000	0.0	0.0	libavcodec.so.62	get_cabac_bypass_x86	cabac.h	0x3c7ee8
+pred_pskip_motion	0.010000	0.010000	0.0	0.0	libavcodec.so.62	pred_pskip_motion	h264_mvpred.h	0x3c6594
+write_back_motion_list	0.010000	0.010000	0.0	0.0	libavcodec.so.62	write_back_motion_list	h264_mvpred.h	0x3c63aa
+__memset_evex_unaligned_erms	0.007987	0.007987	0.0	0.0	libc.so.6	__memset_evex_unaligned_erms	memset-vec-unaligned-erms.S	0x199380
+decode_slice	0.004499	0.004499	0.0	0.0	libavcodec.so.62	decode_slice	h264_slice.c	0x40cec0

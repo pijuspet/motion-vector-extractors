@@ -31,9 +31,12 @@ EXECUTABLES_DIR = executables
 WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors
 
 VIDEO_FILE = $(CURRENT_DIR)/videos/vid_h264.mp4
+INITIAL_RUN_DATA = $(CURRENT_DIR)/published/initial_results
 LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/* | sort | tail -n 1)
+
 CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv # original ffmpeg
 CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method4_output_0.csv # custom ffmpeg
+
 
 install:
 	cp -n .env_template .env
@@ -54,7 +57,7 @@ all:
 FFMPEG_BUILD = \
 	cd $1/FFmpeg && \
 	chmod +x ./configure ./ffbuild/*.sh && \
-	./configure --prefix=$(abspath $1) --enable-shared --enable-swresample --pkg-config-flags="--static" && \
+	./configure --prefix=$(abspath $1) --enable-shared --enable-swresample --enable-debug --disable-stripping --pkg-config-flags="--static" && \
 	make && make install
 
 setup_ffmpeg:
@@ -65,7 +68,7 @@ benchmark:
 	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15
 
 publish:
-	$(PYTHON) -m publishing.publish_report 2 $(CURRENT_DIR)/results/20251231_1312 $(CURRENT_DIR)/results/20260105_1115 test_git test_git
+	$(PYTHON) -m publishing.publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) test_git test_git
 	
 generate_video:
 	$(PYTHON) -m video_generation.combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)

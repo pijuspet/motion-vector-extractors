@@ -14,16 +14,12 @@ class BenchmarkPublisher:
         self.project_root = Path.cwd()
         self.results_path = self.project_root / "results"
         self.repo_path = self.project_root / "ffmpeg"
-
-        # How and where can we retrieve this?
-        self.first_results_dir = (
-            "/media/loab/f53f31e5-20d9-427c-b719-3e150951a7ec/published/20250922_133754"
-        )
-
+        
+        self.first_results_dir = self.project_root / "published" / "initial_results"
         self.first_git_commit = "https://github.com/ablouise/ffmpeg-8.0-ourversion/commit/6faaff56c675b77dc783afc89a1dfb113c07bcf9"
 
-        self.video = self.project_root / "videos" / "bigbunny.mp4"
-        # self.video = self.project_root / "videos" / "vid_h264.mp4"
+        # self.video = self.project_root / "videos" / "bigbunny.mp4"
+        self.video = self.project_root / "videos" / "vid_h264.mp4"
         self.streams = 15
 
     def __get_last_dir__(self, path):
