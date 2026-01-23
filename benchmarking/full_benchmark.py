@@ -40,7 +40,7 @@ class BenchmarkRunner:
         self.slides_config = self.benchmarking_dir / "slides_config.json"
         self.plots_dir = self.results_dir / "plots"
 
-        self.setvars_cmd = ". ~/intel/oneapi/setvars.sh --force"
+        self.setvars_cmd = ". /opt/intel/oneapi/setvars.sh --force"
         self.vtune_dir = self.results_dir / "vtune_results"
         self.vtune_hotspots_file = self.vtune_dir / "hotspots.csv"
         self.vtune_topdown_file = self.vtune_dir / "topdown.csv"
@@ -230,7 +230,10 @@ if __name__ == "__main__":
     print("  0: Run ALL steps")
     print()
 
-    choices = input("Choice(s): ").strip().split()
+    if len(sys.argv) > 3:
+        choices = sys.argv[3:]
+    else:
+        choices = input("Choice(s): ").strip().split()
 
     step_map = {
         "1": runner.build,

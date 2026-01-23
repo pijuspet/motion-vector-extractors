@@ -74,3 +74,8 @@ publish:
 generate_video:
 	$(PYTHON) -m video_generation.combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
 	$(PYTHON) -m video_generation.generate_motion_vectors_video $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
+
+test_ffmpeg:
+	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
+	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 1 5
+	chromium --no-sandbox $(LAST_RESULTS_DIR)/vtune_results/call_tree.html
