@@ -77,5 +77,5 @@ generate_video:
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 1 5
+	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15 1 5
 	chromium --no-sandbox $(LAST_RESULTS_DIR)/vtune_results/call_tree.html
