@@ -65,6 +65,9 @@ setup_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
 	$(call FFMPEG_BUILD,$(REGULAR_PREFIX))
 
+ffmpeg_diff:
+	diff -I '/tmp/ffconf\.' -r $(REGULAR_PREFIX)/FFmpeg/ $(CUSTOM_PREFIX)/FFmpeg/  | sed '/Binary\ files\ /d' > ffmpeg/ffmpeg_version.diff
+
 benchmark:
 	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15
 
