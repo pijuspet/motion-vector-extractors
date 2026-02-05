@@ -156,13 +156,14 @@ class BenchmarkRunner:
 
         self.vtune_dir.mkdir(exist_ok=True)
 
-        extractor_exec = self.extractor_executables / "extractor4"
-        output_csv = self.results_dir / "method4_output_vtune.csv"
-
         do_print = 0
         extractor_index = 4
         is_verbose = 1
-        is_single_threaded = 0
+        is_single_threaded = 1 # was 0
+
+        extractor_exec = self.extractor_executables / f"extractor{extractor_index}"
+        output_csv = self.results_dir / f"method{extractor_index}_output_vtune.csv"
+        
         vtune_collect_cmd = f"{self.setvars_cmd} && vtune -collect hotspots -result-dir {self.vtune_dir} -- {extractor_exec} {self.video_file} {do_print} {output_csv} {extractor_index} {is_verbose} {is_single_threaded}"
 
         env = os.environ.copy()

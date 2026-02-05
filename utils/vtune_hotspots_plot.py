@@ -37,13 +37,12 @@ def build_vtune_tree(csv_file: str) -> Tuple[Dict[str, TreeNode], List[str]]:
 
         # Calculate indentation level (2 spaces per level)
         leading_spaces = len(function_line) - len(function_line.lstrip(" "))
-        level = leading_spaces // 2
         function_name = function_line.strip()
 
         node_id = f"node_{index}"
 
         # Pop stack to maintain hierarchy at current level
-        while level_stack and level_stack[-1][0] >= level:
+        while level_stack and level_stack[-1][0] >= leading_spaces:
             level_stack.pop()
 
         # Determine parent from stack
@@ -53,7 +52,7 @@ def build_vtune_tree(csv_file: str) -> Tuple[Dict[str, TreeNode], List[str]]:
             name=function_name,
             cpu_total=cpu_total,
             cpu_self=cpu_self,
-            level=level,
+            level=leading_spaces,
             children=[],
             parent=parent_id,
         )
@@ -64,7 +63,7 @@ def build_vtune_tree(csv_file: str) -> Tuple[Dict[str, TreeNode], List[str]]:
             root_nodes.append(node_id)
 
         # Push current node to stack
-        level_stack.append((level, node_id))
+        level_stack.append((leading_spaces, node_id))
 
     return nodes, root_nodes
 
