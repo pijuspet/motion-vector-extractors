@@ -32,6 +32,9 @@ WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors
 
 # VIDEO_FILE = $(CURRENT_DIR)/videos/vid_h264.mp4
 VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny.mp4
+# VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny_avi.avi
+# VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny_cavlc.mp4
+# VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny_h265.mp4
 INITIAL_RUN_DATA = $(CURRENT_DIR)/published/initial_results
 LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/* | sort | tail -n 1)
 
@@ -66,7 +69,16 @@ setup_ffmpeg:
 	$(call FFMPEG_BUILD,$(REGULAR_PREFIX))
 
 ffmpeg_diff:
-	diff -I '/tmp/ffconf\.' -r $(REGULAR_PREFIX)/FFmpeg/ $(CUSTOM_PREFIX)/FFmpeg/  | sed '/Binary\ files\ /d' > ffmpeg/ffmpeg_version.diff
+	diff -u -I '/tmp/ffconf\.' \
+		-x 'config.h' \
+		-x 'ffbuild' \
+		-x '*.pc' \
+		-x 'ffversion.h' \
+		-r  $(REGULAR_PREFIX)/FFmpeg/ $(CUSTOM_PREFIX)/FFmpeg/ \
+		| sed '/Binary\ files\ /d' \
+		| sed 's|$(REGULAR_PREFIX)/FFmpeg/|a/|' \
+		| sed 's|$(CUSTOM_PREFIX)/FFmpeg/|b/|' \
+		> ffmpeg/ffmpeg_version.diff
 
 benchmark:
 	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15
@@ -83,5 +95,5 @@ decode_ffmpeg:
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15 1 5
-	chromium --no-sandbox $(LAST_RESULTS_DIR)/vtune_results/call_tree.html
+	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 1 1 2 5
+# 	chromium --no-sandbox $(shell ls -d $(CURRENT_DIR)/results/* | sort | tail -n 1)/vtune_results/call_tree.html
