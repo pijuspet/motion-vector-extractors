@@ -41,8 +41,8 @@ struct BenchmarkResult {
 };
 
 std::vector<MethodInfo> methods = {
-    {0, "Original FFmpeg MV extraction"},
-    {1, "Original FFmpeg MV extraction Custom video processing setup"}, // for loop was faster, check
+    {0, "Original FFmpeg MV only"},
+    {1, "Original FFmpeg - Flush decoder"}, // for loop was faster, check
     {2, "Original FFMPEG decode frames"}, // To compare with no mv vs with extraction of mv, not changed
     {3, "Custom FFmpeg MV-Only - RTSP protocol"}, // with rtsp should be faster
     {4, "Custom FFmpeg - Flush decoder"},
