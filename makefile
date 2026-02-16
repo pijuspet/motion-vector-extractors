@@ -31,12 +31,18 @@ EXECUTABLES_DIR = executables
 WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors
 
 # VIDEO_FILE = $(CURRENT_DIR)/videos/vid_h264.mp4
-# VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny.mp4
+VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny.mp4
 # VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny_avi.avi
 # VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny_cavlc.mp4
 # VIDEO_FILE = $(CURRENT_DIR)/videos/h264_cavlc.mp4
 # VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny_h265.mp4
-VIDEO_FILE = $(CURRENT_DIR)/videos/vid_h265.mp4
+# VIDEO_FILE = $(CURRENT_DIR)/videos/vid_h265.mp4
+
+# VIDEO_FILE = $(CURRENT_DIR)/videos/stickman.mp4
+# VIDEO_FILE = $(CURRENT_DIR)/videos/stickman_h265.mp4
+# VIDEO_FILE = $(CURRENT_DIR)/videos/dashcam.mp4
+# VIDEO_FILE = $(CURRENT_DIR)/videos/dashcam_h265.mp4
+
 INITIAL_RUN_DATA = $(CURRENT_DIR)/published/initial_results
 LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/* | sort | tail -n 1)
 
@@ -70,6 +76,7 @@ setup_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
 	$(call FFMPEG_BUILD,$(REGULAR_PREFIX))
 
+# note, the new h265 motion vector extraction function is not visible in this diff file
 ffmpeg_diff:
 	diff -u -I '/tmp/ffconf\.' \
 		-x 'config.h' \
