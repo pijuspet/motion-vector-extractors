@@ -58,5 +58,20 @@
         "cfenv": "cpp",
         "cinttypes": "cpp",
         "typeinfo": "cpp"
-    }
+    },
+    "compareFolders.excludeFilter": [
+        "**/*.o",
+        "**/*.a",
+        "**/*.so.*",
+        "**/*.so",
+        "**/*.pc",
+        "/doc",
+        "/libavutil",
+        "/ffbuild",
+        "/ffmpeg",
+        "/config.h",
+        "/ffmpeg_g",
+        "/ffprobe",
+        "/ffprobe_g"
+    ]
 }
