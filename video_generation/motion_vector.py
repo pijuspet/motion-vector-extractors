@@ -9,7 +9,6 @@ def load_motion_vectors(csv_file: str) -> pd.DataFrame:
     # Verify and convert columns to numeric types
     expected_cols = [
         "frame",
-        "method_id",
         "source",
         "w",
         "h",

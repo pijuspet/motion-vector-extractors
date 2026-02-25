@@ -10,14 +10,13 @@ bool MotionVectorWriter::Open(std::string const& filename) {
         return false;
     }
 
-    file << "frame,method_id,source,w,h,src_x,src_y,dst_x,dst_y,flags,motion_x,"
+    file << "frame,source,w,h,src_x,src_y,dst_x,dst_y,flags,motion_x,"
         "motion_y,motion_scale\n";
     frame_num = 0;
     return true;
 }
 
-int MotionVectorWriter::Write(int frame_num, const AVMotionVector* mvs,
-    int method_id, size_t size) {
+int MotionVectorWriter::Write(int frame_num, const AVMotionVector* mvs, size_t size) {
 
     if (!file.is_open()) {
         fprintf(stderr, "File not open for writing\n");
@@ -49,7 +48,7 @@ int MotionVectorWriter::Write(int frame_num, const AVMotionVector* mvs,
                 mv->h);
             continue;
         }
-        file << frame_num << "," << method_id << "," << mv->source << ","
+        file << frame_num << "," << mv->source << ","
             << int(mv->w) << "," << int(mv->h) << "," << mv->src_x << ","
             << mv->src_y << "," << mv->dst_x << "," << mv->dst_y << "," << "0x"
             << std::hex << mv->flags << "," << std::dec << mv->motion_x << ","

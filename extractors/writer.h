@@ -15,7 +15,7 @@ public:
         Close();
     }
     bool Open(std::string const& filename);
-    int Write(int frame_num, const AVMotionVector* mv, int method_id, size_t size);
+    int Write(int frame_num, const AVMotionVector* mv, size_t size);
     int GetTotalMVs() const { return total_mvs; }
     void Close();
 private:

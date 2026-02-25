@@ -17,11 +17,10 @@ int main(int argc, char** argv) {
     bool do_print = 1;
     bool is_single_threaded = 0;
     bool is_verbose = 1;
-    int extractor_index = -1;
     std::string file_name = "";
     std::string video_file = "";
 
-    if (argc < 7) {
+    if (argc < 6) {
         fprintf(stderr, "Usage: %s <input file> <print mv> <output file>, <extractor index> <is verbose> <is single threaded> \n", argv[0]);
         return -1;
     }
@@ -29,9 +28,8 @@ int main(int argc, char** argv) {
     video_file = argv[1];
     do_print = atoi(argv[2]);
     file_name = argv[3];
-    extractor_index = atoi(argv[4]);
-    is_verbose = atoi(argv[5]);
-    is_single_threaded = atoi(argv[6]);
+    is_verbose = atoi(argv[4]);
+    is_single_threaded = atoi(argv[5]);
 
     avformat_network_init();
 
@@ -121,7 +119,7 @@ int main(int argc, char** argv) {
                 AVFrameSideData* sd = av_frame_get_side_data(frame, AV_FRAME_DATA_MOTION_VECTORS);
                 if (do_print) {
                     if (sd && sd->data && sd->size > 0) {
-                        writer.Write(frame_num, (const AVMotionVector*)sd->data, extractor_index, sd->size);
+                        writer.Write(frame_num, (const AVMotionVector*)sd->data, sd->size);
                     }
                     else {
                         if (is_verbose)

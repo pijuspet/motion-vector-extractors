@@ -19,13 +19,11 @@ struct MethodInfo {
     std::string name;
     std::string exe;
     std::string output_csv;
-    int index;
 
     MethodInfo(int id, const std::string& name)
         : name(name)
         , exe("/extractors/executables/extractor" + std::to_string(id))
         , output_csv("method" + std::to_string(id) + "_output")
-        , index(id)
     {}
 };
 
@@ -104,10 +102,9 @@ std::vector<ChildProcess> spawn_processes(
             char* exe = const_cast<char*>(exe_path.c_str());
             char* video_file_input = const_cast<char*>(video_file.c_str());
             std::string print_to_file = std::to_string(print_csv);
-            std::string extractor_index = std::to_string(method.index);
             std::string verbose = std::to_string(i > 0 ? 0 : is_verbose); // print only 1st stream
             std::string is_single_threated = std::to_string(single_threaded);
-            execl(exe, exe, video_file_input, print_to_file.c_str(), csv_path, extractor_index.c_str(), verbose.c_str(), is_single_threated.c_str(), nullptr);
+            execl(exe, exe, video_file_input, print_to_file.c_str(), csv_path, verbose.c_str(), is_single_threated.c_str(), nullptr);
 
             fprintf(stderr, "Child %d: exec failed: %s\n", i, strerror(errno));
             exit(127);

@@ -79,7 +79,6 @@ def write_results(
 def compare(
     first_file_path, second_file_path, start_frame, end_frame, output_file_path
 ):
-
     if start_frame > end_frame:
         print(f"Error: start_frame ({start_frame}) must be <= end_frame ({end_frame})")
         sys.exit(1)
@@ -87,6 +86,14 @@ def compare(
     try:
         first_method_dataframe = pd.read_csv(first_file_path)
         second_method_dataframe = pd.read_csv(second_file_path)
+
+        # Validate required columns exist before doing anything
+        required = {"frame"} | set(MACROBLOCK_KEYS)
+        for label, df in [("first", first_method_dataframe), ("second", second_method_dataframe)]:
+            missing = required - set(df.columns)
+            if missing:
+                print(f"Error: {label} file missing required columns: {missing}")
+                sys.exit(1)
 
         frame_differences: List[str] = compare_frames(
             first_method_dataframe, second_method_dataframe, start_frame, end_frame

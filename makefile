@@ -40,7 +40,7 @@ VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/bigbunny_walking.mp4
 # VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/stickman.mp4
 # VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/dashcam.mp4
 
-INITIAL_RUN_DATA = $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results
+INITIAL_RUN_DATA = $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results_$(VIDEO_TYPE)
 LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)
 
 CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv # original ffmpeg

@@ -16,13 +16,13 @@ int main(int argc, char** argv) {
     bool is_single_threaded = 0;
     std::string video_file = "";
 
-    if (argc < 7) {
+    if (argc < 6) {
         fprintf(stderr, "Usage: %s <input file> <print mv> <output file>, <extractor index> <is verbose> <is single threaded> \n", argv[0]);
         return -1;
     }
 
     video_file = argv[1];
-    is_single_threaded = atoi(argv[6]);
+    is_single_threaded = atoi(argv[5]);
 
     avformat_network_init();
 
