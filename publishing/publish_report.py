@@ -88,7 +88,12 @@ class BenchmarkPublisher:
         latest_dir: str,
         git_commit_run1: str,
         git_commit_run2: str,
+        use_predefined_git_commits: bool = False
     ):
+        if use_predefined_git_commits:
+            git_commit_run2 = self.publish_git()
+            git_commit_run1 = self.first_git_commit
+            
         print("Publishing report to Confluence...")
         print(f"  First results directory: {first_dir}")
         print(f"  Latest results directory: {latest_dir}")
@@ -168,8 +173,13 @@ class BenchmarkPublisher:
 
             elif step == "3":
                 if len(sys.argv) >= 6:
+                    
+                    predefined_git_commits = False
+                    if len(sys.argv) > 6:
+                        predefined_git_commits = bool(sys.argv[6])
+                        
                     self.publish_confluence(
-                        sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+                        sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], use_predefined_git_commits=predefined_git_commits
                     )
                 else:
                     first_results_dir = input(
