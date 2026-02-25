@@ -17,6 +17,7 @@ class ConfluenceReportGenerator:
         api_token: str,
         space_key: str,
         main_page_title: str,
+        video_type: str,
         project_root: Path,
     ) -> None:
         self.confluence = Confluence(
@@ -29,6 +30,8 @@ class ConfluenceReportGenerator:
 
         self.space_key = space_key
         self.main_page_title = main_page_title
+        self.video_type = video_type.replace("_", " ")
+
         self.project_root = project_root
 
         self.templates = self.project_root / "publishing" / "templates"
@@ -158,6 +161,28 @@ class ConfluenceReportGenerator:
 
         return None
 
+    def __get_or_create_video_type_page__(self):
+        dashboard_page = self.__get_page_by_title__()
+        print("[DEBUG] Got dashboard page.")
+        if not dashboard_page:
+            print(f"[ERROR] Main dashboard page '{self.main_page_title}' not found.")
+            raise Exception(f"Main dashboard page '{self.main_page_title}' not found.")
+        dashboard_id = dashboard_page["id"]
+
+        children = self.confluence.get_child_pages(dashboard_id)
+        video_type_page = next((c for c in children if c["title"] == self.video_type), None)
+
+        if video_type_page:
+            return video_type_page["id"]
+
+        new_page = self.confluence.create_page(
+            space=self.space_key,
+            title=self.video_type,
+            body="<p>Uploading attachments...</p>",
+            parent_id=dashboard_id,
+        )
+        return new_page["id"]
+
     def __update_page__(
         self,
         page_id,
@@ -273,36 +298,25 @@ class ConfluenceReportGenerator:
 
     def create_detailed_report_page(self, results_dir, git_commit_url=None):
         report_title = self.__generate_report_title__(results_dir)
-        dashboard_page = self.__get_page_by_title__()
-        print("[DEBUG] Got dashboard page.")
-        if not dashboard_page:
-            print(f"[ERROR] Main dashboard page '{self.main_page_title}' not found.")
-            raise Exception(f"Main dashboard page '{self.main_page_title}' not found.")
-        parent_id = dashboard_page["id"]
-
         print(f"[DEBUG] git_commit_url in detailed report: {git_commit_url}")
 
-        if parent_id:
-            children = self.confluence.get_child_pages(parent_id)
-            report_exists = any(child["title"] == report_title for child in children)
-
-            if report_exists:
-                print(f"[INFO] Report '{report_title}' already exists.")
-                return
-
+        video_type_id = self.__get_or_create_video_type_page__()
         # region create page
-        create_kwargs = dict(
+        children = self.confluence.get_child_pages(video_type_id)
+        if any(c["title"] == report_title for c in children):
+            print(f"[INFO] Report '{report_title}' already exists. Skipping.")
+            return
+
+        new_report = self.confluence.create_page(
             space=self.space_key,
             title=report_title,
             body="<p>Uploading attachments...</p>",
             representation="storage",
+            parent_id=video_type_id,
         )
-        if parent_id:
-            create_kwargs["parent_id"] = parent_id
-        new_page = self.confluence.create_page(**create_kwargs)
         # endregion
 
-        page_id = new_page["id"]
+        page_id = new_report["id"]
         plots_dir = os.path.join(results_dir, self.plots_subdir)
 
         all_files = []
@@ -335,11 +349,7 @@ class ConfluenceReportGenerator:
         git_commits=None,
         run_titles=None,
     ):
-        dashboard_page = self.__get_page_by_title__()
-        if not dashboard_page:
-            raise Exception(f"Main dashboard page '{self.main_page_title}' not found.")
-        dashboard_id = dashboard_page["id"]
-
+        video_type_id = self.__get_or_create_video_type_page__()
         all_files = []
 
         for idx, results_dir in enumerate(results_dirs):
@@ -359,17 +369,17 @@ class ConfluenceReportGenerator:
 
         for fpath, fname, _ in all_files:
             print(
-                f"[DEBUG] Attaching file: {fpath} as {fname} to dashboard {dashboard_id}"
+                f"[DEBUG] Attaching file: {fpath} as {fname} to dashboard {video_type_id}"
             )
             self.confluence.attach_file(
-                filename=fpath, page_id=dashboard_id, name=fname
+                filename=fpath, page_id=video_type_id, name=fname
             )
         time.sleep(self.attachment_wait_time)
 
         body = self.__get_main_dashboard_body__(
-            dashboard_id, results_dirs, git_commits, run_titles
+            video_type_id, results_dirs, git_commits, run_titles
         )
 
-        print(f"[DEBUG] Updating dashboard page {dashboard_id} with summary body...")
-        self.__update_page__(dashboard_id, self.main_page_title, body)
+        print(f"[DEBUG] Updating dashboard page {video_type_id} with summary body...")
+        self.__update_page__(video_type_id, self.video_type, body)
         print(f"[DEBUG] Dashboard page update complete.")

@@ -88,6 +88,7 @@ class BenchmarkPublisher:
         latest_dir: str,
         git_commit_run1: str,
         git_commit_run2: str,
+        video_type: str,
         use_predefined_git_commits: bool = False
     ):
         if use_predefined_git_commits:
@@ -118,7 +119,7 @@ class BenchmarkPublisher:
             return
 
         ptc.publish_to_confluence(
-            first_dir, latest_dir, git_commit_run1, git_commit_run2, self.project_root
+            first_dir, latest_dir, git_commit_run1, git_commit_run2, video_type, self.project_root
         )
 
         published_dir = latest_dir.replace("/results/", "/published/")
@@ -172,14 +173,13 @@ class BenchmarkPublisher:
                 self.publish_git()
 
             elif step == "3":
-                if len(sys.argv) >= 6:
-                    
+                if len(sys.argv) >= 7:
                     predefined_git_commits = False
-                    if len(sys.argv) > 6:
-                        predefined_git_commits = bool(sys.argv[6])
-                        
+                    if len(sys.argv) > 7:
+                        predefined_git_commits = bool(sys.argv[7])
+                    
                     self.publish_confluence(
-                        sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], use_predefined_git_commits=predefined_git_commits
+                        sys.argv[2], sys.argv[3], sys.argv[5], sys.argv[6], sys.argv[4], use_predefined_git_commits=predefined_git_commits
                     )
                 else:
                     first_results_dir = input(
@@ -190,12 +190,14 @@ class BenchmarkPublisher:
                     )
                     git_commit_run1 = input("Enter the Git commit URL for RUN 1: ")
                     git_commit_run2 = input("Enter the Git commit URL for RUN 2: ")
+                    video_type = input("Enter video type you've run expertiments on: ")
 
                     self.publish_confluence(
                         first_results_dir,
                         latest_results_dir,
                         git_commit_run1,
                         git_commit_run2,
+                        video_type 
                     )
 
             elif step == "0":

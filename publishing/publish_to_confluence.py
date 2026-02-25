@@ -24,7 +24,7 @@ def create_report(generator, directory, commit_url, latest=True):
     print(f"[DEBUG] Finished creating detailed report for {print_str.lower()} run.")
 
 
-def publish_to_confluence(first_dir, second_dir, first_git_commit, second_git_commit, project_root):
+def publish_to_confluence(first_dir, second_dir, first_git_commit, second_git_commit, video_type, project_root):
     confluence_url = os.environ.get("CONFLUENCE_URL")
     space_key = os.environ.get("SPACE_KEY")
     main_page_title = os.environ.get("MAIN_PAGE_TITLE")
@@ -32,7 +32,7 @@ def publish_to_confluence(first_dir, second_dir, first_git_commit, second_git_co
     api_token = os.environ.get("CONFLUENCE_TOKEN")
 
     generator = conf.ConfluenceReportGenerator(
-        confluence_url, username, api_token, space_key, main_page_title, project_root
+        confluence_url, username, api_token, space_key, main_page_title, video_type, project_root
     )
     print("[DEBUG] ConfluenceReportGenerator initialized.")
 
@@ -46,7 +46,7 @@ def publish_to_confluence(first_dir, second_dir, first_git_commit, second_git_co
     # Always update dashboard summary
     print("[DEBUG] Updating dashboard summary...")
     generator.update_main_dashboard_summary(
-        results_dirs=[first_dir, latest_dir],
+        results_dirs=[first_dir, second_dir],
         git_commits=[first_git_commit, second_git_commit],
         run_titles=["First run", "Latest run"],
     )

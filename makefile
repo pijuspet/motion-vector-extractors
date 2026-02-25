@@ -43,8 +43,8 @@ VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/bigbunny_walking.mp4
 INITIAL_RUN_DATA = $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results
 LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)
 
-CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/$(VIDEO_TYPE)/method0_output_0.csv # original ffmpeg
-CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/$(VIDEO_TYPE)/method4_output_0.csv # custom ffmpeg
+CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv # original ffmpeg
+CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method4_output_0.csv # custom ffmpeg
 
 
 install:
@@ -90,7 +90,7 @@ benchmark:
 	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15 $(VIDEO_TYPE)
 
 publish:
-	$(PYTHON) -m publishing.publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) test_git test_git 1
+	$(PYTHON) -m publishing.publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) $(VIDEO_TYPE) test_git test_git 1
 	
 generate_video:
 	$(PYTHON) -m video_generation.combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
@@ -102,4 +102,4 @@ decode_ffmpeg:
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
 	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 1 $(VIDEO_TYPE) 1 2 5
-# 	chromium --no-sandbox $(shell ls -d $(CURRENT_DIR)/results/* | sort | tail -n 1)/vtune_results/call_tree.html
+# 	chromium --no-sandbox $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)/vtune_results/call_tree.html
