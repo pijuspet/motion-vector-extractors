@@ -12,15 +12,18 @@ import utils.vtune_hotspots_plot as vtune
 
 
 class BenchmarkRunner:
-    def __init__(self, video_file, streams=1):
+    def __init__(self, video_file, video_type, streams=1):
         self.video_file = video_file
         self.streams = streams
         self.current_dir = Path.cwd()
         self.results_base = self.current_dir / "results"
         self.results_base.mkdir(exist_ok=True)
 
+        self.results_type = self.results_base / video_type
+        self.results_type.mkdir(exist_ok=True)
+        
         run_timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        self.results_dir = self.results_base / run_timestamp
+        self.results_dir = self.results_type / run_timestamp
         self.results_dir.mkdir(exist_ok=True)
 
         self.ffmpeg_prefix = self.current_dir / "ffmpeg" / "FFmpeg-8.0"
@@ -215,11 +218,13 @@ if __name__ == "__main__":
     video_file = sys.argv[1]
     streams = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
+    video_type = sys.argv[3]
+
     if streams < 1:
         print("Error: streams argument must be a positive integer")
         sys.exit(1)
 
-    runner = BenchmarkRunner(video_file, streams)
+    runner = BenchmarkRunner(video_file, video_type, streams)
 
     print()
     print("Select steps to run (enter one or more numbers separated by space):")
@@ -231,8 +236,8 @@ if __name__ == "__main__":
     print("  0: Run ALL steps")
     print()
 
-    if len(sys.argv) > 3:
-        choices = sys.argv[3:]
+    if len(sys.argv) > 4:
+        choices = sys.argv[4:]
     else:
         choices = input("Choice(s): ").strip().split()
 

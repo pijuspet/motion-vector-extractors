@@ -30,24 +30,21 @@ BENCHMARKING_DIR = benchmarking
 EXECUTABLES_DIR = executables
 WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors
 
-# VIDEO_FILE = $(CURRENT_DIR)/videos/vid_h264.mp4
-VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny.mp4
-# VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny_avi.avi
-# VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny_cavlc.mp4
-# VIDEO_FILE = $(CURRENT_DIR)/videos/h264_cavlc.mp4
-# VIDEO_FILE = $(CURRENT_DIR)/videos/bigbunny_h265.mp4
-# VIDEO_FILE = $(CURRENT_DIR)/videos/vid_h265.mp4
+VIDEO_TYPE = h264_cabac
+# VIDEO_TYPE = h264_cavlc
+# VIDEO_TYPE = h264_avi
+# VIDEO_TYPE = h265
 
-# VIDEO_FILE = $(CURRENT_DIR)/videos/stickman.mp4
-# VIDEO_FILE = $(CURRENT_DIR)/videos/stickman_h265.mp4
-# VIDEO_FILE = $(CURRENT_DIR)/videos/dashcam.mp4
-# VIDEO_FILE = $(CURRENT_DIR)/videos/dashcam_h265.mp4
+VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/bigbunny_walking.mp4
+# VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/bigbunny.mp4
+# VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/stickman.mp4
+# VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/dashcam.mp4
 
-INITIAL_RUN_DATA = $(CURRENT_DIR)/published/initial_results
-LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/* | sort | tail -n 1)
+INITIAL_RUN_DATA = $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results
+LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)
 
-CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv # original ffmpeg
-CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method4_output_0.csv # custom ffmpeg
+CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/$(VIDEO_TYPE)/method0_output_0.csv # original ffmpeg
+CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/$(VIDEO_TYPE)/method4_output_0.csv # custom ffmpeg
 
 
 install:
@@ -90,7 +87,7 @@ ffmpeg_diff:
 		> ffmpeg/ffmpeg_version.diff
 
 benchmark:
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15
+	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15 $(VIDEO_TYPE)
 
 publish:
 	$(PYTHON) -m publishing.publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) test_git test_git
@@ -104,5 +101,5 @@ decode_ffmpeg:
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 1 1 2 5
+	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 1 $(VIDEO_TYPE) 1 2 5
 # 	chromium --no-sandbox $(shell ls -d $(CURRENT_DIR)/results/* | sort | tail -n 1)/vtune_results/call_tree.html
