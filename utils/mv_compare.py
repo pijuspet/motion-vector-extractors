@@ -1,104 +1,99 @@
 from pathlib import Path
-from typing import List, Set
+from typing import List
 import pandas as pd
 import sys
 
+DTYPE_MAP = {
+    "frame": "int32", "source": "int16",
+    "w": "int16", "h": "int16",
+    "src_x": "int16", "src_y": "int16",
+    "dst_x": "int16", "dst_y": "int16",
+    "motion_x": "int16", "motion_y": "int16",
+    "motion_scale": "int16",
+}
 
 def compare_frames(
     first_method_df: pd.DataFrame,
     second_method_df: pd.DataFrame,
-    start_frame: int,
-    end_frame: int,
 ) -> List[str]:
-    differences: List[str] = []
-    excluded_columns: Set[str] = {"frame", "method_id"}
+    KEY_COLUMNS = ["frame", "src_x", "src_y", "dst_x", "dst_y", "source"]
+    columns_to_compare = [col for col in first_method_df.columns if col not in KEY_COLUMNS]
 
-    # Pre-compute comparison columns once
-    columns_to_compare: List[str] = [
-        column_name
-        for column_name in first_method_df.columns
-        if column_name not in excluded_columns
-    ]
+    merged = first_method_df.merge(
+        second_method_df,
+        on=KEY_COLUMNS,
+        how="outer",
+        suffixes=("_first", "_second"),
+        indicator=True,
+    )
 
-    # Set frame as index for O(1) lookups
-    first_method_indexed = first_method_df.set_index("frame")
-    second_method_indexed = second_method_df.set_index("frame")
+    key_tuple = list(zip(
+        merged["frame"], merged["src_x"], merged["src_y"],
+        merged["dst_x"], merged["dst_y"], merged["source"]
+    ))
+    merged["_key_tuple"] = key_tuple
 
-    for frame_number in range(start_frame, end_frame + 1):
-        # Use .loc for faster indexed access
-        try:
-            first_method_data = first_method_indexed.loc[frame_number]
-            second_method_data = second_method_indexed.loc[frame_number]
+    key_str = (
+        "Frame " + merged["frame"].astype(str)
+        + " src=(" + merged["src_x"].astype(str) + "," + merged["src_y"].astype(str) + ")"
+        + " dst=(" + merged["dst_x"].astype(str) + "," + merged["dst_y"].astype(str) + ")"
+        + " source=" + merged["source"].astype(str)
+    )
+    merged["_key_str"] = key_str
 
-            # Handle duplicate frames - take first row if DataFrame returned
-            if isinstance(first_method_data, pd.DataFrame):
-                first_method_row = first_method_data.iloc[0]
-            else:
-                first_method_row = first_method_data
+    diff_tuples: list = []
 
-            if isinstance(second_method_data, pd.DataFrame):
-                second_method_row = second_method_data.iloc[0]
-            else:
-                second_method_row = second_method_data
+    # Missing rows
+    for side, label in [("left_only", "second"), ("right_only", "first")]:
+        mask = merged["_merge"] == side
+        subset = merged[mask]
+        for kt, ks in zip(subset["_key_tuple"], subset["_key_str"]):
+            diff_tuples.append((kt, f"{ks}: missing in {label} file"))
 
-        except KeyError:
-            differences.append(f"Frame {frame_number}: missing in one of the files")
+    # Value differences
+    both = merged[merged["_merge"] == "both"]
+    for col in columns_to_compare:
+        col_first, col_second = f"{col}_first", f"{col}_second"
+        if col_first not in both.columns:
             continue
 
-        # Compare all columns
-        for column_name in columns_to_compare:
-            first_value = first_method_row[column_name]
-            second_value = second_method_row[column_name]
+        both_null = both[col_first].isnull() & both[col_second].isnull()
+        differs = (both[col_first] != both[col_second]) & ~both_null
+        differing = both[differs]
 
-            # Skip if both values are null
-            if pd.isnull(first_value) and pd.isnull(second_value):
-                continue
+        for kt, ks, v1, v2 in zip(
+            differing["_key_tuple"], differing["_key_str"],
+            differing[col_first], differing[col_second]
+        ):
+            diff_tuples.append((kt, f"{ks}: '{col}' differs (first={v1}, second={v2})"))
 
-            # Record difference if values don't match
-            if first_value != second_value:
-                differences.append(
-                    f"Frame {frame_number}: '{column_name}' differs "
-                    f"(first method={first_value}, second method={second_value})"
-                )
-
-    return differences
+    diff_tuples.sort(key=lambda t: t[0])
+    return [t[1] for t in diff_tuples]
 
 
 def write_results(
-    differences: List[str], output_path: Path, start_frame: int, end_frame: int
+    differences: List[str], output_path: Path,
 ) -> None:
     with open(output_path, "w") as output_file:
         if differences:
             output_file.write("\n".join(differences) + "\n")
         else:
             output_file.write(
-                f"No differences found in frames {start_frame} to {end_frame}.\n"
+                f"No differences found in frames in all frames.\n"
             )
 
 
 def compare(
-    first_file_path, second_file_path, start_frame, end_frame, output_file_path
+    first_file_path, second_file_path, output_file_path
 ):
-    if start_frame > end_frame:
-        print(f"Error: start_frame ({start_frame}) must be <= end_frame ({end_frame})")
-        sys.exit(1)
-
     try:
-        first_method_dataframe = pd.read_csv(first_file_path)
-        second_method_dataframe = pd.read_csv(second_file_path)
-
-        # Validate required columns exist before doing anything
-        required = {"frame"} | set(MACROBLOCK_KEYS)
-        for label, df in [("first", first_method_dataframe), ("second", second_method_dataframe)]:
-            missing = required - set(df.columns)
-            if missing:
-                print(f"Error: {label} file missing required columns: {missing}")
-                sys.exit(1)
+        first_method_dataframe = pd.read_csv(first_file_path, dtype=DTYPE_MAP)
+        second_method_dataframe = pd.read_csv(second_file_path, dtype=DTYPE_MAP)
 
         frame_differences: List[str] = compare_frames(
-            first_method_dataframe, second_method_dataframe, start_frame, end_frame
+            first_method_dataframe, second_method_dataframe
         )
-        write_results(frame_differences, output_file_path, start_frame, end_frame)
+        write_results(frame_differences, output_file_path)
         print(f"Comparison complete. Results written to {output_file_path}")
 
     except FileNotFoundError as error:

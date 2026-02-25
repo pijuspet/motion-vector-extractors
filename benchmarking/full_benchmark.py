@@ -35,8 +35,6 @@ class BenchmarkRunner:
 
         self.extractor_executables = self.current_dir / "extractors" / "executables"
 
-        self.start_frame = 10
-        self.end_frame = 100
         self.motion_vectors_comparison_file = (
             self.results_dir / "mv_comparison_result.txt"
         )
@@ -141,13 +139,11 @@ class BenchmarkRunner:
         print(f"Plotting complete. Plots and PPTX in {self.plots_dir}.")
 
     def generate_mv_comparison(self):
-        method0_csv = self.results_dir / "method0_output_0.csv"
+        method1_csv = self.results_dir / "method1_output_0.csv"
         method4_csv = self.results_dir / "method4_output_0.csv"
         mv_compare.compare(
-            method0_csv,
+            method1_csv,
             method4_csv,
-            self.start_frame,
-            self.end_frame,
             self.motion_vectors_comparison_file,
         )
 
