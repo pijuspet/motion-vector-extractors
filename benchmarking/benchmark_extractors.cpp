@@ -57,8 +57,8 @@ double get_timestamp_ms() {
 }
 
 struct ChildProcess {
-    pid_t pid;
-    int pipe_fd;
+    pid_t pid = -1;
+    int pipe_fd = -1;
     int status = 0;
     struct rusage usage = {};
 };
@@ -94,7 +94,7 @@ std::vector<ChildProcess> spawn_processes(
             dup2(pipe_fds[1], STDOUT_FILENO);
             close(pipe_fds[1]);
 
-            char csv_path[256];
+            char csv_path[512];
             snprintf(csv_path, sizeof(csv_path), "%s/%s_%d.csv",
                 output_dir.c_str(), method.output_csv.c_str(), i);
 
@@ -103,10 +103,10 @@ std::vector<ChildProcess> spawn_processes(
             char* video_file_input = const_cast<char*>(video_file.c_str());
             std::string print_to_file = std::to_string(print_csv);
             std::string verbose = std::to_string(i > 0 ? 0 : is_verbose); // print only 1st stream
-            std::string is_single_threated = std::to_string(single_threaded);
-            execl(exe, exe, video_file_input, print_to_file.c_str(), csv_path, verbose.c_str(), is_single_threated.c_str(), nullptr);
+            std::string is_single_threaded = std::to_string(single_threaded);
+            execl(exe, exe, video_file_input, print_to_file.c_str(), csv_path, verbose.c_str(), is_single_threaded.c_str(), nullptr);
 
-            fprintf(stderr, "Child %d: exec failed: %s\n", i, strerror(errno));
+            fprintf(stderr, "Child %d: execl failed: %s\n", i, strerror(errno));
             exit(127);
         }
 
@@ -255,8 +255,8 @@ void print_results(const std::vector<BenchmarkResult>& results, int stream_count
 }
 
 int main(int argc, char** argv) {
-    if (argc < 5) {
-        fprintf(stderr, "Usage: %s <video_file> <streams> <output_dir> <exe_dir> [print_csv]\n", argv[0]);
+    if (argc < 7) {
+        fprintf(stderr, "Usage: %s <video_file> <streams> <output_dir> <exe_dir> <single_threaded> <verbose> [print_csv]\n", argv[0]);
         return 1;
     }
 
@@ -274,8 +274,10 @@ int main(int argc, char** argv) {
     }
 
     if (is_verbose) {
-        printf("Starting benchmark on: %s\n", video_file.c_str());
-        printf("Streams per method: %d\n\n", stream_count);
+        printf("Video file       : %s\n", video_file.c_str());
+        printf("Streams / method : %d\n", stream_count);
+        printf("Single-threaded  : %s\n", single_threaded ? "yes" : "no");
+        printf("Print CSV        : %s\n\n", print_csv    ? "yes" : "no");
     }
 
     std::vector<BenchmarkResult> results;

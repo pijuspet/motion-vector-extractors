@@ -1,31 +1,31 @@
 method,streams,time_per_frame,fps,cpu,memory,mvs,frames
-Original FFmpeg MV only,1,7.54,132.7,104.7,39544.0,0,298
-Original FFmpeg - Flush decoder,1,7.08,141.2,105.4,39692.0,0,300
-Original FFMPEG decode frames,1,6.66,150.1,106.1,37520.0,0,298
-Custom FFmpeg MV-Only - RTSP protocol,1,6.68,149.7,105.5,39684.0,0,298
-Custom FFmpeg - Flush decoder,1,7.05,141.9,105.8,39676.0,0,300
-Custom FFmpeg,1,6.77,147.7,105.9,39672.0,0,298
-Original FFmpeg MV only,3,3.24,308.8,312.3,39544.0,0,894
-Original FFmpeg - Flush decoder,3,3.15,317.3,312.8,39696.0,0,900
-Original FFMPEG decode frames,3,4.94,202.3,186.2,37648.0,0,894
-Custom FFmpeg MV-Only - RTSP protocol,3,3.11,321.9,311.6,39520.0,0,894
-Custom FFmpeg - Flush decoder,3,3.03,329.9,311.9,39672.0,0,900
-Custom FFmpeg,3,3.31,302.2,311.4,39676.0,0,894
-Original FFmpeg MV only,5,2.63,379.7,520.4,39676.0,0,1490
-Original FFmpeg - Flush decoder,5,2.35,425.1,522.6,39696.0,0,1500
-Original FFMPEG decode frames,5,2.41,415.5,528.8,37652.0,0,1490
-Custom FFmpeg MV-Only - RTSP protocol,5,2.31,432.6,521.9,39688.0,0,1490
-Custom FFmpeg - Flush decoder,5,2.35,425.2,518.3,39668.0,0,1500
-Custom FFmpeg,5,2.33,428.6,525.5,39700.0,0,1490
-Original FFmpeg MV only,10,2.78,360.1,600.0,39700.0,0,2980
-Original FFmpeg - Flush decoder,10,2.06,484.9,815.1,39700.0,0,3000
-Original FFMPEG decode frames,10,2.27,441.0,817.9,37720.0,0,2980
-Custom FFmpeg MV-Only - RTSP protocol,10,2.85,350.7,794.9,39700.0,0,2980
-Custom FFmpeg - Flush decoder,10,4.47,223.9,598.8,39700.0,0,3000
-Custom FFmpeg,10,2.93,341.4,800.4,39700.0,0,2980
-Original FFmpeg MV only,15,2.91,343.6,827.6,39700.0,0,4470
-Original FFmpeg - Flush decoder,15,3.91,255.5,721.8,39748.0,0,4500
-Original FFMPEG decode frames,15,2.94,340.4,819.6,37648.0,0,4470
-Custom FFmpeg MV-Only - RTSP protocol,15,3.77,265.4,701.9,39700.0,0,4470
-Custom FFmpeg - Flush decoder,15,3.12,320.6,822.3,39700.0,0,4500
-Custom FFmpeg,15,3.57,279.9,715.2,39700.0,0,4470
+Original FFmpeg MV only,1,7.31,136.8,99.6,39672.0,0,298
+Original FFmpeg - Flush decoder,1,7.73,129.3,99.3,39312.0,0,300
+Original FFMPEG decode frames,1,7.09,141.0,99.2,37520.0,0,298
+Custom FFmpeg MV-Only - RTSP protocol,1,6.92,144.5,99.6,39560.0,0,298
+Custom FFmpeg - Flush decoder,1,6.72,148.8,99.2,39312.0,0,300
+Custom FFmpeg,1,6.6,151.6,98.8,39404.0,0,298
+Original FFmpeg MV only,3,3.15,317.4,292.1,39536.0,0,894
+Original FFmpeg - Flush decoder,3,3.23,309.2,293.7,39436.0,0,900
+Original FFMPEG decode frames,3,3.24,308.7,293.0,37396.0,0,894
+Custom FFmpeg MV-Only - RTSP protocol,3,3.36,298.0,294.7,39552.0,0,894
+Custom FFmpeg - Flush decoder,3,3.4,294.1,291.6,39404.0,0,900
+Custom FFmpeg,3,3.3,302.8,293.0,39312.0,0,894
+Original FFmpeg MV only,5,2.59,386.6,486.9,39696.0,0,1490
+Original FFmpeg - Flush decoder,5,2.7,369.8,487.0,39532.0,0,1500
+Original FFMPEG decode frames,5,2.63,380.3,490.2,37524.0,0,1490
+Custom FFmpeg MV-Only - RTSP protocol,5,2.69,372.1,492.2,39684.0,0,1490
+Custom FFmpeg - Flush decoder,5,3.17,315.5,486.2,39532.0,0,1500
+Custom FFmpeg,5,5.62,178.1,451.3,39532.0,0,1490
+Original FFmpeg MV only,10,3.43,291.5,746.1,39696.0,0,2980
+Original FFmpeg - Flush decoder,10,3.22,310.9,752.5,39572.0,0,3000
+Original FFMPEG decode frames,10,2.66,375.5,755.6,37524.0,0,2980
+Custom FFmpeg MV-Only - RTSP protocol,10,2.76,362.5,739.8,39704.0,0,2980
+Custom FFmpeg - Flush decoder,10,2.85,351.2,771.4,39572.0,0,3000
+Custom FFmpeg,10,2.89,346.2,738.3,39444.0,0,2980
+Original FFmpeg MV only,15,2.35,424.6,772.7,39696.0,0,4470
+Original FFmpeg - Flush decoder,15,1.86,539.0,772.1,39532.0,0,4500
+Original FFMPEG decode frames,15,1.99,503.0,768.8,37588.0,0,4470
+Custom FFmpeg MV-Only - RTSP protocol,15,1.98,504.5,774.8,39704.0,0,4470
+Custom FFmpeg - Flush decoder,15,2.16,462.9,762.8,39564.0,0,4500
+Custom FFmpeg,15,2.05,488.8,777.0,39568.0,0,4470
