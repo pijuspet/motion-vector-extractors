@@ -48,6 +48,7 @@ CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method4_output_0.csv # custom ffmpeg
 
 
 install:
+	apt install -y build-essential gcc g++ make pkg-config nasm
 	cp -n .env_template .env
 	mkdir -p $(VENV_FOLDER)
 	mkdir -p $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)
