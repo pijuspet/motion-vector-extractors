@@ -15,6 +15,10 @@
 #include <sys/resource.h>
 #include <sys/wait.h>
 
+static constexpr int CSV_PATH_MAX   = 512;
+static constexpr int PIPE_BUF_SIZE  = 128;
+static constexpr int MAX_STREAMS    = 32; 
+
 struct MethodInfo {
     std::string name;
     std::string exe;
@@ -29,13 +33,36 @@ struct MethodInfo {
 
 struct BenchmarkResult {
     std::string name;
+    // Time
+    // Wall-clock time for all streams to finish
     double total_time_ms = 0;
+    // Per-stream latency: wall_time / frames_per_stream
     double avg_time_per_frame_ms = 0;
+    // Aggregate: (1000 / avg_ms) * stream_count
     double throughput_fps = 0;
+
+    // CPU
+    // FIX: cpu_usage_percent now means average utilization per process (0–100% = 1 core).
+    // Previously it was summing all processes' CPU time and dividing by wall time,
+    // which produced values like 800% or 1400% — purely proportional to stream count
+    // and completely masking any difference between methods.
+    // Avg CPU per stream  (user+sys time)
     double cpu_usage_percent = 0;
-    long memory_peak_kb = 0;
+    // Total CPU across all streams (useful for system load view)
+    double cpu_total_percent = 0;
+    
+    // Memory
+    // Sum of peak RSS across all streams
+    long memory_total_kb = 0;  
+    // Peak RSS of the single worst stream
+    long memory_per_stream_kb = 0;  
+
+    // Counts
     int total_motion_vectors = 0;
     int frame_count = 0;
+    int stream_count = 0;
+
+    double cpu_ms_per_frame = 0; 
 };
 
 std::vector<MethodInfo> methods = {
@@ -94,17 +121,22 @@ std::vector<ChildProcess> spawn_processes(
             dup2(pipe_fds[1], STDOUT_FILENO);
             close(pipe_fds[1]);
 
-            char csv_path[512];
+            char csv_path[CSV_PATH_MAX];
             snprintf(csv_path, sizeof(csv_path), "%s/%s_%d.csv",
                 output_dir.c_str(), method.output_csv.c_str(), i);
 
             std::string exe_path = exe_dir + method.exe;
-            char* exe = const_cast<char*>(exe_path.c_str());
-            char* video_file_input = const_cast<char*>(video_file.c_str());
             std::string print_to_file = std::to_string(print_csv);
             std::string verbose = std::to_string(i > 0 ? 0 : is_verbose); // print only 1st stream
-            std::string is_single_threaded = std::to_string(single_threaded);
-            execl(exe, exe, video_file_input, print_to_file.c_str(), csv_path, verbose.c_str(), is_single_threaded.c_str(), nullptr);
+            std::string is_single_thr = std::to_string(single_threaded);
+
+            execl(exe_path.c_str(), exe_path.c_str(),
+                  video_file.c_str(),
+                  print_to_file.c_str(),
+                  csv_path,
+                  verbose.c_str(),
+                  is_single_thr.c_str(),
+                  nullptr);
 
             fprintf(stderr, "Child %d: execl failed: %s\n", i, strerror(errno));
             exit(127);
@@ -134,6 +166,7 @@ void collect_process_results(
 
         if (wait4(proc.pid, &proc.status, 0, &proc.usage) == -1) {
             perror("wait4 failed");
+            close(proc.pipe_fd);
             continue;
         }
 
@@ -142,7 +175,7 @@ void collect_process_results(
                 printf("Child %zu (pid %d) exited with code %d",
                     i, proc.pid, WEXITSTATUS(proc.status));
 
-            char buffer[64];
+            char buffer[PIPE_BUF_SIZE];
             ssize_t bytes = read(proc.pipe_fd, buffer, sizeof(buffer) - 1);
             if (bytes > 0) {
                 buffer[bytes] = '\0';
@@ -167,7 +200,7 @@ void collect_process_results(
 
         // Clean up CSV files from non-primary streams
         if (i != 0 && print_csv) {
-            char csv_path[256];
+            char csv_path[CSV_PATH_MAX];
             snprintf(csv_path, sizeof(csv_path), "%s/%s_%zu.csv",
                 output_dir.c_str(), output_prefix.c_str(), i);
             if (remove(csv_path) != 0)
@@ -189,6 +222,7 @@ BenchmarkResult run_benchmark(
 ) {
     BenchmarkResult result;
     result.name = method.name;
+    result.stream_count = stream_count;
 
     if (is_verbose)
         printf("Starting %d parallel streams for: %s\n", stream_count, method.name.c_str());
@@ -209,54 +243,117 @@ BenchmarkResult run_benchmark(
     result.frame_count = total_frames;
     result.total_motion_vectors = total_mvs;
 
-    long max_memory = 0;
-    double total_cpu_time = 0;
+    // Per-stream latency: wall time divided by frames in a *single* stream.
+    // FIX: previously divided by total_frames (sum across all N streams),
+    // making it look N× faster when running more streams — not a real speedup.
+    int frames_per_stream = (stream_count > 0 && total_frames > 0)
+        ? total_frames / stream_count
+        : 0;
+
+    result.avg_time_per_frame_ms = (frames_per_stream > 0)
+        ? result.total_time_ms / static_cast<double>(frames_per_stream)
+        : 0.0;
+
+    // Aggregate throughput = how many frames/sec the whole system delivers
+    result.throughput_fps = (result.avg_time_per_frame_ms > 0)
+        ? (1000.0 / result.avg_time_per_frame_ms) * stream_count
+        : 0.0;
+
+    // ── CPU ─────────────────────────────────────────────────────────────────
+    // FIX 1: Include system (kernel) time — video decoding involves heavy I/O
+    //        and memcpy syscalls; ignoring ru_stime understates real CPU cost.
+    // FIX 2: Average per-process instead of summing — the old sum/wall_time
+    //        formula produced ~100% × N, which is why you saw 800% / 1400%.
+    //        That number was just stream_count × ~100 and told you nothing
+    //        about whether one method was more CPU-efficient than another.
+    double total_cpu_time = 0.0;
+    long   total_memory   = 0;
+    long   peak_memory    = 0;
+
     for (const auto& proc : processes) {
-        max_memory = std::max(max_memory, proc.usage.ru_maxrss);
-        total_cpu_time += proc.usage.ru_utime.tv_sec + proc.usage.ru_utime.tv_usec / 1e6;
+        double user_time = proc.usage.ru_utime.tv_sec
+                         + proc.usage.ru_utime.tv_usec / 1e6;
+        double sys_time  = proc.usage.ru_stime.tv_sec
+                         + proc.usage.ru_stime.tv_usec  / 1e6;
+        total_cpu_time  += user_time + sys_time;
+
+        long rss_kb = proc.usage.ru_maxrss;
+        total_memory += rss_kb;
+        peak_memory   = std::max(peak_memory, rss_kb);
     }
 
-    result.memory_peak_kb = max_memory;
-    result.cpu_usage_percent = (result.total_time_ms > 0)
-        ? (total_cpu_time / (result.total_time_ms / 1000.0)) * 100.0
-        : 0.0;
-    result.avg_time_per_frame_ms = (total_frames > 0)
-        ? result.total_time_ms / total_frames
-        : 0;
-    result.throughput_fps = (result.avg_time_per_frame_ms > 0)
-        ? 1000.0 / result.avg_time_per_frame_ms
-        : 0;
+    double wall_time_sec = result.total_time_ms / 1000.0;
 
+    if (wall_time_sec > 0 && stream_count > 0) {
+        // Average CPU utilisation per stream (comparable across stream counts)
+        double avg_cpu_per_stream   = total_cpu_time / stream_count;
+        result.cpu_usage_percent    = (avg_cpu_per_stream / wall_time_sec) * 100.0;
+
+        // Total CPU load across all streams as % of all available logical cores
+        long num_cores              = sysconf(_SC_NPROCESSORS_ONLN);
+        result.cpu_total_percent    = (num_cores > 0)
+            ? (total_cpu_time / wall_time_sec) * 100.0 / static_cast<double>(num_cores)
+            : (total_cpu_time / wall_time_sec) * 100.0;
+    }
+    result.cpu_ms_per_frame = (frames_per_stream > 0)
+        ? (total_cpu_time / stream_count / frames_per_stream) * 1000.0
+        : 0.0;
+
+    // ── Memory ──────────────────────────────────────────────────────────────
+    result.memory_total_kb      = total_memory;
+    result.memory_per_stream_kb = peak_memory;
     return result;
 }
 
 void print_results(const std::vector<BenchmarkResult>& results, int stream_count) {
-    int line_size = 104;
-    std::string title = "COMPLETE MOTION VECTOR EXTRACTION BENCHMARK";
-    int title_offset = (line_size - title.length()) / 2;
-    char streams_title[32];
-    snprintf(streams_title, sizeof(streams_title), "Streams per Method: %d\n", stream_count);
-    int streams_title_offset = (line_size - 32) / 2;
-    printf("\n%s\n", std::string(line_size, '=').c_str());
-    printf("%*s%s\n", title_offset, "", title.c_str());
-    printf("%*s%s\n", streams_title_offset, "", streams_title);
-    printf("%s\n\n", std::string(line_size, '=').c_str());
+    int LINE = 136;
 
-    printf("%-30s | %12s | %6s | %10s | %9s | %12s | %8s\n",
-        "Method", "Time/Frame", "FPS", "CPU Usage", "Mem KB", "Total MVs", "Frames");
-    printf("%s\n", std::string(line_size, '-').c_str());
+    std::string title = "COMPLETE MOTION VECTOR EXTRACTION BENCHMARK";
+    char streams_title[64];
+    long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    snprintf(streams_title, sizeof(streams_title),
+             "Streams per Method: %d   |   Logical Cores: %ld", stream_count, num_cores);
+
+    printf("\n%s\n", std::string(LINE, '=').c_str());
+    printf("%*s%s\n",  (int)(LINE - title.length())  / 2, "", title.c_str());
+    printf("%*s%s\n\n",(int)(LINE - strlen(streams_title)) / 2, "", streams_title);
+    printf("%s\n\n", std::string(LINE, '=').c_str());
+
+    printf("%-32s | %13s | %10s | %16s | %11s | %11s | %8s\n",
+        "Method",
+        "ms/frame(strm)",
+        "Total FPS",
+        "CPU ms/frame",      // <-- replaces the broken % columns
+        "Mem Total KB",
+        "Mem/Strm KB",
+        "Frames");
+    printf("%s\n", std::string(LINE, '-').c_str());
 
     for (const auto& r : results) {
-        printf("%-30s | %10.2f ms | %6.1f | %8.1f%% | %9ld | %12d | %8d\n",
-            r.name.c_str(), r.avg_time_per_frame_ms, r.throughput_fps,
-            r.cpu_usage_percent, r.memory_peak_kb,
-            r.total_motion_vectors, r.frame_count);
+        printf("%-32s | %11.2f ms | %8.1f   | %13.3f ms | %11ld | %11ld | %8d\n",
+            r.name.c_str(),
+            r.avg_time_per_frame_ms,
+            r.throughput_fps,
+            r.cpu_ms_per_frame,
+            r.memory_total_kb,
+            r.memory_per_stream_kb,
+            r.frame_count);
     }
+
+    printf("\n");
+    printf("  ms/frame(strm)  = wall time / (total frames / streams)      — per-stream decode latency\n");
+    printf("  Total FPS       = (1000 / ms_per_frame) * streams            — aggregate system throughput\n");
+    printf("  CPU ms/frame    = avg(user+sys CPU time per process) / frames_per_stream * 1000\n");
+    printf("                    — actual CPU work burned per frame; lower = more efficient\n");
+    printf("                    — comparable across stream counts, unlike CPU%%\n");
+    printf("%s\n", std::string(LINE, '-').c_str());
 }
 
 int main(int argc, char** argv) {
     if (argc < 7) {
-        fprintf(stderr, "Usage: %s <video_file> <streams> <output_dir> <exe_dir> <single_threaded> <verbose> [print_csv]\n", argv[0]);
+        fprintf(stderr,
+            "Usage: %s <video_file> <streams> <output_dir> <exe_dir> "
+            "<single_threaded> <verbose> [print_csv]\n", argv[0]);
         return 1;
     }
 
@@ -264,31 +361,32 @@ int main(int argc, char** argv) {
     int stream_count = std::atoi(argv[2]);
     std::string output_dir = argv[3];
     std::string exe_dir = argv[4];
-    bool single_threaded = std::atoi(argv[5]);
+    bool single_thr = std::atoi(argv[5]);
     bool is_verbose = std::atoi(argv[6]);
     bool print_csv = (argc >= 8) ? std::atoi(argv[7]) : false;
 
-    if (stream_count < 1 || stream_count > 100) {
-        fprintf(stderr, "Streams must be between 1 and 100\n");
+    if (stream_count < 1 || stream_count > MAX_STREAMS) {
+        fprintf(stderr, "Streams must be between 1 and %d\n", MAX_STREAMS);
         return 1;
     }
 
     if (is_verbose) {
         printf("Video file       : %s\n", video_file.c_str());
         printf("Streams / method : %d\n", stream_count);
-        printf("Single-threaded  : %s\n", single_threaded ? "yes" : "no");
+        printf("Single-threaded  : %s\n", single_thr ? "yes" : "no");
         printf("Print CSV        : %s\n\n", print_csv    ? "yes" : "no");
     }
 
     std::vector<BenchmarkResult> results;
+    results.reserve(methods.size());
     for (const auto& method : methods) {
         if (is_verbose)
             printf("Running: %s\n", method.name.c_str());
-        auto result = run_benchmark(method, video_file, stream_count, print_csv, output_dir, exe_dir, is_verbose, single_threaded);
+        auto result = run_benchmark(method, video_file, stream_count, print_csv, output_dir, exe_dir, is_verbose, single_thr);
         results.push_back(result);
         if (is_verbose)
-            printf("Done: %d frames, %.2f ms/frame, %.1f FPS\n\n",
-                result.frame_count, result.avg_time_per_frame_ms, result.throughput_fps);
+            printf("Done: %d frames, %.2f ms/frame, %.1f FPS, %.1f%% CPU/stream\n\n",
+                result.frame_count, result.avg_time_per_frame_ms, result.throughput_fps, result.cpu_usage_percent);
     }
 
     print_results(results, stream_count);

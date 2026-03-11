@@ -8,7 +8,7 @@ import json
 import benchmarking.plots as plts
 
 
-def load_benchmark_config(config_path):
+def load_benchmark_config(config_path: str) -> dict:
     try:
         with open(config_path, "r") as f:
             return json.load(f)
@@ -73,21 +73,19 @@ def create_fastest_methods_table(df_hp, streams_order):
     rows = []
     for s in streams_order:
         sub = df_hp[df_hp["streams"] == s]
-        if not sub.empty:
-            fastest = sub.loc[sub["time_per_frame"].idxmin()]
-            rows.append(
-                [
-                    s,
-                    fastest["method"],
-                    fastest["time_per_frame"],
-                    fastest["fps"],
-                    fastest["cpu"],
-                ]
-            )
+        if sub.empty:
+            continue
+        fastest = sub.loc[sub["time_per_frame"].idxmin()]
+        rows.append({
+            "Streams":          s,
+            "Method":           fastest["method"],
+            "Time/Frame (ms)":  fastest["time_per_frame"],
+            "FPS (aggregate)":  fastest["fps"],
+            "CPU ms/frame":     fastest["cpu_ms_per_frame"],  # replaces cpu + cpu_total
+            "Mem Total KB":     fastest["memory"],
+        })
 
-    return pd.DataFrame(
-        rows, columns=["Streams", "Method", "Time/Frame (ms)", "FPS", "CPU (%)"]
-    )
+    return pd.DataFrame(rows)
 
 
 def add_fastest_methods_slide(slides, df_hp, streams_order, plots_folder, config_list):
@@ -171,18 +169,23 @@ def add_section_header(slides, title, subtitle):
 
 
 def create_detailed_table(df_sub):
-    tbl = df_sub[
-        ["method", "time_per_frame", "fps", "cpu", "memory", "mvs", "frames"]
-    ].copy()
-    tbl.columns = [
-        "Method",
-        "Time/frame (ms)",
-        "FPS",
-        "CPU (%)",
-        "Mem Δ KB",
-        "Total MVs",
-        "Frames",
-    ]
+    desired_cols = {
+        "method":           "Method",
+        "time_per_frame":   "Time/Frame (ms)",
+        "fps":              "FPS (aggregate)",
+        "cpu_ms_per_frame": "CPU ms/frame",
+        "memory":           "Mem Total KB",
+        "mem_per_stream":   "Mem/Strm KB",
+        "frames":           "Frames",
+    }
+
+    available = {col: label for col, label in desired_cols.items() if col in df_sub.columns}
+    missing   = set(desired_cols) - set(available)
+    if missing:
+        print(f"Warning: create_detailed_table missing columns: {missing}")
+
+    tbl = df_sub[list(available.keys())].copy()
+    tbl.columns = list(available.values())
     return tbl
 
 
@@ -223,6 +226,11 @@ def add_per_stream_metric_charts(
         df_sub = df_hp[df_hp["streams"] == streams]
 
         for cfg in config_list:
+            metric = cfg["metric"]
+            if metric not in df_sub.columns:
+                print(f"Warning: metric '{metric}' not found in DataFrame, skipping chart.")
+                continue
+
             filename = cfg["filename"].format(streams=streams)
             chart_title = cfg["chart_title"].format(streams=streams)
             slide_title = cfg["slide_title"].format(streams=streams)
@@ -230,7 +238,7 @@ def add_per_stream_metric_charts(
 
             plts.plot_metric(
                 df_sub,
-                cfg["metric"],
+                metric,
                 chart_title,
                 cfg["ylabel"],
                 filename,
@@ -252,6 +260,15 @@ def produce_slides(df_hp, slides_config_path, file_name, plots_folder):
     if not config:
         print("Aborting slide generation due to missing or invalid config.")
         return
+
+    # Validate that critical columns are present before attempting slide generation
+    required_cols = {"method", "streams", "time_per_frame", "fps", "cpu_ms_per_frame",
+                     "memory", "mem_per_stream", "frames"}
+    missing_cols = required_cols - set(df_hp.columns)
+    if missing_cols:
+        print(f"Warning: DataFrame is missing expected columns: {missing_cols}")
+        print(f"  Available columns: {list(df_hp.columns)}")
+        print("  Slides may be incomplete. Check parse_output() and C++ output format.")
 
     slides = []
     streams_order = sorted(df_hp["streams"].unique())

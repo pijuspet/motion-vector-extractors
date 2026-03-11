@@ -15,11 +15,11 @@
             "subtitle": "High Profile Methods: Time per Frame vs Streams"
         },
         {
-            "metric": "cpu",
-            "title": "CPU Usage Scaling",
-            "ylabel": "CPU Usage (%)",
+            "metric": "cpu_ms_per_frame",
+            "title": "CPU Efficiency Scaling",
+            "ylabel": "CPU Work per Frame (ms, Lower = Better)",
             "filename": "scaling_cpu.png",
-            "subtitle": "High Profile Methods: CPU Usage (%) vs Streams"
+            "subtitle": "High Profile Methods: CPU ms/frame vs Streams"
         },
         {
             "metric": "memory",
@@ -47,12 +47,12 @@
             "slide_subtitle": "All High Profile Methods: Latency (ms/frame) per Streams, Grouped Bar Chart"
         },
         {
-            "metric": "cpu",
-            "chart_title": "Algorithm CPU Usage (%) vs Streams — Grouped Bar",
-            "ylabel": "CPU Usage (%)",
+            "metric": "cpu_ms_per_frame",
+            "chart_title": "Algorithm CPU Efficiency (ms/frame) vs Streams — Grouped Bar",
+            "ylabel": "CPU Work per Frame (ms, Lower = Better)",
             "filename": "grouped_barchart_cpu.png",
-            "slide_title": "Grouped CPU Usage Comparison (All Streams)",
-            "slide_subtitle": "All High Profile Methods: CPU Usage per Streams, Grouped Bar Chart"
+            "slide_title": "Grouped CPU Efficiency Comparison (All Streams)",
+            "slide_subtitle": "All High Profile Methods: CPU ms/frame per Streams, Grouped Bar Chart"
         },
         {
             "metric": "memory",
@@ -83,12 +83,12 @@
             "colormap": "mako"
         },
         {
-            "metric": "cpu",
-            "chart_title": "Algorithm Comparison: CPU % @ {streams} Streams",
-            "ylabel": "CPU Usage (%)",
+            "metric": "cpu_ms_per_frame",
+            "chart_title": "Algorithm Comparison: CPU Efficiency @ {streams} Streams",
+            "ylabel": "CPU Work per Frame (ms, Lower = Better)",
             "filename": "barchart_cpu_{streams}streams.png",
-            "slide_title": "Algorithm CPU Usage Comparison ({streams} Streams)",
-            "slide_subtitle": "CPU Usage (%) by High Profile Method at {streams} Streams",
+            "slide_title": "Algorithm CPU Efficiency Comparison ({streams} Streams)",
+            "slide_subtitle": "CPU ms/frame by High Profile Method at {streams} Streams",
             "colormap": "rocket"
         },
         {

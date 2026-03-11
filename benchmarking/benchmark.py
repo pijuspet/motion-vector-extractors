@@ -49,37 +49,53 @@ def parse_output(output_text, stream_count):
     results = []
     for line in output_text.split("\n"):
         line = line.strip()
-        if "Method" in line and "Time/Frame" in line:
+        if "Method" in line and "ms/frame(strm)" in line:
             in_table = True
             continue
-        if in_table:
-            if line.startswith("—") or line == "" or line.startswith("---"):
-                continue
-            parts = [x.strip() for x in line.split("|")]
-            if len(parts) < 7:
-                continue
-            try:
-                method = parts[0]
-                time_per_frame = float(parts[1].replace("ms", "").strip())
-                fps = float(parts[2])
-                cpu = float(parts[3].replace("%", ""))
-                mem = float(parts[4])
-                mvs = int(parts[5])
-                frames = int(parts[6])
-                results.append(
-                    {
-                        "method": method,
-                        "streams": stream_count,
-                        "time_per_frame": time_per_frame,
-                        "fps": fps,
-                        "cpu": cpu,
-                        "memory": mem,
-                        "mvs": mvs,
-                        "frames": frames,
-                    }
-                )
-            except Exception:
-                pass
+
+        if not in_table:
+            continue
+        # Skip separator lines and blanks
+        if not line or line.startswith("—") or line.startswith("---") or line.startswith("==="):
+            continue
+
+        if line.startswith("ms/") or line.startswith("CPU") or line.startswith("Total"):
+            continue
+
+        parts = [p.strip() for p in line.split("|")]
+
+        # Format: 7 columns
+        # [0] Method
+        # [1] ms/frame(strm)   e.g. "10.23 ms"
+        # [2] Total FPS        e.g. "97.8"
+        # [3] CPU ms/frame     e.g. "7.321 ms"
+        # [4] Mem Total KB
+        # [5] Mem/Strm KB
+        # [6] Frames
+        if len(parts) < 7:
+            continue
+        try:
+            method           = parts[0]
+            time_per_frame   = float(parts[1].replace("ms", "").strip())
+            fps              = float(parts[2].strip())
+            cpu_ms_per_frame = float(parts[3].replace("ms", "").strip())
+            mem_total_kb     = float(parts[4].strip())
+            mem_per_stream_kb= float(parts[5].strip())
+            frames           = int(parts[6].strip())
+
+            results.append({
+                "method":           method,
+                "streams":          stream_count,
+                "time_per_frame":   time_per_frame,
+                "fps":              fps,
+                "cpu_ms_per_frame": cpu_ms_per_frame,  # replaces cpu / cpu_total
+                "memory":           mem_total_kb,
+                "mem_per_stream":   mem_per_stream_kb,
+                "frames":           frames,
+            })
+        except (ValueError, IndexError):
+            pass
+
     return pd.DataFrame(results)
 
 
@@ -117,7 +133,13 @@ def benchmark(
             print(f"Warning: No data returned for streams={s}")
         all_results.append(df)
 
-    full_df = pd.concat(all_results, ignore_index=True)
+    # Drop any empty DataFrames before concat to avoid dtype warnings
+    non_empty = [df for df in all_results if not df.empty]
+    if not non_empty:
+        print("Error: all stream runs returned empty results. Check C++ binary and output format.")
+        return
+
+    full_df = pd.concat(non_empty, ignore_index=True)
 
     csv_path = os.path.join(plots_folder, "benchmark_results.csv")
     full_df.to_csv(csv_path, index=False)
