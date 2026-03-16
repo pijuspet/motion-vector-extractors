@@ -30,15 +30,18 @@ BENCHMARKING_DIR = benchmarking
 EXECUTABLES_DIR = executables
 WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors
 
+VIDEO_NAME ?= bigbunny_walking.mp4
+# VIDEO_NAME ?= bigbunny.mp4
+# VIDEO_NAME ?= stickman.mp4
+# VIDEO_NAME ?= dashcam.mp4
+
+VIDEO_TYPES := h264_cabac h264_cavlc h264_avi h265
 VIDEO_TYPE = h264_cabac
 # VIDEO_TYPE = h264_cavlc
 # VIDEO_TYPE = h264_avi
 # VIDEO_TYPE = h265
 
-VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/bigbunny_walking.mp4
-# VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/bigbunny.mp4
-# VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/stickman.mp4
-# VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/dashcam.mp4
+VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/$(VIDEO_NAME)
 
 INITIAL_RUN_DATA = $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results_$(VIDEO_TYPE)
 LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)
@@ -56,13 +59,47 @@ install:
 	python3 -m venv $(VENV_FOLDER)
 	. $(VENV_FOLDER)/bin/activate && pip install -r requirements.txt
 
-all:
+build:
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0 $(EXTRACTOR_DIR)/extractor0.cpp $(WRITER_SRC) $(SYS_FF)
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor1 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor2 $(EXTRACTOR_DIR)/extractor2.cpp  $(SYS_FF)
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3 $(EXTRACTOR_DIR)/extractor3.cpp $(WRITER_SRC) $(CUST_FF)
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor4 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(CUST_FF)
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor5 $(EXTRACTOR_DIR)/extractor5.cpp $(WRITER_SRC) $(CUST_FF)
+
+build_sys:
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0 $(EXTRACTOR_DIR)/extractor0.cpp $(WRITER_SRC) $(SYS_FF)
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor1 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor2 $(EXTRACTOR_DIR)/extractor2.cpp  $(SYS_FF)
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3 $(EXTRACTOR_DIR)/extractor3.cpp $(WRITER_SRC) $(SYS_FF)
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor4 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
+	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor5 $(EXTRACTOR_DIR)/extractor5.cpp $(WRITER_SRC) $(SYS_FF)
+
+all:
+	$(MAKE) benchmark_all TYPE=sys
+	$(MAKE) benchmark_all TYPE=cust
+
+# make benchmark_all VIDEO_NAME=bigbunny.mp4
+# make benchmark_all VIDEO_NAME=bigbunny.mp4 TYPE=sys
+benchmark_all:
+	@vname="$(VIDEO_NAME)"; \
+	for vtype in $(VIDEO_TYPES); do \
+		if [ "$$vtype" = "h264_avi" ]; then \
+			filepath=$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi; \
+		else \
+			filepath=$(CURRENT_DIR)/videos/$$vtype/$$vname; \
+		fi; \
+		if [ -f "$$filepath" ]; then \
+			echo "\n========== $$vtype / $$filepath =========="; \
+			if [ -z "$(TYPE)" ]; then \
+				$(PYTHON) -m benchmarking.full_benchmark $$filepath 15 $$vtype cust 0; \
+			else \
+				$(PYTHON) -m benchmarking.full_benchmark $$filepath 15 $$vtype $(TYPE) 0; \
+			fi; \
+		else \
+			echo "SKIP: $$filepath not found"; \
+		fi; \
+	done
 
 FFMPEG_BUILD = \
 	cd $1/FFmpeg && \
@@ -88,7 +125,7 @@ ffmpeg_diff:
 		> ffmpeg/ffmpeg_version.diff
 
 benchmark:
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15 $(VIDEO_TYPE)
+	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15 $(VIDEO_TYPE) cust
 
 publish:
 	$(PYTHON) -m publishing.publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) $(VIDEO_TYPE) test_git test_git 1
@@ -102,5 +139,5 @@ decode_ffmpeg:
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 1 $(VIDEO_TYPE) 1 2 5
+	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 1 $(VIDEO_TYPE) cust 1 2 5
 # 	chromium --no-sandbox $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)/vtune_results/call_tree.html

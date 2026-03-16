@@ -12,8 +12,9 @@ import utils.vtune_hotspots_plot as vtune
 
 
 class BenchmarkRunner:
-    def __init__(self, video_file, video_type, streams=1):
+    def __init__(self, video_file, video_type, build_type, streams=1):
         self.video_file = video_file
+        self.build_type = build_type
         self.streams = streams
         self.current_dir = Path.cwd()
         self.results_base = self.current_dir / "results"
@@ -69,8 +70,12 @@ class BenchmarkRunner:
     def build(self):
         print("Building all extractors and tools...")
 
-        if not self.run_command("make all"):
-            return
+        if self.build_type == "sys":
+            if not self.run_command("make build_sys"):
+                return
+        else:
+            if not self.run_command("make build"):
+                return
         
         env = os.environ.copy()
         env["PKG_CONFIG_PATH"] = self.pkg_config_path
@@ -215,12 +220,13 @@ if __name__ == "__main__":
     streams = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
     video_type = sys.argv[3]
+    build_type = sys.argv[4]
 
     if streams < 1:
         print("Error: streams argument must be a positive integer")
         sys.exit(1)
 
-    runner = BenchmarkRunner(video_file, video_type, streams)
+    runner = BenchmarkRunner(video_file, video_type, build_type, streams)
 
     print()
     print("Select steps to run (enter one or more numbers separated by space):")
@@ -232,8 +238,8 @@ if __name__ == "__main__":
     print("  0: Run ALL steps")
     print()
 
-    if len(sys.argv) > 4:
-        choices = sys.argv[4:]
+    if len(sys.argv) > 5:
+        choices = sys.argv[5:]
     else:
         choices = input("Choice(s): ").strip().split()
 

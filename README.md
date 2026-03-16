@@ -30,6 +30,11 @@ To run the full benchmark run:
 make benchmark
 ```
 
+To run all experiments for original and custom FFmpeg:
+```
+make all
+```
+
 - Replace video with your input video file from the videos in `videos/`.
 
 During execution, you’ll be presented with options. If you select **option `0`**, the script will:
