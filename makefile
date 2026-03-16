@@ -50,8 +50,28 @@ CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv # original ffmpeg
 CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method4_output_0.csv # custom ffmpeg
 
 
-install:
-	apt install -y build-essential gcc g++ make pkg-config nasm
+install_vtune:
+	@echo "Adding Intel oneAPI repository..."
+	wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+		| gpg --dearmor \
+		| sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+	echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] \
+		https://apt.repos.intel.com/oneapi all main" \
+		| sudo tee /etc/apt/sources.list.d/oneAPI.list
+	apt update
+	apt install -y intel-oneapi-vtune
+	@echo "Enabling ptrace for VTune..."
+	sysctl -w kernel.yama.ptrace_scope=0
+	@if grep -q "kernel.yama.ptrace_scope" /etc/sysctl.d/10-ptrace.conf 2>/dev/null; then \
+		sed -i 's/kernel.yama.ptrace_scope = .*/kernel.yama.ptrace_scope = 0/' /etc/sysctl.d/10-ptrace.conf; \
+	else \
+		echo "kernel.yama.ptrace_scope = 0" >> /etc/sysctl.d/10-ptrace.conf; \
+	fi
+	sysctl -p /etc/sysctl.d/10-ptrace.conf
+	@echo "VTune installation complete."
+
+install: install_vtune
+	apt install -y build-essential gcc g++ make pkg-config nasm xdg-utils libnss3 libnotify4 wkhtmltopdf
 	cp -n .env_template .env
 	mkdir -p $(VENV_FOLDER)
 	mkdir -p $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)

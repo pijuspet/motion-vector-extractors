@@ -81,7 +81,7 @@ def create_fastest_methods_table(df_hp, streams_order):
             "Method":           fastest["method"],
             "Time/Frame (ms)":  fastest["time_per_frame"],
             "FPS (aggregate)":  fastest["fps"],
-            "CPU ms/frame":     fastest["cpu_ms_per_frame"],  # replaces cpu + cpu_total
+            "CPU ms/frame":     fastest["cpu_ms_per_frame"],
             "Mem Total KB":     fastest["memory"],
         })
 

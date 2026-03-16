@@ -42,7 +42,11 @@ class BenchmarkRunner:
         self.slides_config = self.benchmarking_dir / "slides_config.json"
         self.plots_dir = self.results_dir / "plots"
 
-        self.setvars_cmd = ". /opt/intel/oneapi/setvars.sh --force"
+        # Only source setvars if oneAPI is not already initialized
+        self.setvars_cmd = (
+            '[ -z "$VTUNE_PROFILER_DIR" ] && '
+            '. /opt/intel/oneapi/setvars.sh --force 2>/dev/null; true'
+        )
         self.vtune_dir = self.results_dir / "vtune_results"
         self.vtune_hotspots_file = self.vtune_dir / "hotspots.csv"
         self.vtune_topdown_file = self.vtune_dir / "topdown.csv"
@@ -59,6 +63,7 @@ class BenchmarkRunner:
                 text=True,
                 check=True,
                 shell=shell,
+                executable="/bin/bash" if shell else None,
             )
             if capture_output:
                 return result.stdout.strip()
@@ -92,9 +97,10 @@ class BenchmarkRunner:
         )
 
         if not self.run_command(compile_cmd, cwd=self.benchmarking_dir):
-            return
+            return False
 
         print("Build complete.")
+        return True
 
     def extract(self):
         if not self.video_file:
@@ -152,11 +158,31 @@ class BenchmarkRunner:
             self.motion_vectors_comparison_file,
         )
 
+    def _get_vtune_env(self):
+        try:
+            result = subprocess.run(
+                f". /opt/intel/oneapi/setvars.sh --force 2>/dev/null && env",
+                shell=True,
+                executable="/bin/bash",
+                capture_output=True,
+                text=True,
+            )
+            env = {}
+            for line in result.stdout.splitlines():
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    env[key] = value
+            if "VTUNE_PROFILER_DIR" not in env:
+                print("Warning: setvars.sh did not set VTUNE_PROFILER_DIR — vtune may not be found.")
+            return env if env else None
+        except Exception as e:
+            print(f"Warning: could not source setvars.sh: {e}")
+            return None
+
     def profiler(self):
         print("Running VTune profiler on extractor4 with motion_vectors_only=1...")
 
         ffmpeg_lib = self.current_dir / "ffmpeg" / "ffmpeg-8.0-custom" / "lib"
-        ld_library_path = f"{ffmpeg_lib}/libavutil:{ffmpeg_lib}/libavformat:{os.environ.get('LD_LIBRARY_PATH', '')}"
 
         self.vtune_dir.mkdir(exist_ok=True)
 
@@ -167,29 +193,47 @@ class BenchmarkRunner:
 
         extractor_exec = self.extractor_executables / f"extractor{extractor_index}"
         output_csv = self.results_dir / f"method{extractor_index}_output_vtune.csv"
-        
-        vtune_collect_cmd = f"{self.setvars_cmd} && vtune -collect hotspots -result-dir {self.vtune_dir} -- {extractor_exec} {self.video_file} {do_print} {output_csv} {extractor_index} {is_verbose} {is_single_threaded}"
 
-        env = os.environ.copy()
-        env["LD_LIBRARY_PATH"] = ld_library_path
+        env = self._get_vtune_env() or os.environ.copy()
+
+        existing_ld = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = (
+            f"{ffmpeg_lib}/libavutil:{ffmpeg_lib}/libavformat:{existing_ld}"
+        )
+
+        vtune_collect_cmd = (
+            f"vtune -collect hotspots "
+            f"-knob sampling-mode=sw "
+            f"-result-dir {self.vtune_dir} -- "
+            f"{extractor_exec} {self.video_file} {do_print} "
+            f"{output_csv} {extractor_index} {is_verbose} {is_single_threaded}"
+        )
 
         if not self.run_command(
-            vtune_collect_cmd, env, cwd=self.extractor_executables, shell=True
+            vtune_collect_cmd, env=env, cwd=self.extractor_executables, shell=True
         ):
             return
 
-        vtune_report_hotspots = f"{self.setvars_cmd} && vtune -report hotspots -result-dir {self.vtune_dir} -format csv -report-output {self.vtune_hotspots_file}"
-        vtune_report_topdown = f"{self.setvars_cmd} && vtune -report top-down -result-dir {self.vtune_dir} -format csv -report-output {self.vtune_topdown_file}"
+        vtune_report_hotspots = (
+            f"vtune -report hotspots -result-dir {self.vtune_dir} "
+            f"-format csv -report-output {self.vtune_hotspots_file}"
+        )
+        vtune_report_topdown = (
+            f"vtune -report top-down -result-dir {self.vtune_dir} "
+            f"-format csv -report-output {self.vtune_topdown_file}"
+        )
 
-        self.run_command(vtune_report_hotspots, shell=True)
-        self.run_command(vtune_report_topdown, shell=True)
+        self.run_command(vtune_report_hotspots, env=env, shell=True)
+        self.run_command(vtune_report_topdown, env=env, shell=True)
 
         vtune.build_tree(str(self.vtune_topdown_file))
 
         print(f"Profiler run complete. Results in {self.vtune_dir}.")
 
     def run_all(self):
-        self.build()
+        if not self.build():
+            print("Build failed, aborting.")
+            return
         self.extract()
         self.generate_mv_comparison()
         self.plot()

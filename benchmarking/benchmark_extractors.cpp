@@ -17,7 +17,7 @@
 
 static constexpr int CSV_PATH_MAX   = 512;
 static constexpr int PIPE_BUF_SIZE  = 128;
-static constexpr int MAX_STREAMS    = 32; 
+static constexpr int MAX_STREAMS    = 100; 
 
 struct MethodInfo {
     std::string name;

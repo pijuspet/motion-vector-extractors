@@ -27,6 +27,13 @@
             "ylabel": "Memory (kB)",
             "filename": "scaling_memory.png",
             "subtitle": "High Profile Methods: Memory Usage (kB) vs Streams"
+        },
+        {
+            "metric": "mem_per_stream",
+            "title": "Worst Memory per Stream Scaling",
+            "ylabel": "Memory per Stream (kB, Lower = Better)",
+            "filename": "scaling_memperstream.png",
+            "subtitle": "High Profile Methods: Worst Memory/Stream (kB) vs Streams"
         }
     ],
     "grouped_bar_metrics": [
@@ -99,6 +106,15 @@
             "slide_title": "Algorithm Memory Usage Comparison ({streams} Streams)",
             "slide_subtitle": "Memory Peak (kB) by High Profile Method at {streams} Streams",
             "colormap": "crest"
+        },
+        {
+            "metric": "mem_per_stream",
+            "chart_title": "Algorithm Comparison: Worst Memory/Stream @ {streams} Streams",
+            "ylabel": "Memory per Stream (kB, Lower = Better)",
+            "filename": "barchart_memperstream_{streams}streams.png",
+            "slide_title": "Algorithm Worst Memory/Stream Comparison ({streams} Streams)",
+            "slide_subtitle": "Worst Memory per Stream (kB) by High Profile Method at {streams} Streams",
+            "colormap": "magma"
         }
     ],
     "detailed_tables": [
