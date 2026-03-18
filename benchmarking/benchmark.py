@@ -64,7 +64,7 @@ def parse_output(output_text, stream_count):
 
         parts = [p.strip() for p in line.split("|")]
 
-        # Format: 7 columns
+        # Format: 9 columns
         # [0] Method
         # [1] ms/frame(strm)   e.g. "10.23 ms"
         # [2] Total FPS        e.g. "97.8"
