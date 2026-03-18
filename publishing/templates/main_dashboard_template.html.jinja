@@ -103,6 +103,60 @@
         </tr>
     </table>
 
+    <h3>Speedup Heatmap (Average over all streams)</h3>
+    <table class="mv-mini-table">
+        <tr>
+            {% for run in runs %}
+            <th>{{ run.title }}</th>
+            {% endfor %}
+        </tr>
+        <tr>
+            {% for run in runs %}
+            <td>
+                <ac:image ac:thumbnail="true" ac:width="450">
+                    <ri:attachment ri:filename="{{ run.speedup_heatmap }}" />
+                </ac:image>
+            </td>
+            {% endfor %}
+        </tr>
+    </table>
+
+    <h3>Speedup CPU</h3>
+    <table class="mv-mini-table">
+        <tr>
+            {% for run in runs %}
+            <th>{{ run.title }}</th>
+            {% endfor %}
+        </tr>
+        <tr>
+            {% for run in runs %}
+            <td>
+                <ac:image ac:thumbnail="true" ac:width="450">
+                    <ri:attachment ri:filename="{{ run.speedup_cpu }}" />
+                </ac:image>
+            </td>
+            {% endfor %}
+        </tr>
+    </table>
+
+    <h3>Speedup Memory</h3>
+    <table class="mv-mini-table">
+        <tr>
+            {% for run in runs %}
+            <th>{{ run.title }}</th>
+            {% endfor %}
+        </tr>
+        <tr>
+            {% for run in runs %}
+            <td>
+                <ac:image ac:thumbnail="true" ac:width="450">
+                    <ri:attachment ri:filename="{{ run.speedup_memory }}" />
+                </ac:image>
+            </td>
+            {% endfor %}
+        </tr>
+    </table>
+
     <h3>Grouped CPU Usage (All Streams)</h3>
     <table class="mv-mini-table">
         <tr>

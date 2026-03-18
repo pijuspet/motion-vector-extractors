@@ -51,6 +51,10 @@ class ConfluenceReportGenerator:
             ("Latency Scaling", "scaling_timeperframe.png", self.plots_subdir),
             ("CPU Usage Scaling", "scaling_cpu.png", self.plots_subdir),
             ("Memory Usage Scaling", "scaling_memory.png", self.plots_subdir),
+            ("Speedup Heatmap", "speedup_heatmap.png", self.plots_subdir),
+            ("Speedup CPU", "speedup_cpu.png", self.plots_subdir),
+            ("Speedup Throughput", "speedup_fps.png", self.plots_subdir),
+            ("Speedup Memory", "speedup_memory.png", self.plots_subdir),
             (
                 "Grouped FPS Comparison (All Streams)",
                 "grouped_barchart_fps.png",
@@ -79,6 +83,9 @@ class ConfluenceReportGenerator:
 
         self.main_dashboard_plots = [
             (None, "detail_table_1streams_highlighted.png", self.plots_subdir),
+            (None, "speedup_heatmap.png", self.plots_subdir),
+            (None, "speedup_cpu.png", self.plots_subdir),
+            (None, "speedup_memory.png", self.plots_subdir),
             (None, "grouped_barchart_cpu.png", self.plots_subdir),
             (None, "grouped_barchart_memory.png", self.plots_subdir),
         ]
@@ -279,6 +286,9 @@ class ConfluenceReportGenerator:
                 ),
                 "detail_table": f"{prefix}detail_table_1streams_highlighted.png",
                 "cpu_chart": f"{prefix}grouped_barchart_cpu.png",
+                "speedup_cpu": f"{prefix}speedup_cpu.png",
+                "speedup_memory": f"{prefix}speedup_memory.png",
+                "speedup_heatmap": f"{prefix}speedup_heatmap.png",
                 "memory_chart": f"{prefix}grouped_barchart_memory.png",
                 "report_title": (
                     self.__generate_report_title__(
