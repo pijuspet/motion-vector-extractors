@@ -6,6 +6,7 @@ from pptx.enum.text import PP_ALIGN
 import json
 
 import benchmarking.plots as plts
+import benchmarking.speedup_plots as speedup
 
 
 def load_benchmark_config(config_path: str) -> dict:
@@ -243,7 +244,6 @@ def add_per_stream_metric_charts(
                 cfg["ylabel"],
                 filename,
                 plots_folder,
-                cfg["colormap"],
             )
 
             slides.append(
@@ -276,6 +276,13 @@ def produce_slides(df_hp, slides_config_path, file_name, plots_folder):
     # 1. Fastest methods table
     add_fastest_methods_slide(
         slides, df_hp, streams_order, plots_folder, config.get("fastest_methods", [])
+    )
+    
+    # 1b. Speedup comparison vs auto-detected baseline
+    add_section_header(slides, "Speedup Analysis",
+                        "All metrics normalised so >1.0 = improvement over baseline")
+    speedup.add_speedup_slides(
+        slides, df_hp, plots_folder, config.get("speedup_metrics", {})
     )
 
     # 2. Scaling line charts

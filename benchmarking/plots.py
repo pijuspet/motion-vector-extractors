@@ -116,10 +116,10 @@ def plot_grouped_bar(
     print(f"Saved grouped bar chart: {save_path}")
 
 
-def plot_metric(df, metric, title, ylabel, filename, plots_folder, palette="viridis"):
+def plot_metric(df, metric, title, ylabel, filename, plots_folder):
     plt.figure(figsize=(16, 9))
     sns.barplot(
-        data=df, x="method", y=metric, hue="method", palette=palette, legend=False
+        data=df, x="method", y=metric, hue="method", palette="viridis", legend=False
     )
     plt.title(title, fontsize=20, loc="left")
     plt.xlabel("Method", fontsize=14)

@@ -15,9 +15,9 @@
 #include <sys/resource.h>
 #include <sys/wait.h>
 
-static constexpr int CSV_PATH_MAX   = 512;
-static constexpr int PIPE_BUF_SIZE  = 128;
-static constexpr int MAX_STREAMS    = 100; 
+static constexpr int CSV_PATH_MAX = 512;
+static constexpr int PIPE_BUF_SIZE = 128;
+static constexpr int MAX_STREAMS = 100;
 
 struct MethodInfo {
     std::string name;
@@ -42,27 +42,23 @@ struct BenchmarkResult {
     double throughput_fps = 0;
 
     // CPU
-    // FIX: cpu_usage_percent now means average utilization per process (0–100% = 1 core).
-    // Previously it was summing all processes' CPU time and dividing by wall time,
-    // which produced values like 800% or 1400% — purely proportional to stream count
-    // and completely masking any difference between methods.
     // Avg CPU per stream  (user+sys time)
     double cpu_usage_percent = 0;
     // Total CPU across all streams (useful for system load view)
     double cpu_total_percent = 0;
-    
+
     // Memory
     // Sum of peak RSS across all streams
-    long memory_total_kb = 0;  
+    long memory_total_kb = 0;
     // Peak RSS of the single worst stream
-    long memory_per_stream_kb = 0;  
+    long memory_per_stream_kb = 0;
 
     // Counts
     int total_motion_vectors = 0;
     int frame_count = 0;
     int stream_count = 0;
 
-    double cpu_ms_per_frame = 0; 
+    double cpu_ms_per_frame = 0;
 };
 
 std::vector<MethodInfo> methods = {
@@ -131,12 +127,12 @@ std::vector<ChildProcess> spawn_processes(
             std::string is_single_thr = std::to_string(single_threaded);
 
             execl(exe_path.c_str(), exe_path.c_str(),
-                  video_file.c_str(),
-                  print_to_file.c_str(),
-                  csv_path,
-                  verbose.c_str(),
-                  is_single_thr.c_str(),
-                  nullptr);
+                video_file.c_str(),
+                print_to_file.c_str(),
+                csv_path,
+                verbose.c_str(),
+                is_single_thr.c_str(),
+                nullptr);
 
             fprintf(stderr, "Child %d: execl failed: %s\n", i, strerror(errno));
             exit(127);
@@ -256,85 +252,81 @@ BenchmarkResult run_benchmark(
 
     // Aggregate throughput = how many frames/sec the whole system delivers
     result.throughput_fps = (result.avg_time_per_frame_ms > 0)
-        ? (1000.0 / result.avg_time_per_frame_ms) * stream_count
+        ? (1000.0 * total_frames) / result.total_time_ms
         : 0.0;
 
     // ── CPU ─────────────────────────────────────────────────────────────────
-    // FIX 1: Include system (kernel) time — video decoding involves heavy I/O
-    //        and memcpy syscalls; ignoring ru_stime understates real CPU cost.
-    // FIX 2: Average per-process instead of summing — the old sum/wall_time
-    //        formula produced ~100% × N, which is why you saw 800% / 1400%.
-    //        That number was just stream_count × ~100 and told you nothing
-    //        about whether one method was more CPU-efficient than another.
     double total_cpu_time = 0.0;
-    long   total_memory   = 0;
-    long   peak_memory    = 0;
+    long   total_memory = 0;
+    long   peak_memory = 0;
 
     for (const auto& proc : processes) {
-        double user_time = proc.usage.ru_utime.tv_sec
-                         + proc.usage.ru_utime.tv_usec / 1e6;
-        double sys_time  = proc.usage.ru_stime.tv_sec
-                         + proc.usage.ru_stime.tv_usec  / 1e6;
-        total_cpu_time  += user_time + sys_time;
+        double user_time = proc.usage.ru_utime.tv_sec * 1000.0
+            + proc.usage.ru_utime.tv_usec / 1e3;
+        double sys_time = proc.usage.ru_stime.tv_sec * 1000.0
+            + proc.usage.ru_stime.tv_usec / 1e3;
+        total_cpu_time += user_time + sys_time;
 
         long rss_kb = proc.usage.ru_maxrss;
         total_memory += rss_kb;
-        peak_memory   = std::max(peak_memory, rss_kb);
+        peak_memory = std::max(peak_memory, rss_kb);
     }
 
-    double wall_time_sec = result.total_time_ms / 1000.0;
-
-    if (wall_time_sec > 0 && stream_count > 0) {
+    if (result.total_time_ms > 0 && stream_count > 0) {
         // Average CPU utilisation per stream (comparable across stream counts)
-        double avg_cpu_per_stream   = total_cpu_time / stream_count;
-        result.cpu_usage_percent    = (avg_cpu_per_stream / wall_time_sec) * 100.0;
+        double avg_cpu_per_stream = total_cpu_time / stream_count;
+        result.cpu_usage_percent = (avg_cpu_per_stream / result.total_time_ms) * 100.0;
 
         // Total CPU load across all streams as % of all available logical cores
-        long num_cores              = sysconf(_SC_NPROCESSORS_ONLN);
-        result.cpu_total_percent    = (num_cores > 0)
-            ? (total_cpu_time / wall_time_sec) * 100.0 / static_cast<double>(num_cores)
-            : (total_cpu_time / wall_time_sec) * 100.0;
+        long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+        result.cpu_total_percent = (num_cores > 0)
+            ? (total_cpu_time / result.total_time_ms) * 100.0 / static_cast<double>(num_cores)
+            : (total_cpu_time / result.total_time_ms) * 100.0;
     }
     result.cpu_ms_per_frame = (frames_per_stream > 0)
-        ? (total_cpu_time / stream_count / frames_per_stream) * 1000.0
+        ? (total_cpu_time / stream_count / frames_per_stream)
         : 0.0;
 
     // ── Memory ──────────────────────────────────────────────────────────────
-    result.memory_total_kb      = total_memory;
+    result.memory_total_kb = total_memory;
     result.memory_per_stream_kb = peak_memory;
     return result;
 }
 
 void print_results(const std::vector<BenchmarkResult>& results, int stream_count) {
-    int LINE = 136;
+    int LINE = 166;
 
     std::string title = "COMPLETE MOTION VECTOR EXTRACTION BENCHMARK";
     char streams_title[64];
     long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
     snprintf(streams_title, sizeof(streams_title),
-             "Streams per Method: %d   |   Logical Cores: %ld", stream_count, num_cores);
+        "Streams per Method: %d   |   Logical Cores: %ld", stream_count, num_cores);
 
     printf("\n%s\n", std::string(LINE, '=').c_str());
-    printf("%*s%s\n",  (int)(LINE - title.length())  / 2, "", title.c_str());
-    printf("%*s%s\n\n",(int)(LINE - strlen(streams_title)) / 2, "", streams_title);
+    printf("%*s%s\n", (int)(LINE - title.length()) / 2, "", title.c_str());
+    printf("%*s%s\n\n", (int)(LINE - strlen(streams_title)) / 2, "", streams_title);
     printf("%s\n\n", std::string(LINE, '=').c_str());
 
-    printf("%-32s | %13s | %10s | %16s | %11s | %11s | %8s\n",
+    printf("%-32s | %13s | %10s | %16s | %12s | %12s | %11s | %11s | %8s\n",
         "Method",
         "ms/frame(strm)",
         "Total FPS",
-        "CPU ms/frame",      // <-- replaces the broken % columns
+        "CPU ms/frame",
+        "CPU %/stream",
+        "CPU % total",
         "Mem Total KB",
         "Mem/Strm KB",
         "Frames");
     printf("%s\n", std::string(LINE, '-').c_str());
 
     for (const auto& r : results) {
-        printf("%-32s | %11.2f ms | %8.1f   | %13.3f ms | %11ld | %11ld | %8d\n",
+        printf("%-32s | %11.2f ms | %8.1f   | %13.3f ms | %10.1f %%  | %10.1f %%  | %11ld | %11ld | %8d\n",
             r.name.c_str(),
             r.avg_time_per_frame_ms,
             r.throughput_fps,
             r.cpu_ms_per_frame,
+            r.cpu_usage_percent,
+            r.cpu_total_percent,
             r.memory_total_kb,
             r.memory_per_stream_kb,
             r.frame_count);
@@ -343,9 +335,11 @@ void print_results(const std::vector<BenchmarkResult>& results, int stream_count
     printf("\n");
     printf("  ms/frame(strm)  = wall time / (total frames / streams)      — per-stream decode latency\n");
     printf("  Total FPS       = (1000 / ms_per_frame) * streams            — aggregate system throughput\n");
-    printf("  CPU ms/frame    = avg(user+sys CPU time per process) / frames_per_stream * 1000\n");
+    printf("  CPU ms/frame    = avg(user+sys CPU time per process) / frames_per_stream\n");
     printf("                    — actual CPU work burned per frame; lower = more efficient\n");
     printf("                    — comparable across stream counts, unlike CPU%%\n");
+    printf("  CPU %%/stream    = avg CPU time per stream / wall time * 100  — single-stream CPU utilisation\n");
+    printf("  CPU %% total     = total CPU time / wall time / cores * 100   — system-wide CPU load\n");
     printf("%s\n", std::string(LINE, '-').c_str());
 }
 
@@ -374,7 +368,7 @@ int main(int argc, char** argv) {
         printf("Video file       : %s\n", video_file.c_str());
         printf("Streams / method : %d\n", stream_count);
         printf("Single-threaded  : %s\n", single_thr ? "yes" : "no");
-        printf("Print CSV        : %s\n\n", print_csv    ? "yes" : "no");
+        printf("Print CSV        : %s\n\n", print_csv ? "yes" : "no");
     }
 
     std::vector<BenchmarkResult> results;

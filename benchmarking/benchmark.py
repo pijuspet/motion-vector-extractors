@@ -69,19 +69,21 @@ def parse_output(output_text, stream_count):
         # [1] ms/frame(strm)   e.g. "10.23 ms"
         # [2] Total FPS        e.g. "97.8"
         # [3] CPU ms/frame     e.g. "7.321 ms"
-        # [4] Mem Total KB
-        # [5] Mem/Strm KB
-        # [6] Frames
-        if len(parts) < 7:
+        # [4] CPU %/stream     e.g. "85%"
+        # [5] CPU % total      e.g. "87%"
+        # [6] Mem Total KB
+        # [7] Mem/Strm KB
+        # [8] Frames
+        if len(parts) < 9:
             continue
         try:
             method           = parts[0]
             time_per_frame   = float(parts[1].replace("ms", "").strip())
             fps              = float(parts[2].strip())
             cpu_ms_per_frame = float(parts[3].replace("ms", "").strip())
-            mem_total_kb     = float(parts[4].strip())
-            mem_per_stream_kb= float(parts[5].strip())
-            frames           = int(parts[6].strip())
+            mem_total_kb     = float(parts[6].strip())
+            mem_per_stream_kb= float(parts[7].strip())
+            frames           = int(parts[8].strip())
 
             results.append({
                 "method":           method,

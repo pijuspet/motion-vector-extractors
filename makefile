@@ -1,9 +1,47 @@
+# =============================================================================
+# CONFIGURATION & GLOBAL VARIABLES
+# =============================================================================
+
+STREAMS = 15
+
+# VIDEO_NAME ?= bigbunny_walking.mp4
+VIDEO_NAME ?= bigbunny.mp4
+# VIDEO_NAME ?= stickman.mp4
+# VIDEO_NAME ?= dashcam.mp4
+
+VIDEO_TYPES := h264_cabac h264_cavlc h264_avi h265
+VIDEO_TYPE = h264_cabac
+# VIDEO_TYPE = h264_cavlc
+# VIDEO_TYPE = h264_avi
+# VIDEO_TYPE = h265
+
 CC = g++
+
+# =============================================================================
+# PATHS & ENVIRONMENTS
+# =============================================================================
 
 CURRENT_DIR := ${shell pwd}
 PARENT_DIR  := $(shell dirname $(CURRENT_DIR))
 VENV_FOLDER = $(PARENT_DIR)/venv-motion-vectors
 PYTHON = $(VENV_FOLDER)/bin/python
+
+EXTRACTOR_DIR = extractors
+BENCHMARKING_DIR = benchmarking
+EXECUTABLES_DIR = executables
+WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors
+
+VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/$(VIDEO_NAME)
+
+INITIAL_RUN_DATA = $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results_$(VIDEO_TYPE)
+LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)
+
+CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv # original ffmpeg
+CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method4_output_0.csv # custom ffmpeg
+
+# =============================================================================
+# FFMPEG & PKG-CONFIG SETUP
+# =============================================================================
 
 FF_PKGS := libavformat libavcodec libavutil libswresample
 pkg_cmd = PKG_CONFIG_PATH=$(1)/lib/pkgconfig pkg-config
@@ -20,35 +58,21 @@ $(2)_RPATH  := $$(call get_rpath,$(1))
 $(2)        := $$($(2)_CFLAGS) $$($(2)_LIBS) $$($(2)_RPATH)
 endef
 
-CUSTOM_PREFIX    := $(abspath $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0-custom)
-REGULAR_PREFIX   := $(abspath $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0)
+CUSTOM_PREFIX   := $(abspath $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0-custom)
+REGULAR_PREFIX  := $(abspath $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0)
 $(eval $(call def_ff_flags,$(CUSTOM_PREFIX),CUST_FF))
 $(eval $(call def_ff_flags,$(REGULAR_PREFIX),SYS_FF))
 
-EXTRACTOR_DIR = extractors
-BENCHMARKING_DIR = benchmarking
-EXECUTABLES_DIR = executables
-WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors
+# FFmpeg build macro
+FFMPEG_BUILD = \
+	cd $1/FFmpeg && \
+	chmod +x ./configure ./ffbuild/*.sh && \
+	./configure --prefix=$(abspath $1) --enable-shared --enable-swresample --enable-debug --disable-stripping --pkg-config-flags="--static" && \
+	make && make install
 
-VIDEO_NAME ?= bigbunny_walking.mp4
-# VIDEO_NAME ?= bigbunny.mp4
-# VIDEO_NAME ?= stickman.mp4
-# VIDEO_NAME ?= dashcam.mp4
-
-VIDEO_TYPES := h264_cabac h264_cavlc h264_avi h265
-VIDEO_TYPE = h264_cabac
-# VIDEO_TYPE = h264_cavlc
-# VIDEO_TYPE = h264_avi
-# VIDEO_TYPE = h265
-
-VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/$(VIDEO_NAME)
-
-INITIAL_RUN_DATA = $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results_$(VIDEO_TYPE)
-LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)
-
-CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv # original ffmpeg
-CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method4_output_0.csv # custom ffmpeg
-
+# =============================================================================
+# INSTALLATION & DEPENDENCIES
+# =============================================================================
 
 install_vtune:
 	@echo "Adding Intel oneAPI repository..."
@@ -79,6 +103,14 @@ install: install_vtune
 	python3 -m venv $(VENV_FOLDER)
 	. $(VENV_FOLDER)/bin/activate && pip install -r requirements.txt
 
+setup_ffmpeg:
+	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
+	$(call FFMPEG_BUILD,$(REGULAR_PREFIX))
+
+# =============================================================================
+# BUILD TARGETS
+# =============================================================================
+
 build:
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0 $(EXTRACTOR_DIR)/extractor0.cpp $(WRITER_SRC) $(SYS_FF)
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor1 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
@@ -94,6 +126,10 @@ build_sys:
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3 $(EXTRACTOR_DIR)/extractor3.cpp $(WRITER_SRC) $(SYS_FF)
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor4 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor5 $(EXTRACTOR_DIR)/extractor5.cpp $(WRITER_SRC) $(SYS_FF)
+
+# =============================================================================
+# BENCHMARKING
+# =============================================================================
 
 all:
 	$(MAKE) benchmark_all TYPE=sys
@@ -112,24 +148,21 @@ benchmark_all:
 		if [ -f "$$filepath" ]; then \
 			echo "\n========== $$vtype / $$filepath =========="; \
 			if [ -z "$(TYPE)" ]; then \
-				$(PYTHON) -m benchmarking.full_benchmark $$filepath 15 $$vtype cust 0; \
+				$(PYTHON) -m benchmarking.full_benchmark $$filepath $(STREAMS) $$vtype cust 0; \
 			else \
-				$(PYTHON) -m benchmarking.full_benchmark $$filepath 15 $$vtype $(TYPE) 0; \
+				$(PYTHON) -m benchmarking.full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) 0; \
 			fi; \
 		else \
 			echo "SKIP: $$filepath not found"; \
 		fi; \
 	done
 
-FFMPEG_BUILD = \
-	cd $1/FFmpeg && \
-	chmod +x ./configure ./ffbuild/*.sh && \
-	./configure --prefix=$(abspath $1) --enable-shared --enable-swresample --enable-debug --disable-stripping --pkg-config-flags="--static" && \
-	make && make install
+benchmark:
+	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust
 
-setup_ffmpeg:
-	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	$(call FFMPEG_BUILD,$(REGULAR_PREFIX))
+# =============================================================================
+# DEVELOPMENT & TESTING TOOLS
+# =============================================================================
 
 # note, the new h265 motion vector extraction function is not visible in this diff file
 ffmpeg_diff:
@@ -144,20 +177,21 @@ ffmpeg_diff:
 		| sed 's|$(CUSTOM_PREFIX)/FFmpeg/|b/|' \
 		> ffmpeg/ffmpeg_version.diff
 
-benchmark:
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 15 $(VIDEO_TYPE) cust
-
-publish:
-	$(PYTHON) -m publishing.publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) $(VIDEO_TYPE) test_git test_git 1
-	
-generate_video:
-	$(PYTHON) -m video_generation.combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
-	$(PYTHON) -m video_generation.generate_motion_vectors_video $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
+test_ffmpeg:
+	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
+	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust 1 2 5
+#   chromium --no-sandbox $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)/vtune_results/call_tree.html
 
 decode_ffmpeg:
 	LD_LIBRARY_PATH=$(CUSTOM_PREFIX)/lib:$$LD_LIBRARY_PATH $(CUSTOM_PREFIX)/bin/ffmpeg -y -i $(VIDEO_FILE) -c copy -an $(LAST_RESULTS_DIR)/decoded_output.mp4
 
-test_ffmpeg:
-	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) 1 $(VIDEO_TYPE) cust 1 2 5
-# 	chromium --no-sandbox $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)/vtune_results/call_tree.html
+# =============================================================================
+# PUBLISHING & VIDEO GENERATION
+# =============================================================================
+
+publish:
+	$(PYTHON) -m publishing.publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) $(VIDEO_TYPE) test_git test_git 1
+
+generate_video:
+	$(PYTHON) -m video_generation.combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
+	$(PYTHON) -m video_generation.generate_motion_vectors_video $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)

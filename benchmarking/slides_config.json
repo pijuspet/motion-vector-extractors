@@ -1,120 +1,153 @@
 {
+    "speedup_metrics": {
+        "heatmap": {
+            "title": "Speedup Heatmap vs Baseline ({baseline})",
+            "subtitle": "Average speedup across all stream counts — green = better, red = worse ({baseline} = 1.0)",
+            "filename": "speedup_heatmap.png"
+        },
+        "heatmap_per_stream": {
+            "title": "Speedup Heatmap at {streams} Streams ({baseline})",
+            "subtitle": "Speedup at {streams} streams — green = better, red = worse ({baseline} = 1.0)",
+            "filename": "speedup_heatmap_{streams}streams.png"
+        },
+        "per_metric": [
+            {
+                "metric": "fps",
+                "title": "Throughput Speedup vs Baseline ({baseline})",
+                "subtitle": "FPS ratio: method / baseline — values > 1.0 = higher throughput",
+                "filename": "speedup_fps.png"
+            },
+            {
+                "metric": "time_per_frame",
+                "title": "Latency Speedup vs Baseline ({baseline})",
+                "subtitle": "Time/frame ratio: baseline / method — values > 1.0 = lower latency",
+                "filename": "speedup_latency.png"
+            },
+            {
+                "metric": "cpu_ms_per_frame",
+                "title": "CPU Efficiency Speedup vs Baseline ({baseline})",
+                "subtitle": "CPU ms/frame ratio: baseline / method — values > 1.0 = less CPU work",
+                "filename": "speedup_cpu.png"
+            },
+            {
+                "metric": "memory",
+                "title": "Memory Usage Speedup vs Baseline ({baseline})",
+                "subtitle": "Memory ratio: baseline / method — values > 1.0 = less memory",
+                "filename": "speedup_memory.png"
+            }
+        ]
+    },
     "scaling_metrics": [
         {
             "metric": "fps",
             "title": "Throughput Scaling",
-            "ylabel": "Frames per Second (Higher = Better)",
+            "subtitle": "High Profile Methods: FPS vs Streams",
             "filename": "scaling_fps.png",
-            "subtitle": "High Profile Methods: FPS vs Streams"
+            "ylabel": "Frames per Second (Higher = Better)"
         },
         {
             "metric": "time_per_frame",
             "title": "Latency Scaling",
-            "ylabel": "Time per Frame (ms, Lower = Better)",
+            "subtitle": "High Profile Methods: Time per Frame vs Streams",
             "filename": "scaling_timeperframe.png",
-            "subtitle": "High Profile Methods: Time per Frame vs Streams"
+            "ylabel": "Time per Frame (ms, Lower = Better)"
         },
         {
             "metric": "cpu_ms_per_frame",
             "title": "CPU Efficiency Scaling",
-            "ylabel": "CPU Work per Frame (ms, Lower = Better)",
+            "subtitle": "High Profile Methods: CPU ms/frame vs Streams",
             "filename": "scaling_cpu.png",
-            "subtitle": "High Profile Methods: CPU ms/frame vs Streams"
+            "ylabel": "CPU Work per Frame (ms, Lower = Better)"
         },
         {
             "metric": "memory",
             "title": "Memory Usage Scaling",
-            "ylabel": "Memory (kB)",
+            "subtitle": "High Profile Methods: Memory Usage (kB) vs Streams",
             "filename": "scaling_memory.png",
-            "subtitle": "High Profile Methods: Memory Usage (kB) vs Streams"
+            "ylabel": "Memory (kB)"
         },
         {
             "metric": "mem_per_stream",
             "title": "Worst Memory per Stream Scaling",
-            "ylabel": "Memory per Stream (kB, Lower = Better)",
+            "subtitle": "High Profile Methods: Worst Memory/Stream (kB) vs Streams",
             "filename": "scaling_memperstream.png",
-            "subtitle": "High Profile Methods: Worst Memory/Stream (kB) vs Streams"
+            "ylabel": "Memory per Stream (kB, Lower = Better)"
         }
     ],
     "grouped_bar_metrics": [
         {
             "metric": "fps",
             "chart_title": "Algorithm Throughput (FPS) vs Streams — Grouped Bar",
-            "ylabel": "Frames per Second (Higher = Better)",
             "filename": "grouped_barchart_fps.png",
             "slide_title": "Grouped FPS Comparison (All Streams)",
-            "slide_subtitle": "All High Profile Methods: FPS per Streams, Grouped Bar Chart"
+            "slide_subtitle": "All High Profile Methods: FPS per Streams, Grouped Bar Chart",
+            "ylabel": "Frames per Second (Higher = Better)"
         },
         {
             "metric": "time_per_frame",
             "chart_title": "Algorithm Latency (ms/frame) vs Streams — Grouped Bar",
-            "ylabel": "Time per Frame (ms, Lower = Better)",
             "filename": "grouped_barchart_timeperframe.png",
             "slide_title": "Grouped Latency Comparison (All Streams)",
-            "slide_subtitle": "All High Profile Methods: Latency (ms/frame) per Streams, Grouped Bar Chart"
+            "slide_subtitle": "All High Profile Methods: Latency (ms/frame) per Streams, Grouped Bar Chart",
+            "ylabel": "Time per Frame (ms, Lower = Better)"
         },
         {
             "metric": "cpu_ms_per_frame",
             "chart_title": "Algorithm CPU Efficiency (ms/frame) vs Streams — Grouped Bar",
-            "ylabel": "CPU Work per Frame (ms, Lower = Better)",
             "filename": "grouped_barchart_cpu.png",
             "slide_title": "Grouped CPU Efficiency Comparison (All Streams)",
-            "slide_subtitle": "All High Profile Methods: CPU ms/frame per Streams, Grouped Bar Chart"
+            "slide_subtitle": "All High Profile Methods: CPU ms/frame per Streams, Grouped Bar Chart",
+            "ylabel": "CPU Work per Frame (ms, Lower = Better)"
         },
         {
             "metric": "memory",
             "chart_title": "Algorithm Memory Usage (kB) vs Streams — Grouped Bar",
-            "ylabel": "Memory Usage (kB)",
             "filename": "grouped_barchart_memory.png",
             "slide_title": "Grouped Memory Usage Comparison (All Streams)",
-            "slide_subtitle": "All High Profile Methods: Memory Usage per Streams, Grouped Bar Chart"
+            "slide_subtitle": "All High Profile Methods: Memory Usage per Streams, Grouped Bar Chart",
+            "ylabel": "Memory Usage (kB)"
         }
     ],
     "per_stream_metrics": [
         {
             "metric": "fps",
             "chart_title": "Algorithm Comparison: FPS @ {streams} Streams",
-            "ylabel": "Frames per Second (Higher = Better)",
             "filename": "barchart_fps_{streams}streams.png",
             "slide_title": "Algorithm FPS Comparison ({streams} Streams)",
             "slide_subtitle": "Throughput (FPS) by High Profile Method at {streams} Streams",
-            "colormap": "viridis"
+            "ylabel": "Frames per Second (Higher = Better)"
         },
         {
             "metric": "time_per_frame",
             "chart_title": "Algorithm Comparison: Time/Frame @ {streams} Streams",
-            "ylabel": "Time per Frame (ms, Lower = Better)",
             "filename": "barchart_timeperframe_{streams}streams.png",
             "slide_title": "Algorithm Latency Comparison ({streams} Streams)",
             "slide_subtitle": "Time per Frame (ms) by High Profile Method at {streams} Streams",
-            "colormap": "mako"
+            "ylabel": "Time per Frame (ms, Lower = Better)"
         },
         {
             "metric": "cpu_ms_per_frame",
             "chart_title": "Algorithm Comparison: CPU Efficiency @ {streams} Streams",
-            "ylabel": "CPU Work per Frame (ms, Lower = Better)",
             "filename": "barchart_cpu_{streams}streams.png",
             "slide_title": "Algorithm CPU Efficiency Comparison ({streams} Streams)",
             "slide_subtitle": "CPU ms/frame by High Profile Method at {streams} Streams",
-            "colormap": "rocket"
+            "ylabel": "CPU Work per Frame (ms, Lower = Better)"
         },
         {
             "metric": "memory",
             "chart_title": "Algorithm Comparison: Memory @ {streams} Streams",
-            "ylabel": "Memory (kB)",
             "filename": "barchart_memory_{streams}streams.png",
             "slide_title": "Algorithm Memory Usage Comparison ({streams} Streams)",
             "slide_subtitle": "Memory Peak (kB) by High Profile Method at {streams} Streams",
-            "colormap": "crest"
+            "ylabel": "Memory (kB)"
         },
         {
             "metric": "mem_per_stream",
             "chart_title": "Algorithm Comparison: Worst Memory/Stream @ {streams} Streams",
-            "ylabel": "Memory per Stream (kB, Lower = Better)",
             "filename": "barchart_memperstream_{streams}streams.png",
             "slide_title": "Algorithm Worst Memory/Stream Comparison ({streams} Streams)",
             "slide_subtitle": "Worst Memory per Stream (kB) by High Profile Method at {streams} Streams",
-            "colormap": "magma"
+            "ylabel": "Memory per Stream (kB, Lower = Better)"
         }
     ],
     "detailed_tables": [
