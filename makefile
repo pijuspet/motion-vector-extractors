@@ -3,6 +3,7 @@
 # =============================================================================
 
 STREAMS = 15
+NRUNS = 1
 
 # VIDEO_NAME ?= bigbunny_walking.mp4
 VIDEO_NAME ?= bigbunny.mp4
@@ -148,9 +149,9 @@ benchmark_all:
 		if [ -f "$$filepath" ]; then \
 			echo "\n========== $$vtype / $$filepath =========="; \
 			if [ -z "$(TYPE)" ]; then \
-				$(PYTHON) -m benchmarking.full_benchmark $$filepath $(STREAMS) $$vtype cust 0; \
+				$(PYTHON) -m benchmarking.full_benchmark $$filepath $(STREAMS) $$vtype cust $(NRUNS) 0; \
 			else \
-				$(PYTHON) -m benchmarking.full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) 0; \
+				$(PYTHON) -m benchmarking.full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) $(NRUNS) 0; \
 			fi; \
 		else \
 			echo "SKIP: $$filepath not found"; \
@@ -158,7 +159,7 @@ benchmark_all:
 	done
 
 benchmark:
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust
+	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS)
 
 # =============================================================================
 # DEVELOPMENT & TESTING TOOLS
@@ -179,7 +180,7 @@ ffmpeg_diff:
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust 1 2 5
+	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) 1 2 5
 #   chromium --no-sandbox $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)/vtune_results/call_tree.html
 
 decode_ffmpeg:

@@ -12,10 +12,11 @@ import utils.vtune_hotspots_plot as vtune
 
 
 class BenchmarkRunner:
-    def __init__(self, video_file, video_type, build_type, streams=1):
+    def __init__(self, video_file, video_type, build_type, streams=1, n_runs=3):
         self.video_file = video_file
         self.build_type = build_type
         self.streams = streams
+        self.n_runs = n_runs
         self.current_dir = Path.cwd()
         self.results_base = self.current_dir / "results"
         self.results_base.mkdir(exist_ok=True)
@@ -145,6 +146,7 @@ class BenchmarkRunner:
             is_single_threaded,
             is_verbose,
             write_to_csv,
+            n_runs=self.n_runs
         )
 
         print(f"Plotting complete. Plots and PPTX in {self.plots_dir}.")
@@ -265,12 +267,13 @@ if __name__ == "__main__":
 
     video_type = sys.argv[3]
     build_type = sys.argv[4]
+    n_runs = int(sys.argv[5])
 
     if streams < 1:
         print("Error: streams argument must be a positive integer")
         sys.exit(1)
 
-    runner = BenchmarkRunner(video_file, video_type, build_type, streams)
+    runner = BenchmarkRunner(video_file, video_type, build_type, streams, n_runs)
 
     print()
     print("Select steps to run (enter one or more numbers separated by space):")
@@ -282,8 +285,8 @@ if __name__ == "__main__":
     print("  0: Run ALL steps")
     print()
 
-    if len(sys.argv) > 5:
-        choices = sys.argv[5:]
+    if len(sys.argv) > 6:
+        choices = sys.argv[6:]
     else:
         choices = input("Choice(s): ").strip().split()
 
