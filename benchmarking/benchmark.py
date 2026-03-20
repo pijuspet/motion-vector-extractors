@@ -166,6 +166,7 @@ def benchmark(
     is_single_threaded,
     is_verbose,
     write_to_csv,
+    video_type,
     n_runs=1,
 ):
     exe_fullpath = os.path.join(executable_absolute_path, exe)
@@ -210,4 +211,5 @@ def benchmark(
         slides_config,
         "benchmark_comparison_slides.pptx",
         plots_folder,
+        video_type,
     )

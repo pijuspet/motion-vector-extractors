@@ -4,14 +4,38 @@ import pandas as pd
 import seaborn as sns
 
 _METRIC_INFO = {
-    "fps": ("Throughput (FPS)", "higher raw value = better"),
-    "time_per_frame": ("Latency (ms/frame)", "lower raw value = better"),
+    "fps":              ("Throughput (FPS)",           "higher raw value = better"),
+    "time_per_frame":   ("Latency (ms/frame)",        "lower raw value = better"),
     "cpu_ms_per_frame": ("CPU Efficiency (ms/frame)", "lower raw value = better"),
-    "memory": ("Memory Usage (kB)", "lower raw value = better"),
+    "memory":           ("Memory Usage (kB)",          "lower raw value = better"),
 }
 
 _HIGHER_IS_BETTER = {k for k, (_, d) in _METRIC_INFO.items() if "higher" in d}
 _METRICS = list(_METRIC_INFO)
+
+# Per-(video_type, metric) y-axis ceiling for speedup line plots.
+_SPEEDUP_Y_MAX = {
+    #  (video_type,  metric)              y_max
+    ("h264_cavlc",        "fps"):              4.7,
+    ("h264_cavlc",        "time_per_frame"):   4.7,
+    ("h264_cavlc",        "cpu_ms_per_frame"): 5.1,
+    ("h264_cavlc",        "memory"):           1.7,
+
+    ("h264_cabac",        "fps"):              2.8,
+    ("h264_cabac",        "time_per_frame"):   2.8,
+    ("h264_cabac",        "cpu_ms_per_frame"): 2.9,
+    ("h264_cabac",        "memory"):           2.7,
+
+    ("h264_avi",          "fps"):              3,
+    ("h264_avi",          "time_per_frame"):   3,
+    ("h264_avi",          "cpu_ms_per_frame"): 3,
+    ("h264_avi",          "memory"):           3,
+
+    ("h265",         "fps"):              3.7,
+    ("h265",         "time_per_frame"):   3.7,
+    ("h265",         "cpu_ms_per_frame"): 3.7,
+    ("h265",         "memory"):           1.05,
+}
 
 
 def build_color_map(df: pd.DataFrame) -> dict:
@@ -85,6 +109,10 @@ def _direction(metric: str) -> str:
     return _METRIC_INFO[metric][1] if metric in _METRIC_INFO else ""
 
 
+def _y_max(metric: str, video_type: str) -> float:
+    return _SPEEDUP_Y_MAX.get((video_type, metric), 4)
+
+
 def plot_speedup_line(
     speedup_df: pd.DataFrame,
     metric: str,
@@ -92,6 +120,7 @@ def plot_speedup_line(
     color_map: dict,
     filename: str,
     plots_folder: str,
+    video_type: str = "",
 ):
     sub = speedup_df[speedup_df["metric"] == metric].copy()
     if sub.empty:
@@ -144,6 +173,8 @@ def plot_speedup_line(
     )
     ax.set_xlabel("Streams", fontsize=14)
     ax.set_ylabel("Speedup (×)", fontsize=14)
+
+    ax.set_ylim(0.5, _y_max(metric, video_type))
 
     stream_vals = sorted(sub["streams"].unique())
     ax.set_xticks(stream_vals)
@@ -221,7 +252,7 @@ def plot_speedup_heatmap_per_stream(
 
 
 def add_speedup_slides(
-    slides: list, df_hp: pd.DataFrame, plots_folder: str, config: dict
+    slides: list, df_hp: pd.DataFrame, plots_folder: str, video_type: str, config: dict
 ):
     if not config:
         return
@@ -281,6 +312,7 @@ def add_speedup_slides(
             build_color_map(df_hp),
             filename,
             plots_folder,
+            video_type,
         )
         slides.append(
             {

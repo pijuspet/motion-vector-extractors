@@ -255,7 +255,7 @@ def add_per_stream_metric_charts(
             )
 
 
-def produce_slides(df_hp, slides_config_path, file_name, plots_folder):
+def produce_slides(df_hp, slides_config_path, file_name, plots_folder, video_type):
     config = load_benchmark_config(slides_config_path)
     if not config:
         print("Aborting slide generation due to missing or invalid config.")
@@ -282,7 +282,7 @@ def produce_slides(df_hp, slides_config_path, file_name, plots_folder):
     add_section_header(slides, "Speedup Analysis",
                         "All metrics normalised so >1.0 = improvement over baseline")
     speedup.add_speedup_slides(
-        slides, df_hp, plots_folder, config.get("speedup_metrics", {})
+        slides, df_hp, plots_folder, video_type, config.get("speedup_metrics", {})
     )
 
     # 2. Scaling line charts

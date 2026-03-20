@@ -15,6 +15,7 @@ class BenchmarkRunner:
     def __init__(self, video_file, video_type, build_type, streams=1, n_runs=3):
         self.video_file = video_file
         self.build_type = build_type
+        self.video_type = video_type
         self.streams = streams
         self.n_runs = n_runs
         self.current_dir = Path.cwd()
@@ -146,6 +147,7 @@ class BenchmarkRunner:
             is_single_threaded,
             is_verbose,
             write_to_csv,
+            self.video_type,
             n_runs=self.n_runs
         )
 
