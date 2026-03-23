@@ -21,20 +21,24 @@ _SPEEDUP_Y_MAX = {
     ("h264_cavlc",        "cpu_ms_per_frame"): 5.1,
     ("h264_cavlc",        "memory"):           1.7,
 
-    ("h264_cabac",        "fps"):              2.8,
-    ("h264_cabac",        "time_per_frame"):   2.8,
-    ("h264_cabac",        "cpu_ms_per_frame"): 2.9,
+    ("h264_cabac",        "fps"):              2.0,
+    ("h264_cabac",        "time_per_frame"):   2.0,
+    ("h264_cabac",        "cpu_ms_per_frame"): 2.0,
     ("h264_cabac",        "memory"):           2.7,
 
     ("h264_avi",          "fps"):              3,
     ("h264_avi",          "time_per_frame"):   3,
     ("h264_avi",          "cpu_ms_per_frame"): 3,
-    ("h264_avi",          "memory"):           3,
+    ("h264_avi",          "memory"):           2,
 
     ("h265",         "fps"):              3.7,
     ("h265",         "time_per_frame"):   3.7,
     ("h265",         "cpu_ms_per_frame"): 3.7,
     ("h265",         "memory"):           1.05,
+}
+
+_SPEEDUP_Y_MIN = {
+    ("h265",         "memory"):           0.95,
 }
 
 
@@ -113,6 +117,10 @@ def _y_max(metric: str, video_type: str) -> float:
     return _SPEEDUP_Y_MAX.get((video_type, metric), 4)
 
 
+def _y_min(metric: str, video_type: str) -> float:
+    return _SPEEDUP_Y_MIN.get((video_type, metric), 0.5)
+
+
 def plot_speedup_line(
     speedup_df: pd.DataFrame,
     metric: str,
@@ -147,8 +155,10 @@ def plot_speedup_line(
             color=color_map.get(method),
         )
         for _, row in m_data.iterrows():
+            pct = (row["speedup"] - 1.0) * 100
+            sign = "+" if pct >= 0 else ""
             ax.annotate(
-                f"{row['speedup']:.2f}×",
+                f"{row['speedup']:.2f}× ({sign}{pct:.0f}%)",
                 (row["streams"], row["speedup"]),
                 textcoords="offset points",
                 xytext=(0, 12),
@@ -174,7 +184,7 @@ def plot_speedup_line(
     ax.set_xlabel("Streams", fontsize=14)
     ax.set_ylabel("Speedup (×)", fontsize=14)
 
-    ax.set_ylim(0.5, _y_max(metric, video_type))
+    ax.set_ylim(_y_min(metric, video_type), _y_max(metric, video_type))
 
     stream_vals = sorted(sub["streams"].unique())
     ax.set_xticks(stream_vals)
@@ -196,17 +206,25 @@ def _render_heatmap(pivot: pd.DataFrame, title: str, filename: str, plots_folder
     pivot = pivot[col_order]
     pivot.columns = [_label(c) for c in pivot.columns]
 
+    annot_labels = pivot.copy().astype(str)
+    for r in range(pivot.shape[0]):
+        for c in range(pivot.shape[1]):
+            val = pivot.iloc[r, c]
+            pct = (val - 1.0) * 100
+            sign = "+" if pct >= 0 else ""
+            annot_labels.iloc[r, c] = f"{val:.2f}×\n({sign}{pct:.0f}%)"
+
     fig, ax = plt.subplots(figsize=(14, max(6, len(pivot) * 0.8 + 2)))
     sns.heatmap(
         pivot,
-        annot=True,
-        fmt=".2f",
+        annot=annot_labels,
+        fmt="",
         cmap="RdYlGn",
         center=1.0,
         linewidths=0.5,
         ax=ax,
         cbar_kws={"label": "Speedup (×)"},
-        annot_kws={"fontsize": 13},
+        annot_kws={"fontsize": 12},
     )
     ax.set_title(
         f"{title}\nGreen > 1.0 = better · Red < 1.0 = worse", fontsize=16, loc="left"
