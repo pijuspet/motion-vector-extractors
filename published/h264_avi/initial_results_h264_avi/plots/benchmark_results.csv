@@ -1,31 +1,3 @@
-method,streams,time_per_frame,fps,cpu,memory,mvs,frames
-Original FFmpeg MV only,1,7.31,136.8,99.6,39672.0,0,298
-Original FFmpeg - Flush decoder,1,7.73,129.3,99.3,39312.0,0,300
-Original FFMPEG decode frames,1,7.09,141.0,99.2,37520.0,0,298
-Custom FFmpeg MV-Only - RTSP protocol,1,6.92,144.5,99.6,39560.0,0,298
-Custom FFmpeg - Flush decoder,1,6.72,148.8,99.2,39312.0,0,300
-Custom FFmpeg,1,6.6,151.6,98.8,39404.0,0,298
-Original FFmpeg MV only,3,3.15,317.4,292.1,39536.0,0,894
-Original FFmpeg - Flush decoder,3,3.23,309.2,293.7,39436.0,0,900
-Original FFMPEG decode frames,3,3.24,308.7,293.0,37396.0,0,894
-Custom FFmpeg MV-Only - RTSP protocol,3,3.36,298.0,294.7,39552.0,0,894
-Custom FFmpeg - Flush decoder,3,3.4,294.1,291.6,39404.0,0,900
-Custom FFmpeg,3,3.3,302.8,293.0,39312.0,0,894
-Original FFmpeg MV only,5,2.59,386.6,486.9,39696.0,0,1490
-Original FFmpeg - Flush decoder,5,2.7,369.8,487.0,39532.0,0,1500
-Original FFMPEG decode frames,5,2.63,380.3,490.2,37524.0,0,1490
-Custom FFmpeg MV-Only - RTSP protocol,5,2.69,372.1,492.2,39684.0,0,1490
-Custom FFmpeg - Flush decoder,5,3.17,315.5,486.2,39532.0,0,1500
-Custom FFmpeg,5,5.62,178.1,451.3,39532.0,0,1490
-Original FFmpeg MV only,10,3.43,291.5,746.1,39696.0,0,2980
-Original FFmpeg - Flush decoder,10,3.22,310.9,752.5,39572.0,0,3000
-Original FFMPEG decode frames,10,2.66,375.5,755.6,37524.0,0,2980
-Custom FFmpeg MV-Only - RTSP protocol,10,2.76,362.5,739.8,39704.0,0,2980
-Custom FFmpeg - Flush decoder,10,2.85,351.2,771.4,39572.0,0,3000
-Custom FFmpeg,10,2.89,346.2,738.3,39444.0,0,2980
-Original FFmpeg MV only,15,2.35,424.6,772.7,39696.0,0,4470
-Original FFmpeg - Flush decoder,15,1.86,539.0,772.1,39532.0,0,4500
-Original FFMPEG decode frames,15,1.99,503.0,768.8,37588.0,0,4470
-Custom FFmpeg MV-Only - RTSP protocol,15,1.98,504.5,774.8,39704.0,0,4470
-Custom FFmpeg - Flush decoder,15,2.16,462.9,762.8,39564.0,0,4500
-Custom FFmpeg,15,2.05,488.8,777.0,39568.0,0,4470
+version https://git-lfs.github.com/spec/v1
+oid sha256:38df6e3eebbc1d3540e80660ec321571566c83614e31709e6b7a1c288707dd08
+size 8240

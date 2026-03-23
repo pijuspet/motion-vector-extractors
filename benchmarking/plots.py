@@ -42,7 +42,11 @@ def highlight_table(df):
             "background-color: #c6efce; color: black"
         )
 
-    return df.style.apply(lambda _: styles, axis=None)
+    float_cols = {
+        col: "{:.3f}" for col in df.select_dtypes(include="float").columns
+    }
+
+    return df.style.apply(lambda _: styles, axis=None).format(float_cols)
 
 
 def save_highlighted_table_as_png(df, filename):
@@ -53,12 +57,16 @@ def save_highlighted_table_as_png(df, filename):
 
 
 def pretty_table(df, filename, plots_folder, col_width=2.8, row_height=0.8):
-    n_rows, n_cols = df.shape
+    display_df = df.copy()
+    float_cols = display_df.select_dtypes(include="float").columns
+    display_df[float_cols] = display_df[float_cols].round(3)
+
+    n_rows, n_cols = display_df.shape
     fig, ax = plt.subplots(figsize=(col_width * n_cols, row_height * (n_rows + 1)))
     ax.axis("off")
     tbl = ax.table(
-        cellText=df.values.tolist(),
-        colLabels=list(df.columns),
+        cellText=display_df.values.tolist(),
+        colLabels=list(display_df.columns),
         loc="center",
         cellLoc="center",
         colLoc="center",
@@ -108,10 +116,10 @@ def plot_grouped_bar(
     print(f"Saved grouped bar chart: {save_path}")
 
 
-def plot_metric(df, metric, title, ylabel, filename, plots_folder, palette="viridis"):
+def plot_metric(df, metric, title, ylabel, filename, plots_folder):
     plt.figure(figsize=(16, 9))
     sns.barplot(
-        data=df, x="method", y=metric, hue="method", palette=palette, legend=False
+        data=df, x="method", y=metric, hue="method", palette="viridis", legend=False
     )
     plt.title(title, fontsize=20, loc="left")
     plt.xlabel("Method", fontsize=14)

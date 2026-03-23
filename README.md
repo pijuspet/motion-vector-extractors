@@ -10,7 +10,7 @@ git clone --recurse-submodules https://github.com/pijuspet/motion-vector-extract
 ```
 2. **Install the required Python packages**
 ```bash
-make install
+sudo make install
 ```
 
 3. Setup ffmpeg project:
@@ -18,16 +18,16 @@ make install
 make setup_ffmpeg
 ```
 
-5. Setup vtune:
-```
-./intel-vtune-2025.5.0.40.sh
-```
-
 ## Running the Benchmark
 
 To run the full benchmark run:
 ```
 make benchmark
+```
+
+To run all experiments for original and custom FFmpeg:
+```
+make all
 ```
 
 - Replace video with your input video file from the videos in `videos/`.
