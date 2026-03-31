@@ -65,6 +65,7 @@ int main(int argc, char** argv) {
     //region flag setting
     AVDictionary* opts = NULL;
     dec_ctx->thread_count = is_single_threaded; // 0 lets ffmpeg decide based on CPU cores
+    dec_ctx->thread_type = FF_THREAD_SLICE;
     //endregion
 
     if (avcodec_open2(dec_ctx, avcodec_find_decoder(dec_ctx->codec_id), &opts) < 0) {

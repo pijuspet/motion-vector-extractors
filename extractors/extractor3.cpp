@@ -85,6 +85,7 @@ int main(int argc, char** argv) {
     //region flag setting
     AVDictionary* opts = NULL;
     dec_ctx->thread_count = is_single_threaded; // 0 lets ffmpeg decide based on CPU cores
+    dec_ctx->thread_type = FF_THREAD_SLICE;
     dec_ctx->export_side_data |= AV_CODEC_EXPORT_DATA_MVS;
     av_opt_set_int(dec_ctx, "motion_vectors_only", 1, 0); // CUSTOM PATCHED FLAG
     //endregion

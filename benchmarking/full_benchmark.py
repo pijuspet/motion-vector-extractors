@@ -281,8 +281,8 @@ if __name__ == "__main__":
     print("Select steps to run (enter one or more numbers separated by space):")
     print("  1: Build")
     print("  2: Extract (run benchmark)")
-    print("  3: Generate Plots and PowerPoint")
-    print("  4: Generate MV comparison")
+    print("  3: Generate MV comparison")
+    print("  4: Generate Plots and PowerPoint")
     print("  5: Profiler (VTune on FFmpeg hacked)")
     print("  0: Run ALL steps")
     print()
@@ -295,8 +295,8 @@ if __name__ == "__main__":
     step_map = {
         "1": runner.build,
         "2": runner.extract,
-        "3": runner.plot,
-        "4": runner.generate_mv_comparison,
+        "3": runner.generate_mv_comparison,
+        "4": runner.plot,
         "5": runner.profiler,
         "0": runner.run_all,
     }

@@ -72,6 +72,7 @@ int main(int argc, char** argv) {
     //region flag setting
     AVDictionary* opts = NULL;
     dec_ctx->thread_count = is_single_threaded; // 0 lets ffmpeg decide based on CPU cores
+    dec_ctx->thread_type = FF_THREAD_SLICE;
     av_dict_set(&opts, "flags2", "+export_mvs", 0);
     //endregion
 
