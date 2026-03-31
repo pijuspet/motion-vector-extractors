@@ -45,18 +45,20 @@ def build_color_map(df: pd.DataFrame) -> dict:
 
 
 def detect_baseline_method(df: pd.DataFrame) -> str:
-    agg = (
-        df.groupby("method")
-        .agg(
-            avg_time=("time_per_frame", "mean"),
-            avg_cpu=("cpu_ms_per_frame", "mean"),
-            avg_mem=("memory", "mean"),
-        )
-        .sort_values(["avg_time", "avg_cpu", "avg_mem"], ascending=False)
-    )
-    baseline = agg.index[0]
-    print(f"[speedup] Auto-detected baseline (slowest method): '{baseline}'")
-    return baseline
+    # agg = (
+    #     df.groupby("method")
+    #     .agg(
+    #         avg_time=("time_per_frame", "mean"),
+    #         avg_cpu=("cpu_ms_per_frame", "mean"),
+    #         avg_mem=("memory", "mean"),
+    #     )
+    #     .sort_values(["avg_time", "avg_cpu", "avg_mem"], ascending=False)
+    # )
+    # baseline = agg.index[0]
+    # print(f"[speedup] Auto-detected baseline (slowest method): '{baseline}'")
+    
+    # using original ffmpeg mv only fot consistent graphs
+    return "Original FFmpeg MV only"
 
 
 def compute_speedup_df(df: pd.DataFrame, baseline_method: str) -> pd.DataFrame:

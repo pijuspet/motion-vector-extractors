@@ -1,3 +1,6 @@
 [submodule "ffmpeg"]
 	path = ffmpeg
 	url = https://github.com/pijuspet/ffmpeg
+[submodule "ffmpeg_installer"]
+	path = ffmpeg_installer
+	url = https://github.com/pijuspet/ffmpeg_installer

@@ -165,19 +165,6 @@ benchmark:
 # DEVELOPMENT & TESTING TOOLS
 # =============================================================================
 
-# note, the new h265 motion vector extraction function is not visible in this diff file
-ffmpeg_diff:
-	diff -u -I '/tmp/ffconf\.' \
-		-x 'config.h' \
-		-x 'ffbuild' \
-		-x '*.pc' \
-		-x 'ffversion.h' \
-		-r  $(REGULAR_PREFIX)/FFmpeg/ $(CUSTOM_PREFIX)/FFmpeg/ \
-		| sed '/Binary\ files\ /d' \
-		| sed 's|$(REGULAR_PREFIX)/FFmpeg/|a/|' \
-		| sed 's|$(CUSTOM_PREFIX)/FFmpeg/|b/|' \
-		> ffmpeg/ffmpeg_version.diff
-
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
 	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) 1 2 5
@@ -196,3 +183,63 @@ publish:
 generate_video:
 	$(PYTHON) -m video_generation.combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
 	$(PYTHON) -m video_generation.generate_motion_vectors_video $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
+
+# =============================================================================
+# INSTALLER DIFF GENERATION
+# =============================================================================
+
+FFMPEG_INSTALLER_DIR = $(CURRENT_DIR)/ffmpeg_installer
+FRESH_FFMPEG_DIR     = /tmp/ffmpeg-8.0-fresh
+FFMPEG_BRANCH        = release/8.0
+
+fetch_fresh_ffmpeg:
+	@if [ ! -d "$(FRESH_FFMPEG_DIR)" ]; then \
+		echo "Cloning fresh FFmpeg $(FFMPEG_BRANCH)..."; \
+		git clone --depth 1 --branch $(FFMPEG_BRANCH) \
+			https://github.com/FFmpeg/FFmpeg.git $(FRESH_FFMPEG_DIR); \
+	else \
+		echo "Fresh FFmpeg already at $(FRESH_FFMPEG_DIR)"; \
+	fi
+
+installer_diff: fetch_fresh_ffmpeg
+	@echo "Generating diff: fresh $(FFMPEG_BRANCH) → custom..."
+	diff -u -I '/tmp/ffconf\.' \
+		-x '.git' \
+		-x 'config.h' \
+		-x 'config_components.h' \
+		-x '*tests' \
+		-x '*.pc' \
+		-x 'ffmpeg_g' \
+		-x 'ffprobe_g' \
+		-x 'ffmpeg' \
+		-x 'ffprobe' \
+		-x '.version' \
+		-x '*.so' \
+		-x '*.so.*' \
+		-x '*.ver.*' \
+		-x '*.a' \
+		-x '*.o' \
+		-x '*.d' \
+		-x '*.S' \
+		-x '*.asm' \
+		-x 'doc' \
+		-x 'ffversion.h' \
+		-r $(FRESH_FFMPEG_DIR)/ $(CUSTOM_PREFIX)/FFmpeg/ \
+		| sed 's|$(FRESH_FFMPEG_DIR)/|a/|g' \
+		| sed 's|$(CUSTOM_PREFIX)/FFmpeg/|b/|g' \
+		| sed '/Binary\ files\ /d' \
+		| grep -v '^Only in b/' \
+		> $(FFMPEG_INSTALLER_DIR)/custom_ffmpeg.diff \
+		|| true
+	@echo "Diff written to $(FFMPEG_INSTALLER_DIR)/custom_ffmpeg.diff"
+	@echo "$$(grep -c '^diff ' $(FFMPEG_INSTALLER_DIR)/custom_ffmpeg.diff) file(s) changed"
+
+# Convenience: generate diff + stage it in the submodule
+installer_publish: installer_diff
+	cd $(FFMPEG_INSTALLER_DIR) && git add ffmpeg_version.diff && \
+		git status
+	@echo "Diff staged in ffmpeg-installer. Commit when ready."
+
+# Nuke the cached fresh clone (forces re-download next time)
+clean_fresh_ffmpeg:
+	rm -rf $(FRESH_FFMPEG_DIR)
