@@ -1,7 +1,8 @@
 mod motion_vector;
 
+pub use shared::get_max_frame;
 use motion_vector::{
-    draw_motion_vectors, get_frame_vectors, get_max_frame, load_motion_vectors,
+    draw_motion_vectors, get_frame_vectors, load_motion_vectors,
     reduce_motion_vectors, MotionVector,
 };
 use opencv::core::{Mat, Rect, Scalar, Size, CV_8UC3};
