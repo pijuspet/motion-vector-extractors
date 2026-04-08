@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "video_generation",
+    "utils",
+    "benchmarking/rust_benchmarking",
+    "publishing/rust_publishing",
+]
+resolver = "2"

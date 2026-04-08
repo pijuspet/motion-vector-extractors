@@ -112,7 +112,7 @@ setup_ffmpeg:
 # BUILD TARGETS
 # =============================================================================
 build_tools:
-	(cd video_generation; cargo build)
+	cargo build --workspace --release
 
 build:
 	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0 $(EXTRACTOR_DIR)/extractor0.cpp $(WRITER_SRC) $(SYS_FF)

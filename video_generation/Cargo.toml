@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 opencv = "0.98.2"
-shared = { path = "../shared" }
+utils = { path = "../utils" }
 
 [[bin]]
 name = "generate_motion_vectors_video"

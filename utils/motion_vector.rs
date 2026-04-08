@@ -1,3 +1,7 @@
+pub mod fonts;
+pub mod mv_compare;
+pub mod vtune_hotspots_plot;
+
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 

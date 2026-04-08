@@ -1,35 +1,22 @@
+use crate::fonts::init_fonts;
 use minijinja::{context, Environment};
 use plotters::prelude::*;
 use plotters::series::Histogram;
-use plotters::style::register_font;
 use std::collections::HashMap;
-use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process;
 
-const FONT_PATH: &str = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
-
-fn init_fonts() -> Result<(), String> {
-    let font_data =
-        fs::read(FONT_PATH).map_err(|e| format!("Cannot read font {}: {}", FONT_PATH, e))?;
-    let font_data: &'static [u8] = Box::leak(font_data.into_boxed_slice());
-    register_font("sans-serif", FontStyle::Normal, font_data)
-        .map_err(|_| "Failed to register font".to_string())?;
-    register_font("sans-serif", FontStyle::Bold, font_data)
-        .map_err(|_| "Failed to register font".to_string())?;
-    Ok(())
+pub struct TreeNode {
+    pub name: String,
+    pub cpu_total: f64,
+    pub cpu_self: f64,
+    pub children: Vec<String>,
 }
 
-struct TreeNode {
-    name: String,
-    cpu_total: f64,
-    cpu_self: f64,
-    children: Vec<String>,
-}
-
-fn build_vtune_tree(csv_file: &str) -> Result<(HashMap<String, TreeNode>, Vec<String>), String> {
+pub fn build_vtune_tree(
+    csv_file: &str,
+) -> Result<(HashMap<String, TreeNode>, Vec<String>), String> {
     let file = fs::File::open(csv_file).map_err(|e| format!("Cannot open file: {}", e))?;
     let reader = BufReader::new(file);
     let mut lines = reader.lines();
@@ -56,8 +43,6 @@ fn build_vtune_tree(csv_file: &str) -> Result<(HashMap<String, TreeNode>, Vec<St
     let mut nodes: HashMap<String, TreeNode> = HashMap::new();
     let mut level_stack: Vec<(usize, String)> = Vec::new();
     let mut root_nodes: Vec<String> = Vec::new();
-    // Preserve insertion order for HTML generation
-    let mut node_order: Vec<String> = Vec::new();
 
     for (index, line_result) in lines.enumerate() {
         let line = line_result.map_err(|e| format!("Read error at line {}: {}", index + 2, e))?;
@@ -80,7 +65,6 @@ fn build_vtune_tree(csv_file: &str) -> Result<(HashMap<String, TreeNode>, Vec<St
         let function_name = function_line.trim().to_string();
         let node_id = format!("node_{}", index);
 
-        // Pop stack to maintain hierarchy
         while let Some((level, _)) = level_stack.last() {
             if *level >= leading_spaces {
                 level_stack.pop();
@@ -100,7 +84,6 @@ fn build_vtune_tree(csv_file: &str) -> Result<(HashMap<String, TreeNode>, Vec<St
                 children: Vec::new(),
             },
         );
-        node_order.push(node_id.clone());
 
         if let Some(ref pid) = parent_id {
             if let Some(parent) = nodes.get_mut(pid) {
@@ -116,7 +99,7 @@ fn build_vtune_tree(csv_file: &str) -> Result<(HashMap<String, TreeNode>, Vec<St
     Ok((nodes, root_nodes))
 }
 
-fn generate_tree_html(nodes: &HashMap<String, TreeNode>, node_id: &str) -> String {
+pub fn generate_tree_html(nodes: &HashMap<String, TreeNode>, node_id: &str) -> String {
     let node = match nodes.get(node_id) {
         Some(n) => n,
         None => return String::new(),
@@ -126,7 +109,6 @@ fn generate_tree_html(nodes: &HashMap<String, TreeNode>, node_id: &str) -> Strin
     let arrow = if has_children { ">" } else { "" };
     let collapsed_class = if has_children { "collapsed" } else { "" };
 
-    // Escape HTML entities in name
     let escaped_name = node
         .name
         .replace('&', "&amp;")
@@ -167,7 +149,7 @@ fn generate_tree_html(nodes: &HashMap<String, TreeNode>, node_id: &str) -> Strin
     html
 }
 
-fn generate_complete_html(
+pub fn generate_complete_html(
     nodes: &HashMap<String, TreeNode>,
     root_nodes: &[String],
     output_file: &str,
@@ -177,7 +159,7 @@ fn generate_complete_html(
         .map(|root_id| generate_tree_html(nodes, root_id))
         .collect();
 
-    let template_source = include_str!("../../utils/templates/vtune.html.jinja");
+    let template_source = include_str!("../utils/templates/vtune.html.jinja");
 
     let mut env = Environment::new();
     env.add_template("vtune", template_source)
@@ -198,7 +180,7 @@ fn generate_complete_html(
     fs::write(output_file, rendered).map_err(|e| format!("Failed to write HTML: {}", e))
 }
 
-fn generate_hotspots_chart(csv_file: &str, output_directory: &str) -> Result<(), String> {
+pub fn generate_hotspots_chart(csv_file: &str, output_directory: &str) -> Result<(), String> {
     init_fonts()?;
 
     let file = fs::File::open(csv_file).map_err(|e| format!("Cannot open file: {}", e))?;
@@ -220,7 +202,6 @@ fn generate_hotspots_chart(csv_file: &str, output_directory: &str) -> Result<(),
         .position(|h| *h == "CPU Time:Total")
         .ok_or("Missing 'CPU Time:Total' column")?;
 
-    // Aggregate CPU time by function name
     let mut aggregated: HashMap<String, f64> = HashMap::new();
 
     for line_result in lines {
@@ -247,7 +228,6 @@ fn generate_hotspots_chart(csv_file: &str, output_directory: &str) -> Result<(),
         *aggregated.entry(func_name).or_insert(0.0) += cpu_total;
     }
 
-    // Sort by CPU time descending and take top 30
     let mut sorted: Vec<(String, f64)> = aggregated.into_iter().collect();
     sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     sorted.truncate(30);
@@ -256,7 +236,6 @@ fn generate_hotspots_chart(csv_file: &str, output_directory: &str) -> Result<(),
         return Ok(());
     }
 
-    // Reverse for bottom-to-top bar chart (plotters draws top-down)
     sorted.reverse();
 
     let max_value = sorted
@@ -272,7 +251,10 @@ fn generate_hotspots_chart(csv_file: &str, output_directory: &str) -> Result<(),
         .map_err(|e| format!("Drawing error: {}", e))?;
 
     let mut chart = ChartBuilder::on(&root)
-        .caption("Top 30 VTune Hotspots", ("sans-serif", 28, FontStyle::Bold).into_font())
+        .caption(
+            "Top 30 VTune Hotspots",
+            ("sans-serif", 28, FontStyle::Bold).into_font(),
+        )
         .margin(15)
         .x_label_area_size(50)
         .y_label_area_size(400)
@@ -288,7 +270,6 @@ fn generate_hotspots_chart(csv_file: &str, output_directory: &str) -> Result<(),
         .y_label_formatter(&|pos| {
             if let SegmentValue::CenterOf(idx) = pos {
                 if *idx < sorted.len() {
-                    // Truncate long names for the y-axis label
                     let name = &sorted[*idx].0;
                     if name.len() > 50 {
                         return format!("{}...", &name[..47]);
@@ -315,7 +296,6 @@ fn generate_hotspots_chart(csv_file: &str, output_directory: &str) -> Result<(),
         )
         .map_err(|e| format!("Series draw error: {}", e))?;
 
-    // Draw value labels on bars
     chart
         .draw_series(sorted.iter().enumerate().map(|(idx, (_, value))| {
             Text::new(
@@ -333,31 +313,10 @@ fn generate_hotspots_chart(csv_file: &str, output_directory: &str) -> Result<(),
     Ok(())
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() != 2 {
-        eprintln!("Usage: vtune_hotspots_plot <csv_file>");
-        process::exit(1);
-    }
-
-    let csv_file = &args[1];
-
-    if !Path::new(csv_file).is_file() {
-        eprintln!("Error: File '{}' not found.", csv_file);
-        process::exit(1);
-    }
-
+pub fn build_tree(csv_file: &str) -> Result<(), String> {
     println!("Building VTune call tree...");
 
-    let (nodes, root_nodes) = match build_vtune_tree(csv_file) {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            process::exit(1);
-        }
-    };
-
+    let (nodes, root_nodes) = build_vtune_tree(csv_file)?;
     println!(
         "Built tree with {} nodes and {} root functions",
         nodes.len(),
@@ -371,15 +330,9 @@ fn main() {
 
     let html_file = format!("{}/call_tree.html", output_directory);
 
-    if let Err(e) = generate_complete_html(&nodes, &root_nodes, &html_file) {
-        eprintln!("Error: {}", e);
-        process::exit(1);
-    }
-
-    if let Err(e) = generate_hotspots_chart(csv_file, &output_directory) {
-        eprintln!("Error: {}", e);
-        process::exit(1);
-    }
+    generate_complete_html(&nodes, &root_nodes, &html_file)?;
+    generate_hotspots_chart(csv_file, &output_directory)?;
 
     println!("HTML call tree saved to: {}", html_file);
+    Ok(())
 }

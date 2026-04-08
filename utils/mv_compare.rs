@@ -1,23 +1,21 @@
-use shared::{load_motion_vectors, MotionVector};
+use crate::{MotionVector, load_motion_vectors};
 use std::collections::BTreeMap;
-use std::env;
 use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::path::Path;
-use std::process;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct Key {
-    frame: i32,
-    src_x: i64,
-    src_y: i64,
-    dst_x: i64,
-    dst_y: i64,
-    source: i32,
+pub struct Key {
+    pub frame: i32,
+    pub src_x: i64,
+    pub src_y: i64,
+    pub dst_x: i64,
+    pub dst_y: i64,
+    pub source: i32,
 }
 
 impl Key {
-    fn from_mv(mv: &MotionVector) -> Self {
+    pub fn from_mv(mv: &MotionVector) -> Self {
         Key {
             frame: mv.frame,
             src_x: mv.src_x as i64,
@@ -28,7 +26,7 @@ impl Key {
         }
     }
 
-    fn display(&self) -> String {
+    pub fn display(&self) -> String {
         format!(
             "Frame {} src=({},{}) dst=({},{}) source={}",
             self.frame, self.src_x, self.src_y, self.dst_x, self.dst_y, self.source
@@ -66,7 +64,7 @@ impl ValueColumns {
     }
 }
 
-fn compare_frames(first: &[MotionVector], second: &[MotionVector]) -> Vec<(Key, String)> {
+pub fn compare_frames(first: &[MotionVector], second: &[MotionVector]) -> Vec<(Key, String)> {
     let mut first_map: BTreeMap<Key, Vec<&MotionVector>> = BTreeMap::new();
     for mv in first {
         first_map.entry(Key::from_mv(mv)).or_default().push(mv);
@@ -145,7 +143,7 @@ fn compare_frames(first: &[MotionVector], second: &[MotionVector]) -> Vec<(Key, 
     diffs
 }
 
-fn write_results(differences: &[(Key, String)], output_path: &Path) -> Result<(), String> {
+pub fn write_results(differences: &[(Key, String)], output_path: &Path) -> Result<(), String> {
     let mut content = String::new();
     if differences.is_empty() {
         writeln!(content, "No differences found in frames in all frames.").unwrap();
@@ -157,40 +155,24 @@ fn write_results(differences: &[(Key, String)], output_path: &Path) -> Result<()
     fs::write(output_path, content).map_err(|e| format!("Failed to write output: {}", e))
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() != 4 {
-        eprintln!("Usage: mv_compare <first_csv> <second_csv> <output_file>");
-        process::exit(1);
-    }
-
-    let first = match load_motion_vectors(&args[1]) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            process::exit(1);
-        }
-    };
-
-    let second = match load_motion_vectors(&args[2]) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            process::exit(1);
-        }
-    };
+pub fn compare(
+    first_csv: &str,
+    second_csv: &str,
+    output_file: &str,
+) -> Result<(), String> {
+    let first = load_motion_vectors(first_csv)
+        .map_err(|e| format!("Error loading first CSV: {}", e))?;
+    let second = load_motion_vectors(second_csv)
+        .map_err(|e| format!("Error loading second CSV: {}", e))?;
 
     let differences = compare_frames(&first, &second);
-    let output_path = Path::new(&args[3]);
+    let output_path = Path::new(output_file);
 
-    if let Err(e) = write_results(&differences, output_path) {
-        eprintln!("Error: {}", e);
-        process::exit(1);
-    }
+    write_results(&differences, output_path)?;
 
     println!(
         "Comparison complete. Results written to {}",
         output_path.display()
     );
+    Ok(())
 }

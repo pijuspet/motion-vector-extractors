@@ -13,3 +13,5 @@ published/**/vtune_results/vtune_results.vtune
 published/**/method*_output_0.csv
 published/**/*.mp4
 *.avi:Zone.Identifier
+**/target
+**/Cargo.lock

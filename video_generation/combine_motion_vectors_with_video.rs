@@ -1,10 +1,5 @@
-mod motion_vector;
+mod motion_vector_display;
 
-pub use shared::get_max_frame;
-use motion_vector::{
-    draw_motion_vectors, get_frame_vectors, load_motion_vectors,
-    reduce_motion_vectors, MotionVector,
-};
 use opencv::core::{Mat, Rect, Scalar, Size, CV_8UC3};
 use opencv::imgproc;
 use opencv::prelude::MatExprTraitConst;
@@ -17,6 +12,14 @@ use opencv::videoio::{
 };
 use std::env;
 use std::process;
+
+use crate::motion_vector_display::draw_motion_vectors;
+
+use utils::{
+    get_frame_vectors, load_motion_vectors,
+    reduce_motion_vectors, MotionVector,
+    get_max_frame
+};
 
 /// Read current video frame, resized to target dimensions.
 /// Returns a black frame if past the end of the video or if the read fails.

@@ -1,9 +1,7 @@
 use opencv::core::{Mat, Point, Scalar};
 use opencv::imgproc;
 
-pub use shared::{
-    get_frame_vectors, load_motion_vectors, reduce_motion_vectors, MotionVector,
-};
+use utils::MotionVector;
 
 pub fn draw_motion_vectors(
     img: &mut Mat,

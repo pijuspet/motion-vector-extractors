@@ -1,8 +1,5 @@
-mod motion_vector;
+mod motion_vector_display;
 
-use motion_vector::{
-    draw_motion_vectors, get_frame_vectors, load_motion_vectors, reduce_motion_vectors,
-};
 use opencv::core::{Mat, Scalar, Size, CV_8UC3};
 use opencv::imgproc;
 use opencv::prelude::MatExprTraitConst;
@@ -13,8 +10,14 @@ use std::env;
 use std::path::Path;
 use std::process;
 
+use crate::motion_vector_display::draw_motion_vectors;
+
+use utils::{
+    get_frame_vectors, load_motion_vectors, reduce_motion_vectors, MotionVector
+};
+
 fn create_motion_vector_video(
-    vectors: &[motion_vector::MotionVector],
+    vectors: &[MotionVector],
     output_path: &str,
     width: i32,
     height: i32,

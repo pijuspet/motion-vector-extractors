@@ -1,18 +1,14 @@
 [package]
-name = "rust_utils"
+name = "utils"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "utils"
+path = "motion_vector.rs"
+
 [dependencies]
-shared = { path = "../../shared" }
 plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "bitmap_encoder", "line_series", "histogram", "ab_glyph"] }
 plotters-bitmap = "0.3"
 minijinja = "2"
 
-[[bin]]
-name = "mv_compare"
-path = "mv_compare.rs"
-
-[[bin]]
-name = "vtune_hotspots_plot"
-path = "vtune_hotspots_plot.rs"
