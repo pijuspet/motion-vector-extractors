@@ -12,8 +12,8 @@ use std::process;
 
 use crate::motion_vector_display::draw_motion_vectors;
 
-use utils::{
-    get_frame_vectors, load_motion_vectors, reduce_motion_vectors, MotionVector
+use utils::motion_vector::{
+    get_frame_vectors, load_motion_vectors, reduce_motion_vectors, MotionVector,
 };
 
 fn create_motion_vector_video(

@@ -28,7 +28,6 @@ VENV_FOLDER = $(PARENT_DIR)/venv-motion-vectors
 PYTHON = $(VENV_FOLDER)/bin/python
 
 EXTRACTOR_DIR = extractors
-BENCHMARKING_DIR = benchmarking
 EXECUTABLES_DIR = executables
 WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors
 
@@ -100,7 +99,6 @@ install: install_vtune
 	cp -n .env_template .env
 	mkdir -p $(VENV_FOLDER)
 	mkdir -p $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)
-	mkdir -p $(BENCHMARKING_DIR)/$(EXECUTABLES_DIR)
 	python3 -m venv $(VENV_FOLDER)
 	. $(VENV_FOLDER)/bin/activate && pip install -r requirements.txt
 
@@ -151,9 +149,9 @@ benchmark_all:
 		if [ -f "$$filepath" ]; then \
 			echo "\n========== $$vtype / $$filepath =========="; \
 			if [ -z "$(TYPE)" ]; then \
-				$(PYTHON) -m benchmarking.full_benchmark $$filepath $(STREAMS) $$vtype cust $(NRUNS) 0; \
+				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype cust $(NRUNS) 0; \
 			else \
-				$(PYTHON) -m benchmarking.full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) $(NRUNS) 0; \
+				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) $(NRUNS) 0; \
 			fi; \
 		else \
 			echo "SKIP: $$filepath not found"; \
@@ -169,7 +167,7 @@ benchmark:
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) 1 2 5
+	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) 1 2 5
 #   chromium --no-sandbox $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)/vtune_results/call_tree.html
 
 decode_ffmpeg:
@@ -183,8 +181,8 @@ publish:
 	cargo run --bin publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) $(VIDEO_TYPE) test_git test_git 1
 
 generate_video:
-	(cd video_generation; cargo run --bin generate_motion_vectors_video $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR))
-	(cd video_generation; cargo run --bin combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR))
+	cargo run --bin generate_motion_vectors_video $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
+	cargo run --bin combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
 
 # =============================================================================
 # INSTALLER DIFF GENERATION

@@ -15,10 +15,8 @@ use std::process;
 
 use crate::motion_vector_display::draw_motion_vectors;
 
-use utils::{
-    get_frame_vectors, load_motion_vectors,
-    reduce_motion_vectors, MotionVector,
-    get_max_frame
+use utils::motion_vector::{
+    get_frame_vectors, get_max_frame, load_motion_vectors, reduce_motion_vectors, MotionVector,
 };
 
 /// Read current video frame, resized to target dimensions.

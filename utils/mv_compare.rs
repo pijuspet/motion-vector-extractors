@@ -1,4 +1,4 @@
-use crate::{MotionVector, load_motion_vectors};
+use crate::motion_vector::{MotionVector, load_motion_vectors};
 use std::collections::BTreeMap;
 use std::fmt::Write as FmtWrite;
 use std::fs;

@@ -1,9 +1,5 @@
-pub mod fonts;
-pub mod mv_compare;
-pub mod vtune_hotspots_plot;
-
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 
 #[derive(Debug, Clone, Default)]
 pub struct MotionVector {
@@ -110,6 +106,61 @@ pub fn load_motion_vectors(
     }
 
     Ok(vectors)
+}
+
+/// Columns written by `write_motion_vectors` / `print_motion_vectors`.
+///
+/// This list is the single source of truth for the CSV output format. When a
+/// field becomes unused (e.g. behind a future "fast" flag), remove it from here
+/// and the loader will continue to parse older files correctly — `load_motion_vectors`
+/// treats every column except `frame`/`src_x`/`src_y`/`dst_x`/`dst_y` as optional
+/// and falls back to sensible defaults when a column is absent.
+const MV_COLUMNS: &[(&str, fn(&MotionVector) -> String)] = &[
+    ("frame", |v| v.frame.to_string()),
+    ("source", |v| v.source.to_string()),
+    ("w", |v| v.w.to_string()),
+    ("h", |v| v.h.to_string()),
+    ("src_x", |v| format!("{}", v.src_x)),
+    ("src_y", |v| format!("{}", v.src_y)),
+    ("dst_x", |v| format!("{}", v.dst_x)),
+    ("dst_y", |v| format!("{}", v.dst_y)),
+    ("flags", |v| v.flags.to_string()),
+    ("motion_x", |v| format!("{}", v.motion_x)),
+    ("motion_y", |v| format!("{}", v.motion_y)),
+    ("motion_scale", |v| format!("{}", v.motion_scale)),
+];
+
+fn write_row<W: Write>(w: &mut W, row: &[String]) -> std::io::Result<()> {
+    let mut first = true;
+    for cell in row {
+        if !first {
+            w.write_all(b",")?;
+        }
+        w.write_all(cell.as_bytes())?;
+        first = false;
+    }
+    w.write_all(b"\n")
+}
+
+/// Write motion vectors as CSV (with header) to any writer — file, stdout, buffer.
+pub fn write_motion_vectors<W: Write>(
+    w: &mut W,
+    vectors: &[MotionVector],
+) -> std::io::Result<()> {
+    let header: Vec<String> = MV_COLUMNS.iter().map(|(name, _)| name.to_string()).collect();
+    write_row(w, &header)?;
+    for v in vectors {
+        let row: Vec<String> = MV_COLUMNS.iter().map(|(_, fmt)| fmt(v)).collect();
+        write_row(w, &row)?;
+    }
+    Ok(())
+}
+
+/// Print motion vectors to stdout in the same CSV format used on disk.
+pub fn print_motion_vectors(vectors: &[MotionVector]) {
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+    let _ = write_motion_vectors(&mut handle, vectors);
 }
 
 pub fn get_frame_vectors(all_vectors: &[MotionVector], frame_number: i32) -> Vec<MotionVector> {
