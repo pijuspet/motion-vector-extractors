@@ -4,6 +4,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+use crate::benchmark::benchmark;
+use crate::benchmark_extractors::run_benchmark_extractors;
+
 pub struct BenchmarkRunner {
     pub video_file: String,
     pub build_type: String,
@@ -215,23 +218,21 @@ impl BenchmarkRunner {
 
         println!("Running 9-method benchmark suite...");
 
-        let is_single_threaded = 1; // 1
-        let is_verbose = 1;
-        let write_to_csv = 1;
+        let is_single_threaded = true; // true
+        let is_verbose = true;
+        let write_to_csv = true;
 
-        let cmd = format!(
-            "{} {} {} {} {} {} {} {}",
-            self.benchmark_exec.display(),
-            self.video_file,
+        if run_benchmark_extractors(
+            &self.video_file,
             self.streams,
-            self.results_dir.display(),
-            self.current_dir.display(),
+            &self.results_dir.to_string_lossy(),
+            &self.current_dir.to_string_lossy(),
             is_single_threaded,
             is_verbose,
-            write_to_csv
-        );
-
-        if !self.run_command(&cmd, Some(&self.benchmarking_dir_executables), None) {
+            write_to_csv,
+        )
+        .is_none()
+        {
             return;
         }
 
@@ -250,45 +251,21 @@ impl BenchmarkRunner {
         let is_verbose = 0;
         let write_to_csv = 0;
 
-        // // ── Rust version ──
-        // println!("Running Rust benchmark visualization and PPT generation...");
-        // rust_benchmarking::benchmark(
-        //     &self.video_file,
-        //     self.streams,
-        //     &self.benchmark_exec.to_string_lossy(),
-        //     &self.current_dir.to_string_lossy(),
-        //     &self.results_dir.to_string_lossy(),
-        //     &self.slides_config.to_string_lossy(),
-        //     &self.plots_dir.to_string_lossy(),
-        //     is_single_threaded,
-        //     is_verbose,
-        //     write_to_csv,
-        //     &self.video_type,
-        //     self.n_runs,
-        // );
-
-        // ── Python version (uncomment to use, comment out Rust version above) ──
-        println!("Running Python benchmark visualization and PPT generation...");
-        let cmd = format!(
-            "{}/bin/python3 -c \"\
-            import benchmarking.benchmark as b; \
-            b.benchmark('{}', {}, '{}', '{}', '{}', '{}', '{}', '{}', {}, {}, {}, '{}', n_runs={})\"",
-            self.venv_dir.display(),
-            self.video_file,
+        // ── Rust version ──
+        println!("Running Rust benchmark visualization and PPT generation...");
+        benchmark(
+            &self.video_file,
             self.streams,
-            self.benchmarking_dir_executables.display(),
-            self.benchmark_exec.display(),
-            self.current_dir.display(),
-            self.results_dir.display(),
-            self.slides_config.display(),
-            self.plots_dir.display(),
+            &self.current_dir.to_string_lossy(),
+            &self.results_dir.to_string_lossy(),
+            &self.slides_config.to_string_lossy(),
+            &self.plots_dir.to_string_lossy(),
             is_single_threaded,
             is_verbose,
             write_to_csv,
-            self.video_type,
+            &self.video_type,
             self.n_runs,
         );
-        self.run_shell_command(&cmd, Some(&self.current_dir), None);
 
         println!("Plotting complete. Plots and PPTX in {}.", self.plots_dir.display());
     }

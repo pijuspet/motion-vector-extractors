@@ -161,7 +161,7 @@ benchmark_all:
 	done
 
 benchmark:
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS)
+	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS)
 
 # =============================================================================
 # DEVELOPMENT & TESTING TOOLS
@@ -180,7 +180,7 @@ decode_ffmpeg:
 # =============================================================================
 
 publish:
-	$(PYTHON) -m publishing.publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) $(VIDEO_TYPE) test_git test_git 1
+	cargo run --bin publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) $(VIDEO_TYPE) test_git test_git 1
 
 generate_video:
 	(cd video_generation; cargo run --bin generate_motion_vectors_video $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR))

@@ -3,7 +3,7 @@ mod confluence_report_generator;
 mod report_generator;
 
 use chrono::Local;
-use rust_benchmarking::runner::BenchmarkRunner;
+use benchmarking::full_benchmark::BenchmarkRunner;
 use std::env;
 use std::fs;
 use std::io::{self, Write};

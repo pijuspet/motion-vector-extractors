@@ -2,7 +2,7 @@ use std::env;
 use std::io::{self, Write};
 use std::process;
 
-use rust_benchmarking::runner::BenchmarkRunner;
+use benchmarking::full_benchmark::BenchmarkRunner;
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 

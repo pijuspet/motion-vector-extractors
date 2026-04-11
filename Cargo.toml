@@ -2,7 +2,7 @@
 members = [
     "video_generation",
     "utils",
-    "benchmarking/rust_benchmarking",
+    "benchmarking",
     "publishing",
 ]
 resolver = "2"
