@@ -176,33 +176,9 @@ impl BenchmarkRunner {
             return false;
         }
 
-        let pkg_env = [(
-            "PKG_CONFIG_PATH".to_string(),
-            self.pkg_config_path.to_string_lossy().to_string(),
-        )];
+        let compile_cmd = "make build_tools";
 
-        let pkg_flags = match self.run_shell_capture(
-            "pkg-config --cflags --libs libavformat libavcodec libavutil libswscale",
-            Some(&pkg_env),
-        ) {
-            Some(flags) => flags,
-            None => {
-                eprintln!("Failed to get pkg-config flags");
-                return false;
-            }
-        };
-
-        let compile_cmd = format!(
-            "g++ -O2 -o {} benchmark_extractors.cpp {}",
-            self.benchmark_exec.display(),
-            pkg_flags
-        );
-
-        if !self.run_shell_command(
-            &format!("{} -lm", compile_cmd),
-            Some(&self.benchmarking_dir),
-            Some(&pkg_env),
-        ) {
+        if !self.run_command(compile_cmd, Some(&self.current_dir), None) {
             return false;
         }
 
@@ -251,7 +227,6 @@ impl BenchmarkRunner {
         let is_verbose = 0;
         let write_to_csv = 0;
 
-        // ── Rust version ──
         println!("Running Rust benchmark visualization and PPT generation...");
         benchmark(
             &self.video_file,

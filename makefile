@@ -3,10 +3,10 @@
 # =============================================================================
 
 STREAMS = 15
-NRUNS = 1
+NRUNS = 3
 
-# VIDEO_NAME ?= bigbunny_walking.mp4
-VIDEO_NAME ?= bigbunny.mp4
+VIDEO_NAME ?= bigbunny_walking.mp4
+# VIDEO_NAME ?= bigbunny.mp4
 # VIDEO_NAME ?= stickman.mp4
 # VIDEO_NAME ?= dashcam.mp4
 
@@ -112,21 +112,43 @@ setup_ffmpeg:
 build_tools:
 	cargo build --workspace --release
 
-build:
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0 $(EXTRACTOR_DIR)/extractor0.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor1 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor2 $(EXTRACTOR_DIR)/extractor2.cpp  $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3 $(EXTRACTOR_DIR)/extractor3.cpp $(WRITER_SRC) $(CUST_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor4 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(CUST_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor5 $(EXTRACTOR_DIR)/extractor5.cpp $(WRITER_SRC) $(CUST_FF)
+EXTRACTOR_BINS := extractor0 extractor1 extractor2 extractor3 extractor5
+TARGET_SYS  := $(CURRENT_DIR)/extractors/target-sys
+TARGET_CUST := $(CURRENT_DIR)/extractors/target-cust
 
+# $(1) = FFmpeg prefix, $(2) = CARGO_TARGET_DIR to use
+define build_extractors
+	PKG_CONFIG_PATH=$(1)/lib/pkgconfig \
+	RUSTFLAGS="-C link-arg=-Wl,-rpath,$(1)/lib -C link-arg=-Wl,--disable-new-dtags" \
+	CARGO_TARGET_DIR=$(2) \
+	cargo build --release -p extractor \
+		$(foreach b,$(EXTRACTOR_BINS),--bin $(b))
+endef
+
+# Mixed build: extractors 0/1/2 link against system FFmpeg, extractors 3/4/5
+# link against custom patched FFmpeg. extractor4 is the custom-linked build of
+# extractor1 (same source, different libav*).
+build:
+	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS))
+	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST))
+	cp $(TARGET_SYS)/release/extractor0  $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0
+	cp $(TARGET_SYS)/release/extractor1  $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor1
+	cp $(TARGET_SYS)/release/extractor2  $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor2
+	cp $(TARGET_CUST)/release/extractor3 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3
+	cp $(TARGET_CUST)/release/extractor1 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor4
+	cp $(TARGET_CUST)/release/extractor5 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor5
+
+# System-only build: every binary links against the regular system FFmpeg.
+# Useful for isolating whether a regression comes from the custom patch or
+# from the extractor code itself.
 build_sys:
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0 $(EXTRACTOR_DIR)/extractor0.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor1 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor2 $(EXTRACTOR_DIR)/extractor2.cpp  $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3 $(EXTRACTOR_DIR)/extractor3.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor4 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor5 $(EXTRACTOR_DIR)/extractor5.cpp $(WRITER_SRC) $(SYS_FF)
+	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS))
+	cp $(TARGET_SYS)/release/extractor0 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0
+	cp $(TARGET_SYS)/release/extractor1 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor1
+	cp $(TARGET_SYS)/release/extractor2 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor2
+	cp $(TARGET_SYS)/release/extractor3 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3
+	cp $(TARGET_SYS)/release/extractor1 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor4
+	cp $(TARGET_SYS)/release/extractor5 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor5
 
 # =============================================================================
 # BENCHMARKING

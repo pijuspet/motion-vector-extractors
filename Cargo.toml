@@ -4,5 +4,6 @@ members = [
     "utils",
     "benchmarking",
     "publishing",
+    "extractors",
 ]
 resolver = "2"

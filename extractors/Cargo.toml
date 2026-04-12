@@ -1,0 +1,38 @@
+[package]
+name = "extractor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# ffmpeg-next re-exports raw FFI bindings via `ffmpeg_next::sys`. Custom decoder
+# opts (e.g. `motion_vectors_only` from our patched FFmpeg) are set through the
+# raw bindings. The FFmpeg install to link against is selected at build time via
+# `PKG_CONFIG_PATH`, so `ffmpeg/FFmpeg-8.0{,-custom}/lib/pkgconfig` is injected
+# by the makefile targets.
+ffmpeg-next = "8.1.0"
+libc = "0.2"
+utils = { path = "../utils" }
+
+[lib]
+name = "extractor"
+path = "lib.rs"
+
+[[bin]]
+name = "extractor0"
+path = "extractor0.rs"
+
+[[bin]]
+name = "extractor1"
+path = "extractor1.rs"
+
+[[bin]]
+name = "extractor2"
+path = "extractor2.rs"
+
+[[bin]]
+name = "extractor3"
+path = "extractor3.rs"
+
+[[bin]]
+name = "extractor5"
+path = "extractor5.rs"

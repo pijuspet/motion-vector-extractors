@@ -11,7 +11,9 @@ pub struct MotionVector {
     pub src_y: f64,
     pub dst_x: f64,
     pub dst_y: f64,
-    pub flags: i32,
+    // `u64` to match `AVMotionVector::flags`. Serialized in hex (`0x...`) to
+    // stay compatible with the C++ writer.
+    pub flags: u64,
     pub motion_x: f64,
     pub motion_y: f64,
     pub motion_scale: f64,
@@ -19,6 +21,15 @@ pub struct MotionVector {
 
 fn parse_f64(s: &str) -> Option<f64> {
     s.trim().parse::<f64>().ok()
+}
+
+fn parse_flags(s: &str) -> Option<u64> {
+    let t = s.trim();
+    if let Some(stripped) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+        u64::from_str_radix(stripped, 16).ok()
+    } else {
+        t.parse::<u64>().ok()
+    }
 }
 
 pub fn load_motion_vectors(
@@ -96,7 +107,10 @@ pub fn load_motion_vectors(
             src_y: src_y_val,
             dst_x: dst_x_val,
             dst_y: dst_y_val,
-            flags: get_field(&fields, col_flags).unwrap_or(0.0) as i32,
+            flags: col_flags
+                .and_then(|i| fields.get(i))
+                .and_then(|s| parse_flags(s))
+                .unwrap_or(0),
             motion_x: motion_x_val,
             motion_y: motion_y_val,
             motion_scale: get_field(&fields, col_motion_scale).unwrap_or(0.0),
@@ -124,7 +138,7 @@ const MV_COLUMNS: &[(&str, fn(&MotionVector) -> String)] = &[
     ("src_y", |v| format!("{}", v.src_y)),
     ("dst_x", |v| format!("{}", v.dst_x)),
     ("dst_y", |v| format!("{}", v.dst_y)),
-    ("flags", |v| v.flags.to_string()),
+    ("flags", |v| format!("0x{:x}", v.flags)),
     ("motion_x", |v| format!("{}", v.motion_x)),
     ("motion_y", |v| format!("{}", v.motion_y)),
     ("motion_scale", |v| format!("{}", v.motion_scale)),
@@ -142,25 +156,37 @@ fn write_row<W: Write>(w: &mut W, row: &[String]) -> std::io::Result<()> {
     w.write_all(b"\n")
 }
 
-/// Write motion vectors as CSV (with header) to any writer — file, stdout, buffer.
-pub fn write_motion_vectors<W: Write>(
-    w: &mut W,
-    vectors: &[MotionVector],
-) -> std::io::Result<()> {
-    let header: Vec<String> = MV_COLUMNS.iter().map(|(name, _)| name.to_string()).collect();
-    write_row(w, &header)?;
-    for v in vectors {
-        let row: Vec<String> = MV_COLUMNS.iter().map(|(_, fmt)| fmt(v)).collect();
-        write_row(w, &row)?;
-    }
-    Ok(())
+/// Streaming CSV writer — writes the header on construction and lets callers
+/// append rows incrementally. Used by the extractor binaries, which emit one
+/// batch of motion vectors per decoded frame and do not want to buffer the
+/// entire video in memory. Keeps a running `total` so the binary can print the
+/// same `<frames> <mvs>` summary as the C++ version.
+pub struct MotionVectorCsvWriter<W: Write> {
+    inner: W,
+    total: i32,
 }
 
-/// Print motion vectors to stdout in the same CSV format used on disk.
-pub fn print_motion_vectors(vectors: &[MotionVector]) {
-    let stdout = std::io::stdout();
-    let mut handle = stdout.lock();
-    let _ = write_motion_vectors(&mut handle, vectors);
+impl<W: Write> MotionVectorCsvWriter<W> {
+    pub fn new(mut inner: W) -> std::io::Result<Self> {
+        let header: Vec<String> = MV_COLUMNS.iter().map(|(name, _)| name.to_string()).collect();
+        write_row(&mut inner, &header)?;
+        Ok(Self { inner, total: 0 })
+    }
+
+    pub fn write(&mut self, v: &MotionVector) -> std::io::Result<()> {
+        let row: Vec<String> = MV_COLUMNS.iter().map(|(_, fmt)| fmt(v)).collect();
+        write_row(&mut self.inner, &row)?;
+        self.total += 1;
+        Ok(())
+    }
+
+    pub fn total(&self) -> i32 {
+        self.total
+    }
+
+    pub fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 pub fn get_frame_vectors(all_vectors: &[MotionVector], frame_number: i32) -> Vec<MotionVector> {
