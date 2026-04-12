@@ -106,6 +106,24 @@ pub unsafe fn write_side_data(
     }
 }
 
+/// Read the current VmRSS of this process from `/proc/self/status`.
+/// Returns the RSS in kilobytes, or 0 if it cannot be read.
+///
+/// Unlike `ru_maxrss` from `wait4`, this returns the *current* RSS after
+/// `exec` — it is not inflated by the parent's RSS at `fork` time.
+pub fn get_current_rss_kb() -> i64 {
+    let Ok(status) = std::fs::read_to_string("/proc/self/status") else {
+        return 0;
+    };
+    for line in status.lines() {
+        if let Some(val) = line.strip_prefix("VmRSS:") {
+            let val = val.trim().trim_end_matches(" kB").trim();
+            return val.parse().unwrap_or(0);
+        }
+    }
+    0
+}
+
 /// Print the FFmpeg runtime version to stderr (matches the `is_verbose` branch
 /// of the C++ extractors).
 pub fn print_ffmpeg_version() {

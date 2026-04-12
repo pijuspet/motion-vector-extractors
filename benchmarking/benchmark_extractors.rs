@@ -65,6 +65,7 @@ struct ChildProcess {
     pid: libc::pid_t,
     pipe_fd: RawFd,
     usage: libc::rusage,
+    self_rss_kb: i64,
 }
 
 fn get_timestamp_ms() -> f64 {
@@ -152,6 +153,7 @@ fn spawn_processes(
             pid,
             pipe_fd: pipe_fds[0],
             usage: unsafe { std::mem::zeroed() },
+            self_rss_kb: 0,
         });
         if is_verbose {
             println!("Forked child {} with pid {}", i, pid);
@@ -208,6 +210,12 @@ fn collect_process_results(
                             }
                             total_frames += frames;
                             total_mvs += mvs;
+
+                            if parts.len() >= 3 {
+                                if let Ok(rss) = parts[2].parse::<i64>() {
+                                    proc.self_rss_kb = rss;
+                                }
+                            }
                         }
                     }
                 }
@@ -315,7 +323,13 @@ fn run_benchmark(
             proc.usage.ru_stime.tv_sec as f64 * 1000.0 + proc.usage.ru_stime.tv_usec as f64 / 1e3;
         total_cpu_time += user_time + sys_time;
 
-        let rss_kb = proc.usage.ru_maxrss;
+        // Prefer self-reported VmRSS (read after exec, before cleanup)
+        // over ru_maxrss which is inflated by the parent's RSS at fork time.
+        let rss_kb = if proc.self_rss_kb > 0 {
+            proc.self_rss_kb
+        } else {
+            proc.usage.ru_maxrss
+        };
         total_memory += rss_kb;
         peak_memory = peak_memory.max(rss_kb);
     }

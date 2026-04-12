@@ -19,15 +19,6 @@ pub struct BenchmarkResult {
     pub frames: i32,
 }
 
-pub const NUMERIC_FIELDS: &[&str] = &[
-    "time_per_frame",
-    "fps",
-    "cpu_ms_per_frame",
-    "memory",
-    "mem_per_stream",
-    "frames",
-];
-
 // ── Stream run generation ───────────────────────────────────────────────────
 
 pub fn generate_stream_runs(max_streams: i32) -> Vec<i32> {
@@ -40,64 +31,6 @@ pub fn generate_stream_runs(max_streams: i32) -> Vec<i32> {
         }
     }
     base
-}
-
-// ── Output parsing ──────────────────────────────────────────────────────────
-
-pub fn parse_output(output_text: &str, stream_count: i32) -> Vec<BenchmarkResult> {
-    let mut in_table = false;
-    let mut results = Vec::new();
-
-    for line in output_text.lines() {
-        let line = line.trim();
-
-        if line.contains("Method") && line.contains("ms/frame(strm)") {
-            in_table = true;
-            continue;
-        }
-        if !in_table {
-            continue;
-        }
-        if line.is_empty()
-            || line.starts_with('\u{2014}')
-            || line.starts_with("---")
-            || line.starts_with("===")
-        {
-            continue;
-        }
-        if line.starts_with("ms/") || line.starts_with("CPU") || line.starts_with("Total") {
-            continue;
-        }
-
-        let parts: Vec<&str> = line.split('|').map(|p| p.trim()).collect();
-        if parts.len() < 9 {
-            continue;
-        }
-
-        let parse_f = |s: &str| -> Option<f64> {
-            s.replace("ms", "").trim().parse::<f64>().ok()
-        };
-
-        let method = parts[0].to_string();
-        let time_per_frame = match parse_f(parts[1]) { Some(v) => v, None => continue };
-        let fps = match parts[2].parse::<f64>() { Ok(v) => v, Err(_) => continue };
-        let cpu_ms_per_frame = match parse_f(parts[3]) { Some(v) => v, None => continue };
-        let mem_total_kb = match parts[6].parse::<f64>() { Ok(v) => v, Err(_) => continue };
-        let mem_per_stream_kb = match parts[7].parse::<f64>() { Ok(v) => v, Err(_) => continue };
-        let frames = match parts[8].parse::<i32>() { Ok(v) => v, Err(_) => continue };
-
-        results.push(BenchmarkResult {
-            method,
-            streams: stream_count,
-            time_per_frame,
-            fps,
-            cpu_ms_per_frame,
-            memory: mem_total_kb,
-            mem_per_stream: mem_per_stream_kb,
-            frames,
-        });
-    }
-    results
 }
 
 // ── Run benchmark subprocess ────────────────────────────────────────────────
@@ -169,19 +102,34 @@ pub fn run_benchmark_averaged(
         }
     }
 
+    // Preserve the canonical method order from the first run instead of
+    // iterating the HashMap (which has random order).
+    let method_order: Vec<String> = {
+        let mut seen = Vec::new();
+        for r in &all_runs[0] {
+            if !seen.contains(&r.method) {
+                seen.push(r.method.clone());
+            }
+        }
+        seen
+    };
+
     let mut averaged = Vec::new();
-    for ((method, streams_val), entries) in &groups {
-        let n = entries.len() as f64;
-        averaged.push(BenchmarkResult {
-            method: method.clone(),
-            streams: *streams_val,
-            time_per_frame: entries.iter().map(|e| e.time_per_frame).sum::<f64>() / n,
-            fps: entries.iter().map(|e| e.fps).sum::<f64>() / n,
-            cpu_ms_per_frame: entries.iter().map(|e| e.cpu_ms_per_frame).sum::<f64>() / n,
-            memory: entries.iter().map(|e| e.memory).sum::<f64>() / n,
-            mem_per_stream: entries.iter().map(|e| e.mem_per_stream).sum::<f64>() / n,
-            frames: (entries.iter().map(|e| e.frames as f64).sum::<f64>() / n) as i32,
-        });
+    for method in &method_order {
+        let key = (method.clone(), streams);
+        if let Some(entries) = groups.get(&key) {
+            let n = entries.len() as f64;
+            averaged.push(BenchmarkResult {
+                method: method.clone(),
+                streams,
+                time_per_frame: entries.iter().map(|e| e.time_per_frame).sum::<f64>() / n,
+                fps: entries.iter().map(|e| e.fps).sum::<f64>() / n,
+                cpu_ms_per_frame: entries.iter().map(|e| e.cpu_ms_per_frame).sum::<f64>() / n,
+                memory: entries.iter().map(|e| e.memory).sum::<f64>() / n,
+                mem_per_stream: entries.iter().map(|e| e.mem_per_stream).sum::<f64>() / n,
+                frames: (entries.iter().map(|e| e.frames as f64).sum::<f64>() / n) as i32,
+            });
+        }
     }
     averaged
 }
@@ -259,15 +207,6 @@ pub fn benchmark(
     } else {
         println!("Saved complete data table: {}", csv_path);
     }
-
-    // ── Rust slide generation (disabled for now) ──
-    // slides::produce_slides(
-    //     &all_results,
-    //     slides_config,
-    //     "benchmark_comparison_slides.pptx",
-    //     plots_folder,
-    //     video_type,
-    // );
 
     // ── Python slide generation via benchmarking/slides.py ──
     println!("Running Python slide generation via benchmarking.slides...");

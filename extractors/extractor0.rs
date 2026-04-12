@@ -4,7 +4,7 @@ use std::ptr;
 use ffmpeg_next::sys as ff;
 
 use extractor::ffmpeg_common::{
-    open_mv_writer, print_ffmpeg_version, write_side_data, ExtractorArgs,
+    get_current_rss_kb, open_mv_writer, print_ffmpeg_version, write_side_data, ExtractorArgs,
 };
 
 fn main() {
@@ -145,6 +145,8 @@ fn main() {
             let _ = w.flush();
         }
 
+        let rss_kb = get_current_rss_kb();
+
         let mut dec_ctx_ptr = dec_ctx;
         ff::avcodec_free_context(&mut dec_ctx_ptr);
         ff::avformat_close_input(&mut fmt_ctx);
@@ -153,6 +155,6 @@ fn main() {
         let mut pkt_ptr = pkt;
         ff::av_packet_free(&mut pkt_ptr);
 
-        println!("{} {}", frame_num, total_mvs);
+        println!("{} {} {}", frame_num, total_mvs, rss_kb);
     }
 }
