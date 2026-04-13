@@ -12,7 +12,7 @@ use std::process;
 
 use crate::motion_vector_display::draw_motion_vectors;
 
-use utils::motion_vector::{
+use mv_types::motion_vector::{
     get_frame_vectors, load_motion_vectors, reduce_motion_vectors, MotionVector,
 };
 

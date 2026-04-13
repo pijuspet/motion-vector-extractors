@@ -25,7 +25,7 @@ const METHODS: &[MethodInfo] = &[
 
 impl MethodInfo {
     fn exe_path(&self, exe_dir: &str) -> String {
-        format!("{}/extractors/executables/extractor{}", exe_dir, self.id)
+        format!("{}/executables/extractor{}", exe_dir, self.id)
     }
 
     fn output_csv_prefix(&self) -> String {

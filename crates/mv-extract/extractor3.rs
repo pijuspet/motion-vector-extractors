@@ -1,9 +1,11 @@
-use std::ffi::CString;
+use std::ffi::{c_void, CString};
 use std::ptr;
 
 use ffmpeg_next::sys as ff;
 
-use extractor::ffmpeg_common::{get_current_rss_kb, ExtractorArgs};
+use mv_extract::ffmpeg_common::{
+    get_current_rss_kb, open_mv_writer, print_ffmpeg_version, write_side_data, ExtractorArgs,
+};
 
 fn main() {
     let Some(args) = ExtractorArgs::from_env() else {
@@ -11,7 +13,17 @@ fn main() {
     };
 
     unsafe {
-        ff::avformat_network_init();
+        // RTSP open options — matches extractor3.cpp.
+        let mut options: *mut ff::AVDictionary = ptr::null_mut();
+        let k_transport = CString::new("rtsp_transport").unwrap();
+        let v_transport = CString::new("udp").unwrap();
+        ff::av_dict_set(&mut options, k_transport.as_ptr(), v_transport.as_ptr(), 0);
+        let k_stimeout = CString::new("stimeout").unwrap();
+        let v_stimeout = CString::new("2500000").unwrap();
+        ff::av_dict_set(&mut options, k_stimeout.as_ptr(), v_stimeout.as_ptr(), 0);
+        let k_buffer = CString::new("buffer_size").unwrap();
+        let v_buffer = CString::new("32768").unwrap();
+        ff::av_dict_set(&mut options, k_buffer.as_ptr(), v_buffer.as_ptr(), 0);
 
         let mut fmt_ctx: *mut ff::AVFormatContext = ptr::null_mut();
         let c_video = CString::new(args.video_file.as_str()).unwrap();
@@ -19,12 +31,13 @@ fn main() {
             &mut fmt_ctx,
             c_video.as_ptr(),
             ptr::null_mut(),
-            ptr::null_mut(),
+            &mut options,
         ) < 0
         {
             eprintln!("Could not open input file.");
             std::process::exit(255);
         }
+        ff::av_dict_free(&mut options);
 
         if ff::avformat_find_stream_info(fmt_ctx, ptr::null_mut()) < 0 {
             eprintln!("Could not find stream info.");
@@ -48,7 +61,13 @@ fn main() {
         let video_stream = *(*fmt_ctx).streams.add(vsi as usize);
         //endregion
 
-        let dec_ctx = ff::avcodec_alloc_context3(ptr::null());
+        let codec = ff::avcodec_find_decoder((*(*video_stream).codecpar).codec_id);
+        if codec.is_null() {
+            eprintln!("Codec not found.");
+            std::process::exit(255);
+        }
+
+        let dec_ctx = ff::avcodec_alloc_context3(codec);
         if dec_ctx.is_null() {
             eprintln!("Could not allocate codec context.");
             std::process::exit(255);
@@ -62,10 +81,9 @@ fn main() {
         let mut opts: *mut ff::AVDictionary = ptr::null_mut();
         (*dec_ctx).thread_count = if args.is_single_threaded { 1 } else { 0 };
         (*dec_ctx).thread_type = ff::FF_THREAD_SLICE as i32;
-        //endregion
-
-        //region codec
-        let codec = ff::avcodec_find_decoder((*dec_ctx).codec_id);
+        (*dec_ctx).export_side_data |= ff::AV_CODEC_EXPORT_DATA_MVS as i32;
+        let mv_only_key = CString::new("motion_vectors_only").unwrap();
+        ff::av_opt_set_int(dec_ctx as *mut c_void, mv_only_key.as_ptr(), 1, 0);
         //endregion
 
         if ff::avcodec_open2(dec_ctx, codec, &mut opts) < 0 {
@@ -78,6 +96,22 @@ fn main() {
         if pkt.is_null() || frame.is_null() {
             eprintln!("Could not allocate packet or frame.");
             std::process::exit(255);
+        }
+
+        let mut writer = if args.do_print {
+            match open_mv_writer(&args.output_file) {
+                Ok(w) => Some(w),
+                Err(e) => {
+                    eprintln!("Failed to open output file: {}", e);
+                    std::process::exit(255);
+                }
+            }
+        } else {
+            None
+        };
+
+        if args.is_verbose {
+            print_ffmpeg_version();
         }
 
         let mut frame_num: i32 = 0;
@@ -96,11 +130,32 @@ fn main() {
                         eprintln!("Error during decoding.");
                         break;
                     }
+                    let sd = ff::av_frame_get_side_data(
+                        frame,
+                        ff::AVFrameSideDataType::AV_FRAME_DATA_MOTION_VECTORS,
+                    );
+                    if let Some(w) = writer.as_mut() {
+                        if !sd.is_null() && !(*sd).data.is_null() && (*sd).size > 0 {
+                            write_side_data(
+                                w,
+                                frame_num,
+                                (*sd).data as *const ff::AVMotionVector,
+                                (*sd).size as usize,
+                            );
+                        } else if args.is_verbose {
+                            eprintln!("Frame {}: no motion vectors", frame_num);
+                        }
+                    }
                     ff::av_frame_unref(frame);
                     frame_num += 1;
                 }
             }
             ff::av_packet_unref(pkt);
+        }
+
+        let total_mvs = writer.as_ref().map(|w| w.total()).unwrap_or(0);
+        if let Some(mut w) = writer {
+            let _ = w.flush();
         }
 
         let rss_kb = get_current_rss_kb();
@@ -113,6 +168,6 @@ fn main() {
         let mut pkt_ptr = pkt;
         ff::av_packet_free(&mut pkt_ptr);
 
-        println!("{} {} {}", frame_num, 0, rss_kb);
+        println!("{} {} {}", frame_num, total_mvs, rss_kb);
     }
 }

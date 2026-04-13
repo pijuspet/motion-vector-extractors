@@ -159,7 +159,7 @@ pub fn generate_complete_html(
         .map(|root_id| generate_tree_html(nodes, root_id))
         .collect();
 
-    let template_source = include_str!("../utils/templates/vtune.html.jinja");
+    let template_source = include_str!("templates/vtune.html.jinja");
 
     let mut env = Environment::new();
     env.add_template("vtune", template_source)

@@ -208,14 +208,17 @@ pub fn benchmark(
         println!("Saved complete data table: {}", csv_path);
     }
 
-    // ── Python slide generation via benchmarking/slides.py ──
-    println!("Running Python slide generation via benchmarking.slides...");
+    // ── Python slide generation via scripts/slides.py ──
+    println!("Running Python slide generation...");
     let venv_python = format!("{}/../venv-motion-vectors/bin/python3", project_absolute_path);
+    let scripts_dir = format!("{}/scripts", project_absolute_path);
     let py_code = format!(
-        "import pandas as pd; \
-         import benchmarking.slides as s; \
+        "import sys; sys.path.insert(0, '{scripts}'); \
+         import pandas as pd; \
+         import slides as s; \
          df = pd.read_csv('{csv}'); \
          s.produce_slides(df, '{cfg}', 'benchmark_comparison_slides.pptx', '{plots}', '{vtype}')",
+        scripts = scripts_dir,
         csv = csv_path,
         cfg = slides_config,
         plots = plots_folder,

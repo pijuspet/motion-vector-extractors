@@ -3,7 +3,7 @@ use std::ptr;
 
 use ffmpeg_next::sys as ff;
 
-use extractor::ffmpeg_common::{
+use mv_extract::ffmpeg_common::{
     get_current_rss_kb, open_mv_writer, print_ffmpeg_version, write_side_data, ExtractorArgs,
 };
 
@@ -13,17 +13,7 @@ fn main() {
     };
 
     unsafe {
-        // RTSP open options — matches extractor3.cpp.
-        let mut options: *mut ff::AVDictionary = ptr::null_mut();
-        let k_transport = CString::new("rtsp_transport").unwrap();
-        let v_transport = CString::new("udp").unwrap();
-        ff::av_dict_set(&mut options, k_transport.as_ptr(), v_transport.as_ptr(), 0);
-        let k_stimeout = CString::new("stimeout").unwrap();
-        let v_stimeout = CString::new("2500000").unwrap();
-        ff::av_dict_set(&mut options, k_stimeout.as_ptr(), v_stimeout.as_ptr(), 0);
-        let k_buffer = CString::new("buffer_size").unwrap();
-        let v_buffer = CString::new("32768").unwrap();
-        ff::av_dict_set(&mut options, k_buffer.as_ptr(), v_buffer.as_ptr(), 0);
+        ff::avformat_network_init();
 
         let mut fmt_ctx: *mut ff::AVFormatContext = ptr::null_mut();
         let c_video = CString::new(args.video_file.as_str()).unwrap();
@@ -31,13 +21,12 @@ fn main() {
             &mut fmt_ctx,
             c_video.as_ptr(),
             ptr::null_mut(),
-            &mut options,
+            ptr::null_mut(),
         ) < 0
         {
             eprintln!("Could not open input file.");
             std::process::exit(255);
         }
-        ff::av_dict_free(&mut options);
 
         if ff::avformat_find_stream_info(fmt_ctx, ptr::null_mut()) < 0 {
             eprintln!("Could not find stream info.");
@@ -45,14 +34,15 @@ fn main() {
         }
 
         //region video stream
-        let vsi = ff::av_find_best_stream(
-            fmt_ctx,
-            ff::AVMediaType::AVMEDIA_TYPE_VIDEO,
-            -1,
-            -1,
-            ptr::null_mut(),
-            0,
-        );
+        let mut vsi: i32 = -1;
+        let nb_streams = (*fmt_ctx).nb_streams as usize;
+        for i in 0..nb_streams {
+            let s = *(*fmt_ctx).streams.add(i);
+            if (*(*s).codecpar).codec_type == ff::AVMediaType::AVMEDIA_TYPE_VIDEO {
+                vsi = i as i32;
+                break;
+            }
+        }
         if vsi < 0 {
             eprintln!("Could not find video stream");
             std::process::exit(255);
@@ -61,11 +51,13 @@ fn main() {
         let video_stream = *(*fmt_ctx).streams.add(vsi as usize);
         //endregion
 
+        //region codec
         let codec = ff::avcodec_find_decoder((*(*video_stream).codecpar).codec_id);
         if codec.is_null() {
             eprintln!("Codec not found.");
             std::process::exit(255);
         }
+        //endregion
 
         let dec_ctx = ff::avcodec_alloc_context3(codec);
         if dec_ctx.is_null() {
@@ -151,6 +143,27 @@ fn main() {
                 }
             }
             ff::av_packet_unref(pkt);
+        }
+
+        // Flush decoder
+        ff::avcodec_send_packet(dec_ctx, ptr::null());
+        while ff::avcodec_receive_frame(dec_ctx, frame) == 0 {
+            let sd = ff::av_frame_get_side_data(
+                frame,
+                ff::AVFrameSideDataType::AV_FRAME_DATA_MOTION_VECTORS,
+            );
+            if let Some(w) = writer.as_mut() {
+                if !sd.is_null() && !(*sd).data.is_null() && (*sd).size > 0 {
+                    write_side_data(
+                        w,
+                        frame_num,
+                        (*sd).data as *const ff::AVMotionVector,
+                        (*sd).size as usize,
+                    );
+                }
+            }
+            ff::av_frame_unref(frame);
+            frame_num += 1;
         }
 
         let total_mvs = writer.as_ref().map(|w| w.total()).unwrap_or(0);

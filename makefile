@@ -27,9 +27,7 @@ PARENT_DIR  := $(shell dirname $(CURRENT_DIR))
 VENV_FOLDER = $(PARENT_DIR)/venv-motion-vectors
 PYTHON = $(VENV_FOLDER)/bin/python
 
-EXTRACTOR_DIR = extractors
 EXECUTABLES_DIR = executables
-WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors
 
 VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/$(VIDEO_NAME)
 
@@ -98,7 +96,7 @@ install: install_vtune
 	apt install -y build-essential gcc g++ make pkg-config nasm xdg-utils libnss3 libnotify4 wkhtmltopdf
 	cp -n .env_template .env
 	mkdir -p $(VENV_FOLDER)
-	mkdir -p $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)
+	mkdir -p $(EXECUTABLES_DIR)
 	python3 -m venv $(VENV_FOLDER)
 	. $(VENV_FOLDER)/bin/activate && pip install -r requirements.txt
 
@@ -112,43 +110,45 @@ setup_ffmpeg:
 build_tools:
 	cargo build --workspace --release
 
-EXTRACTOR_BINS := extractor0 extractor1 extractor2 extractor3 extractor5
-TARGET_SYS  := $(CURRENT_DIR)/extractors/target-sys
-TARGET_CUST := $(CURRENT_DIR)/extractors/target-cust
+TARGET_SYS  := $(CURRENT_DIR)/target/extractor-sys
+TARGET_CUST := $(CURRENT_DIR)/target/extractor-cust
 
 # $(1) = FFmpeg prefix, $(2) = CARGO_TARGET_DIR to use
+# Builds every extractor in the mv-extract crate linked against the given
+# FFmpeg prefix.
 define build_extractors
 	PKG_CONFIG_PATH=$(1)/lib/pkgconfig \
 	RUSTFLAGS="-C link-arg=-Wl,-rpath,$(1)/lib -C link-arg=-Wl,--disable-new-dtags" \
 	CARGO_TARGET_DIR=$(2) \
-	cargo build --release -p extractor \
-		$(foreach b,$(EXTRACTOR_BINS),--bin $(b))
+	cargo build --release -p mv-extract
 endef
 
-# Mixed build: extractors 0/1/2 link against system FFmpeg, extractors 3/4/5
-# link against custom patched FFmpeg. extractor4 is the custom-linked build of
-# extractor1 (same source, different libav*).
+# Build every extractor twice: once against the regular FFmpeg and once
+# against the custom patched FFmpeg. Extractors 0/1/2 are deployed from the
+# system build; 3/5 from the custom build; extractor1 from the custom build
+# is renamed to extractor4 (custom-FFmpeg flush-decoder variant).
 build:
 	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS))
 	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST))
-	cp $(TARGET_SYS)/release/extractor0  $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0
-	cp $(TARGET_SYS)/release/extractor1  $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor1
-	cp $(TARGET_SYS)/release/extractor2  $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor2
-	cp $(TARGET_CUST)/release/extractor3 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3
-	cp $(TARGET_CUST)/release/extractor1 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor4
-	cp $(TARGET_CUST)/release/extractor5 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor5
+	cp $(TARGET_SYS)/release/extractor0  $(EXECUTABLES_DIR)/extractor0
+	cp $(TARGET_SYS)/release/extractor1  $(EXECUTABLES_DIR)/extractor1
+	cp $(TARGET_SYS)/release/extractor2  $(EXECUTABLES_DIR)/extractor2
+	cp $(TARGET_CUST)/release/extractor3 $(EXECUTABLES_DIR)/extractor3
+	cp $(TARGET_CUST)/release/extractor1 $(EXECUTABLES_DIR)/extractor4
+	cp $(TARGET_CUST)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
 
-# System-only build: every binary links against the regular system FFmpeg.
+# System-only build: every extractor links against the regular system FFmpeg.
 # Useful for isolating whether a regression comes from the custom patch or
-# from the extractor code itself.
+# from the extractor code itself. extractor4 here is just extractor1 under a
+# different name — identical binary to method 1.
 build_sys:
 	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS))
-	cp $(TARGET_SYS)/release/extractor0 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0
-	cp $(TARGET_SYS)/release/extractor1 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor1
-	cp $(TARGET_SYS)/release/extractor2 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor2
-	cp $(TARGET_SYS)/release/extractor3 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3
-	cp $(TARGET_SYS)/release/extractor1 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor4
-	cp $(TARGET_SYS)/release/extractor5 $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor5
+	cp $(TARGET_SYS)/release/extractor0 $(EXECUTABLES_DIR)/extractor0
+	cp $(TARGET_SYS)/release/extractor1 $(EXECUTABLES_DIR)/extractor1
+	cp $(TARGET_SYS)/release/extractor2 $(EXECUTABLES_DIR)/extractor2
+	cp $(TARGET_SYS)/release/extractor3 $(EXECUTABLES_DIR)/extractor3
+	cp $(TARGET_SYS)/release/extractor1 $(EXECUTABLES_DIR)/extractor4
+	cp $(TARGET_SYS)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
 
 # =============================================================================
 # BENCHMARKING

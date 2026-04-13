@@ -1,11 +1,11 @@
 [package]
-name = "video_generation"
+name = "mv-video"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 opencv = { version = "0.98.2", features = ["clang-runtime"] }
-utils = { path = "../utils" }
+mv-types = { path = "../mv-types" }
 
 [[bin]]
 name = "generate_motion_vectors_video"

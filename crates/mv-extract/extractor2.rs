@@ -3,9 +3,7 @@ use std::ptr;
 
 use ffmpeg_next::sys as ff;
 
-use extractor::ffmpeg_common::{
-    get_current_rss_kb, open_mv_writer, print_ffmpeg_version, write_side_data, ExtractorArgs,
-};
+use mv_extract::ffmpeg_common::{get_current_rss_kb, ExtractorArgs};
 
 fn main() {
     let Some(args) = ExtractorArgs::from_env() else {
@@ -64,9 +62,6 @@ fn main() {
         let mut opts: *mut ff::AVDictionary = ptr::null_mut();
         (*dec_ctx).thread_count = if args.is_single_threaded { 1 } else { 0 };
         (*dec_ctx).thread_type = ff::FF_THREAD_SLICE as i32;
-        let key = CString::new("flags2").unwrap();
-        let val = CString::new("+export_mvs").unwrap();
-        ff::av_dict_set(&mut opts, key.as_ptr(), val.as_ptr(), 0);
         //endregion
 
         //region codec
@@ -85,22 +80,6 @@ fn main() {
             std::process::exit(255);
         }
 
-        let mut writer = if args.do_print {
-            match open_mv_writer(&args.output_file) {
-                Ok(w) => Some(w),
-                Err(e) => {
-                    eprintln!("Failed to open output file: {}", e);
-                    std::process::exit(255);
-                }
-            }
-        } else {
-            None
-        };
-
-        if args.is_verbose {
-            print_ffmpeg_version();
-        }
-
         let mut frame_num: i32 = 0;
         while ff::av_read_frame(fmt_ctx, pkt) >= 0 {
             if (*pkt).stream_index == vsi {
@@ -117,32 +96,11 @@ fn main() {
                         eprintln!("Error during decoding.");
                         break;
                     }
-                    let sd = ff::av_frame_get_side_data(
-                        frame,
-                        ff::AVFrameSideDataType::AV_FRAME_DATA_MOTION_VECTORS,
-                    );
-                    if let Some(w) = writer.as_mut() {
-                        if !sd.is_null() && !(*sd).data.is_null() && (*sd).size > 0 {
-                            write_side_data(
-                                w,
-                                frame_num,
-                                (*sd).data as *const ff::AVMotionVector,
-                                (*sd).size as usize,
-                            );
-                        } else if args.is_verbose {
-                            eprintln!("Frame {}: no motion vectors", frame_num);
-                        }
-                    }
                     ff::av_frame_unref(frame);
                     frame_num += 1;
                 }
             }
             ff::av_packet_unref(pkt);
-        }
-
-        let total_mvs = writer.as_ref().map(|w| w.total()).unwrap_or(0);
-        if let Some(mut w) = writer {
-            let _ = w.flush();
         }
 
         let rss_kb = get_current_rss_kb();
@@ -155,6 +113,6 @@ fn main() {
         let mut pkt_ptr = pkt;
         ff::av_packet_free(&mut pkt_ptr);
 
-        println!("{} {} {}", frame_num, total_mvs, rss_kb);
+        println!("{} {} {}", frame_num, 0, rss_kb);
     }
 }

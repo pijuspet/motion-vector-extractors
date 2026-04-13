@@ -1,9 +1,9 @@
 [workspace]
 members = [
-    "video_generation",
-    "utils",
-    "benchmarking",
-    "publishing",
-    "extractors",
+    "crates/mv-types",
+    "crates/mv-extract",
+    "crates/mv-bench",
+    "crates/mv-publish",
+    "crates/mv-video",
 ]
 resolver = "2"

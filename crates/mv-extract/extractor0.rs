@@ -1,9 +1,9 @@
-use std::ffi::{c_void, CString};
+use std::ffi::CString;
 use std::ptr;
 
 use ffmpeg_next::sys as ff;
 
-use extractor::ffmpeg_common::{
+use mv_extract::ffmpeg_common::{
     get_current_rss_kb, open_mv_writer, print_ffmpeg_version, write_side_data, ExtractorArgs,
 };
 
@@ -34,15 +34,14 @@ fn main() {
         }
 
         //region video stream
-        let mut vsi: i32 = -1;
-        let nb_streams = (*fmt_ctx).nb_streams as usize;
-        for i in 0..nb_streams {
-            let s = *(*fmt_ctx).streams.add(i);
-            if (*(*s).codecpar).codec_type == ff::AVMediaType::AVMEDIA_TYPE_VIDEO {
-                vsi = i as i32;
-                break;
-            }
-        }
+        let vsi = ff::av_find_best_stream(
+            fmt_ctx,
+            ff::AVMediaType::AVMEDIA_TYPE_VIDEO,
+            -1,
+            -1,
+            ptr::null_mut(),
+            0,
+        );
         if vsi < 0 {
             eprintln!("Could not find video stream");
             std::process::exit(255);
@@ -51,15 +50,7 @@ fn main() {
         let video_stream = *(*fmt_ctx).streams.add(vsi as usize);
         //endregion
 
-        //region codec
-        let codec = ff::avcodec_find_decoder((*(*video_stream).codecpar).codec_id);
-        if codec.is_null() {
-            eprintln!("Codec not found.");
-            std::process::exit(255);
-        }
-        //endregion
-
-        let dec_ctx = ff::avcodec_alloc_context3(codec);
+        let dec_ctx = ff::avcodec_alloc_context3(ptr::null());
         if dec_ctx.is_null() {
             eprintln!("Could not allocate codec context.");
             std::process::exit(255);
@@ -73,9 +64,13 @@ fn main() {
         let mut opts: *mut ff::AVDictionary = ptr::null_mut();
         (*dec_ctx).thread_count = if args.is_single_threaded { 1 } else { 0 };
         (*dec_ctx).thread_type = ff::FF_THREAD_SLICE as i32;
-        (*dec_ctx).export_side_data |= ff::AV_CODEC_EXPORT_DATA_MVS as i32;
-        let mv_only_key = CString::new("motion_vectors_only").unwrap();
-        ff::av_opt_set_int(dec_ctx as *mut c_void, mv_only_key.as_ptr(), 1, 0);
+        let key = CString::new("flags2").unwrap();
+        let val = CString::new("+export_mvs").unwrap();
+        ff::av_dict_set(&mut opts, key.as_ptr(), val.as_ptr(), 0);
+        //endregion
+
+        //region codec
+        let codec = ff::avcodec_find_decoder((*dec_ctx).codec_id);
         //endregion
 
         if ff::avcodec_open2(dec_ctx, codec, &mut opts) < 0 {

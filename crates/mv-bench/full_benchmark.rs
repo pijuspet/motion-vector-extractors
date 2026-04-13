@@ -16,9 +16,6 @@ pub struct BenchmarkRunner {
     pub current_dir: PathBuf,
     pub results_dir: PathBuf,
     pub pkg_config_path: PathBuf,
-    pub benchmarking_dir: PathBuf,
-    pub benchmarking_dir_executables: PathBuf,
-    pub benchmark_exec: PathBuf,
     pub extractor_executables: PathBuf,
     pub motion_vectors_comparison_file: PathBuf,
     pub slides_config: PathBuf,
@@ -50,14 +47,10 @@ impl BenchmarkRunner {
 
         let pkg_config_path = current_dir.join("ffmpeg").join("FFmpeg-8.0").join("lib").join("pkgconfig");
 
-        let benchmarking_dir = current_dir.join("benchmarking");
-        let benchmarking_dir_executables = benchmarking_dir.join("executables");
-        let benchmark_exec = benchmarking_dir_executables.join("benchmark_extractors");
-
-        let extractor_executables = current_dir.join("extractors").join("executables");
+        let extractor_executables = current_dir.join("executables");
 
         let motion_vectors_comparison_file = results_dir.join("mv_comparison_result.txt");
-        let slides_config = benchmarking_dir.join("slides_config.json");
+        let slides_config = current_dir.join("scripts").join("slides_config.json");
         let plots_dir = results_dir.join("plots");
 
         let venv_dir = current_dir.join("..").join("venv-motion-vectors");
@@ -74,9 +67,6 @@ impl BenchmarkRunner {
             current_dir,
             results_dir,
             pkg_config_path,
-            benchmarking_dir,
-            benchmarking_dir_executables,
-            benchmark_exec,
             extractor_executables,
             motion_vectors_comparison_file,
             slides_config,
@@ -249,7 +239,7 @@ impl BenchmarkRunner {
         let method1_csv = self.results_dir.join("method1_output_0.csv");
         let method4_csv = self.results_dir.join("method4_output_0.csv");
 
-        if let Err(e) = utils::mv_compare::compare(
+        if let Err(e) = mv_types::mv_compare::compare(
             &method1_csv.to_string_lossy(),
             &method4_csv.to_string_lossy(),
             &self.motion_vectors_comparison_file.to_string_lossy(),
@@ -307,16 +297,15 @@ impl BenchmarkRunner {
         fs::create_dir_all(&self.vtune_dir).ok();
 
         let do_print = 0;
-        let extractor_index = 4;
         let is_verbose = 1;
         let is_single_threaded = 1;
 
         let extractor_exec = self
             .extractor_executables
-            .join(format!("extractor{}", extractor_index));
+            .join("extractor4");
         let output_csv = self
             .results_dir
-            .join(format!("method{}_output_vtune.csv", extractor_index));
+            .join("method4_output_vtune.csv");
 
         let vtune_env = self.get_vtune_env().unwrap_or_else(|| {
             env::vars().map(|(k, v)| (k, v)).collect()
@@ -343,13 +332,12 @@ impl BenchmarkRunner {
         }
 
         let vtune_collect_cmd = format!(
-            "vtune -collect hotspots -knob sampling-mode=sw -result-dir {} -- {} {} {} {} {} {} {}",
+            "vtune -collect hotspots -knob sampling-mode=sw -result-dir {} -- {} {} {} {} {} {}",
             self.vtune_dir.display(),
             extractor_exec.display(),
             self.video_file,
             do_print,
             output_csv.display(),
-            extractor_index,
             is_verbose,
             is_single_threaded
         );
@@ -377,7 +365,7 @@ impl BenchmarkRunner {
         self.run_shell_command(&vtune_report_hotspots, None, Some(&env_with_ld));
         self.run_shell_command(&vtune_report_topdown, None, Some(&env_with_ld));
 
-        if let Err(e) = utils::vtune_hotspots_plot::build_tree(&self.vtune_topdown_file.to_string_lossy()) {
+        if let Err(e) = crate::vtune_hotspots_plot::build_tree(&self.vtune_topdown_file.to_string_lossy()) {
             eprintln!("VTune tree build error: {}", e);
         }
 

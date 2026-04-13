@@ -80,7 +80,7 @@ impl ConfluenceReportGenerator {
         project_root: &Path,
     ) -> Self {
         let client = ConfluenceClient::new(confluence_url, username, api_token);
-        let templates_dir = project_root.join("publishing").join("templates");
+        let templates_dir = project_root.join("crates").join("mv-publish").join("templates");
 
         ConfluenceReportGenerator {
             client,

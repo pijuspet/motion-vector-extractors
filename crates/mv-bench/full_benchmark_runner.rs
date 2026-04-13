@@ -2,7 +2,7 @@ use std::env;
 use std::io::{self, Write};
 use std::process;
 
-use benchmarking::full_benchmark::BenchmarkRunner;
+use mv_bench::full_benchmark::BenchmarkRunner;
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 

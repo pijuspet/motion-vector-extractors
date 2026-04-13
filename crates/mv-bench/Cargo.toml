@@ -1,10 +1,10 @@
 [package]
-name = "benchmarking"
+name = "mv-bench"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-utils = { path = "../utils" }
+mv-types = { path = "../mv-types" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "bitmap_encoder", "line_series", "histogram", "ab_glyph"] }
@@ -13,9 +13,10 @@ ppt-rs = "0.2"
 build_html = "2.7.0"
 chrono = "0.4"
 libc = "0.2"
+minijinja = "2"
 
 [lib]
-name = "benchmarking"
+name = "mv_bench"
 path = "lib.rs"
 
 [[bin]]

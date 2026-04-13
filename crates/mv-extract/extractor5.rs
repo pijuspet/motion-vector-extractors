@@ -3,7 +3,7 @@ use std::ptr;
 
 use ffmpeg_next::sys as ff;
 
-use extractor::ffmpeg_common::{
+use mv_extract::ffmpeg_common::{
     get_current_rss_kb, open_mv_writer, print_ffmpeg_version, write_side_data, ExtractorArgs,
 };
 
@@ -143,27 +143,6 @@ fn main() {
                 }
             }
             ff::av_packet_unref(pkt);
-        }
-
-        // Flush decoder
-        ff::avcodec_send_packet(dec_ctx, ptr::null());
-        while ff::avcodec_receive_frame(dec_ctx, frame) == 0 {
-            let sd = ff::av_frame_get_side_data(
-                frame,
-                ff::AVFrameSideDataType::AV_FRAME_DATA_MOTION_VECTORS,
-            );
-            if let Some(w) = writer.as_mut() {
-                if !sd.is_null() && !(*sd).data.is_null() && (*sd).size > 0 {
-                    write_side_data(
-                        w,
-                        frame_num,
-                        (*sd).data as *const ff::AVMotionVector,
-                        (*sd).size as usize,
-                    );
-                }
-            }
-            ff::av_frame_unref(frame);
-            frame_num += 1;
         }
 
         let total_mvs = writer.as_ref().map(|w| w.total()).unwrap_or(0);

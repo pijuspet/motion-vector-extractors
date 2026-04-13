@@ -1,5 +1,5 @@
 [package]
-name = "extractor"
+name = "mv-extract"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,10 +11,10 @@ edition = "2021"
 # by the makefile targets.
 ffmpeg-next = "8.1.0"
 libc = "0.2"
-utils = { path = "../utils" }
+mv-types = { path = "../mv-types" }
 
 [lib]
-name = "extractor"
+name = "mv_extract"
 path = "lib.rs"
 
 [[bin]]

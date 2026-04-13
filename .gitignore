@@ -15,5 +15,3 @@ published/**/*.mp4
 *.avi:Zone.Identifier
 **/target
 **/Cargo.lock
-extractors/target-sys
-extractors/target-cust

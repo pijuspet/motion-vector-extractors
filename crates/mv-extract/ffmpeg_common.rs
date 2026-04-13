@@ -3,12 +3,11 @@ use std::fs::File;
 use std::io::BufWriter;
 
 use ffmpeg_next::sys::{self as ff, AVMotionVector};
-use utils::motion_vector::{MotionVector, MotionVectorCsvWriter};
+use mv_types::motion_vector::{MotionVector, MotionVectorCsvWriter};
 
 /// CLI arguments shared by every extractor binary.
 ///
-/// All extractors take the same positional layout as the original C++:
-///     <input file> <print mv> <output file> <is verbose> <is single threaded>
+/// Layout: `<input file> <print mv> <output file> <is verbose> <is single threaded>`
 pub struct ExtractorArgs {
     pub video_file: String,
     pub do_print: bool,
@@ -50,10 +49,7 @@ pub fn open_mv_writer(path: &str) -> std::io::Result<FileMvWriter> {
 
 /// Convert a raw `AVMotionVector` into our shared `MotionVector` type. Any
 /// extractor writing to the CSV goes through this so the wire format stays in
-/// sync with `utils::motion_vector::MV_COLUMNS`.
-///
-/// Returns `None` when the motion vector has a zero dimension — matching the
-/// guard from `extractors/writer.cpp`.
+/// sync with `mv_types::motion_vector::MV_COLUMNS`.
 fn convert_av_mv(frame_num: i32, mv: &AVMotionVector) -> Option<MotionVector> {
     if mv.w == 0 || mv.h == 0 {
         eprintln!(
@@ -124,8 +120,7 @@ pub fn get_current_rss_kb() -> i64 {
     0
 }
 
-/// Print the FFmpeg runtime version to stderr (matches the `is_verbose` branch
-/// of the C++ extractors).
+/// Print the FFmpeg runtime version to stderr.
 pub fn print_ffmpeg_version() {
     unsafe {
         let v = CStr::from_ptr(ff::av_version_info()).to_string_lossy();
