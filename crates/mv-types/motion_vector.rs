@@ -4,19 +4,19 @@ use std::io::{BufRead, BufReader, Write};
 #[derive(Debug, Clone, Default)]
 pub struct MotionVector {
     pub frame: i32,
-    pub source: i32,
-    pub w: i32,
-    pub h: i32,
+    pub source: i32, // remove this?
+    pub w: i32, // remove this?
+    pub h: i32, // remove this?
     pub src_x: f64,
     pub src_y: f64,
     pub dst_x: f64,
     pub dst_y: f64,
     // `u64` to match `AVMotionVector::flags`. Serialized in hex (`0x...`) to
     // stay compatible with the C++ writer.
-    pub flags: u64,
+    pub flags: u64, // remove this?
     pub motion_x: f64,
     pub motion_y: f64,
-    pub motion_scale: f64,
+    pub motion_scale: f64, // remove this??
 }
 
 fn parse_f64(s: &str) -> Option<f64> {

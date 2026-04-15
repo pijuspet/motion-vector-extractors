@@ -176,38 +176,81 @@ impl ConfluenceClient {
         filepath: &str,
         attachment_name: &str,
     ) -> Result<(), String> {
-        let url = format!(
-            "{}/rest/api/content/{}/child/attachment",
-            self.base_url, page_id
-        );
+        let existing_id = self.get_attachment_id(page_id, attachment_name);
 
         let file_bytes = std::fs::read(filepath)
             .map_err(|e| format!("Failed to read file {}: {}", filepath, e))?;
 
+        let mime = mime_for(attachment_name);
         let part = reqwest::blocking::multipart::Part::bytes(file_bytes)
             .file_name(attachment_name.to_string())
-            .mime_str("application/octet-stream")
+            .mime_str(mime)
             .map_err(|e| format!("Failed to create multipart: {}", e))?;
 
-        let form = reqwest::blocking::multipart::Form::new().part("file", part);
+        let form = reqwest::blocking::multipart::Form::new()
+            .text("comment", format!("Uploaded {}.", attachment_name))
+            .text("minorEdit", "true")
+            .part("file", part);
+
+        let url = match &existing_id {
+            Some(id) => format!(
+                "{}/rest/api/content/{}/child/attachment/{}/data",
+                self.base_url, page_id, id
+            ),
+            None => format!(
+                "{}/rest/api/content/{}/child/attachment",
+                self.base_url, page_id
+            ),
+        };
 
         let resp = self
             .client
-            .put(&url)
+            .post(&url)
             .basic_auth(&self.username, Some(&self.api_token))
-            .header("X-Atlassian-Token", "nocheck")
+            .header("X-Atlassian-Token", "no-check")
+            .header("Accept", "application/json")
             .multipart(form)
             .send()
             .map_err(|e| format!("Failed to attach file: {}", e))?;
 
-        if resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        if status.is_success() {
+            println!(
+                "[DEBUG] Attached {} ({}) -> HTTP {}",
+                attachment_name, mime, status
+            );
             Ok(())
         } else {
             Err(format!(
-                "Failed to attach file: HTTP {}",
-                resp.status()
+                "Failed to attach file {}: HTTP {} — {}",
+                attachment_name, status, body
             ))
         }
+    }
+
+    fn get_attachment_id(&self, page_id: &str, filename: &str) -> Option<String> {
+        let url = format!(
+            "{}/rest/api/content/{}/child/attachment?filename={}",
+            self.base_url,
+            page_id,
+            urlencoded(filename)
+        );
+
+        let resp = self
+            .client
+            .get(&url)
+            .basic_auth(&self.username, Some(&self.api_token))
+            .send()
+            .ok()?;
+
+        let json: Value = resp.json().ok()?;
+        json.get("results")?
+            .as_array()?
+            .first()?
+            .get("id")?
+            .as_str()
+            .map(String::from)
     }
 
     pub fn get_attachment_content(
@@ -267,4 +310,23 @@ fn urlencoded(s: &str) -> String {
     s.replace(' ', "%20")
         .replace(':', "%3A")
         .replace('/', "%2F")
+}
+
+fn mime_for(filename: &str) -> &'static str {
+    let ext = std::path::Path::new(filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    match ext.as_deref() {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("webp") => "image/webp",
+        Some("html") | Some("htm") => "text/html",
+        Some("txt") => "text/plain",
+        Some("json") => "application/json",
+        Some("pdf") => "application/pdf",
+        _ => "application/octet-stream",
+    }
 }

@@ -5,8 +5,8 @@ from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
 import json
 
-import benchmarking.plots as plts
-import benchmarking.speedup_plots as speedup
+import plots as plts
+import speedup_plots as speedup
 
 
 def load_benchmark_config(config_path: str) -> dict:
