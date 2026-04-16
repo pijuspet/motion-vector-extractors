@@ -35,31 +35,28 @@ impl Key {
 }
 
 struct ValueColumns {
-    w: i32,
-    h: i32,
-    motion_x: f64,
-    motion_y: f64,
-    motion_scale: f64,
+    src_x: f64,
+    src_y: f64,
+    dst_x: f64,
+    dst_y: f64,
 }
 
 impl ValueColumns {
     fn from_mv(mv: &MotionVector) -> Self {
         ValueColumns {
-            w: mv.w,
-            h: mv.h,
-            motion_x: mv.motion_x,
-            motion_y: mv.motion_y,
-            motion_scale: mv.motion_scale,
+            src_x: mv.src_x,
+            src_y: mv.src_y,
+            dst_x: mv.dst_x,
+            dst_y: mv.dst_y,
         }
     }
 
     fn fields(&self) -> Vec<(&str, f64)> {
         vec![
-            ("w", self.w as f64),
-            ("h", self.h as f64),
-            ("motion_x", self.motion_x),
-            ("motion_y", self.motion_y),
-            ("motion_scale", self.motion_scale),
+            ("src_x", self.src_x),
+            ("src_y", self.src_y),
+            ("dst_x", self.dst_x),
+            ("dst_y", self.dst_y),
         ]
     }
 }

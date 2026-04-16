@@ -1,10 +1,10 @@
 use std::ffi::{c_void, CString};
 use std::ptr;
 
-use ffmpeg_next::sys as ff;
+use ffmpeg_sys_next as ff;
 
 use mv_extract::ffmpeg_common::{
-    get_current_rss_kb, open_mv_writer, print_ffmpeg_version, write_side_data, ExtractorArgs,
+    get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs,
 };
 
 fn main() {
@@ -91,7 +91,7 @@ fn main() {
         }
 
         let mut writer = if args.do_print {
-            match open_mv_writer(&args.output_file) {
+            match open_mv_any(&args.output_file) {
                 Ok(w) => Some(w),
                 Err(e) => {
                     eprintln!("Failed to open output file: {}", e);
@@ -122,19 +122,9 @@ fn main() {
                         eprintln!("Error during decoding.");
                         break;
                     }
-                    let sd = ff::av_frame_get_side_data(
-                        frame,
-                        ff::AVFrameSideDataType::AV_FRAME_DATA_MOTION_VECTORS,
-                    );
                     if let Some(w) = writer.as_mut() {
-                        if !sd.is_null() && !(*sd).data.is_null() && (*sd).size > 0 {
-                            write_side_data(
-                                w,
-                                frame_num,
-                                (*sd).data as *const ff::AVMotionVector,
-                                (*sd).size as usize,
-                            );
-                        } else if args.is_verbose {
+                        let wrote = write_frame_mvs(w, frame_num, frame);
+                        if !wrote && args.is_verbose {
                             eprintln!("Frame {}: no motion vectors", frame_num);
                         }
                     }
@@ -148,19 +138,8 @@ fn main() {
         // Flush decoder
         ff::avcodec_send_packet(dec_ctx, ptr::null());
         while ff::avcodec_receive_frame(dec_ctx, frame) == 0 {
-            let sd = ff::av_frame_get_side_data(
-                frame,
-                ff::AVFrameSideDataType::AV_FRAME_DATA_MOTION_VECTORS,
-            );
             if let Some(w) = writer.as_mut() {
-                if !sd.is_null() && !(*sd).data.is_null() && (*sd).size > 0 {
-                    write_side_data(
-                        w,
-                        frame_num,
-                        (*sd).data as *const ff::AVMotionVector,
-                        (*sd).size as usize,
-                    );
-                }
+                write_frame_mvs(w, frame_num, frame);
             }
             ff::av_frame_unref(frame);
             frame_num += 1;

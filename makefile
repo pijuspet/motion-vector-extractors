@@ -113,14 +113,17 @@ build_tools:
 TARGET_SYS  := $(CURRENT_DIR)/target/extractor-sys
 TARGET_CUST := $(CURRENT_DIR)/target/extractor-cust
 
-# $(1) = FFmpeg prefix, $(2) = CARGO_TARGET_DIR to use
+# $(1) = FFmpeg prefix, $(2) = CARGO_TARGET_DIR to use, $(3) = extra cargo flags
 # Builds every extractor in the mv-extract crate linked against the given
-# FFmpeg prefix.
+# FFmpeg prefix. $(3) is used to enable the `custom_ffmpeg` Cargo feature when
+# linking against the patched FFmpeg — that feature gates access to
+# AVMotionVectorCompact / AV_FRAME_DATA_MOTION_VECTORS_COMPACT, which only
+# exist in the custom build.
 define build_extractors
 	PKG_CONFIG_PATH=$(1)/lib/pkgconfig \
 	RUSTFLAGS="-C link-arg=-Wl,-rpath,$(1)/lib -C link-arg=-Wl,--disable-new-dtags" \
 	CARGO_TARGET_DIR=$(2) \
-	cargo build --release -p mv-extract
+	cargo build --release -p mv-extract $(3)
 endef
 
 # Build every extractor twice: once against the regular FFmpeg and once
@@ -128,8 +131,8 @@ endef
 # system build; 3/5 from the custom build; extractor1 from the custom build
 # is renamed to extractor4 (custom-FFmpeg flush-decoder variant).
 build:
-	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS))
-	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST))
+	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
+	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
 	cp $(TARGET_SYS)/release/extractor0  $(EXECUTABLES_DIR)/extractor0
 	cp $(TARGET_SYS)/release/extractor1  $(EXECUTABLES_DIR)/extractor1
 	cp $(TARGET_SYS)/release/extractor2  $(EXECUTABLES_DIR)/extractor2
@@ -142,7 +145,7 @@ build:
 # from the extractor code itself. extractor4 here is just extractor1 under a
 # different name — identical binary to method 1.
 build_sys:
-	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS))
+	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
 	cp $(TARGET_SYS)/release/extractor0 $(EXECUTABLES_DIR)/extractor0
 	cp $(TARGET_SYS)/release/extractor1 $(EXECUTABLES_DIR)/extractor1
 	cp $(TARGET_SYS)/release/extractor2 $(EXECUTABLES_DIR)/extractor2

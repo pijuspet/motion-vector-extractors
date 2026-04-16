@@ -19,6 +19,19 @@ pub struct MotionVector {
     pub motion_scale: f64, // remove this??
 }
 
+/// Compact motion vector mirroring `AVMotionVectorCompact` from the custom
+/// FFmpeg patch. Stores only the two endpoints (src + dst) and direction,
+/// dropping w/h/flags/motion_x/motion_y/motion_scale.
+#[derive(Debug, Clone, Default)]
+pub struct MvCompact {
+    pub frame: i32,
+    pub source: i32,
+    pub src_x: i16,
+    pub src_y: i16,
+    pub dst_x: i16,
+    pub dst_y: i16,
+}
+
 fn parse_f64(s: &str) -> Option<f64> {
     s.trim().parse::<f64>().ok()
 }
@@ -50,8 +63,8 @@ pub fn load_motion_vectors(
     let col_frame = find_col("frame").ok_or("Missing 'frame' column")?;
     let col_src_x = find_col("src_x").ok_or("Missing 'src_x' column")?;
     let col_src_y = find_col("src_y").ok_or("Missing 'src_y' column")?;
-    let col_dst_x = find_col("dst_x").ok_or("Missing 'dst_x' column")?;
-    let col_dst_y = find_col("dst_y").ok_or("Missing 'dst_y' column")?;
+    let col_dst_x = find_col("dst_x");
+    let col_dst_y = find_col("dst_y");
     let col_source = find_col("source");
     let col_w = find_col("w");
     let col_h = find_col("h");
@@ -86,17 +99,20 @@ pub fn load_motion_vectors(
             Some(v) => v,
             None => continue,
         };
-        let dst_x_val = match fields.get(col_dst_x).and_then(|s| parse_f64(s)) {
-            Some(v) => v,
-            None => continue,
-        };
-        let dst_y_val = match fields.get(col_dst_y).and_then(|s| parse_f64(s)) {
-            Some(v) => v,
-            None => continue,
-        };
 
-        let motion_x_val = get_field(&fields, col_motion_x).unwrap_or(dst_x_val - src_x_val);
-        let motion_y_val = get_field(&fields, col_motion_y).unwrap_or(dst_y_val - src_y_val);
+        let motion_scale_val = get_field(&fields, col_motion_scale).unwrap_or(0.0);
+        let motion_x_val = get_field(&fields, col_motion_x).unwrap_or(0.0);
+        let motion_y_val = get_field(&fields, col_motion_y).unwrap_or(0.0);
+
+        let derive_dst = |src: f64, motion: f64| -> f64 {
+            if motion_scale_val > 0.0 {
+                src + motion / motion_scale_val
+            } else {
+                src
+            }
+        };
+        let dst_x_val = get_field(&fields, col_dst_x).unwrap_or_else(|| derive_dst(src_x_val, motion_x_val));
+        let dst_y_val = get_field(&fields, col_dst_y).unwrap_or_else(|| derive_dst(src_y_val, motion_y_val));
 
         let mv = MotionVector {
             frame: frame_val as i32,
@@ -113,7 +129,7 @@ pub fn load_motion_vectors(
                 .unwrap_or(0),
             motion_x: motion_x_val,
             motion_y: motion_y_val,
-            motion_scale: get_field(&fields, col_motion_scale).unwrap_or(0.0),
+            motion_scale: motion_scale_val,
         };
 
         vectors.push(mv);
@@ -189,6 +205,46 @@ impl<W: Write> MotionVectorCsvWriter<W> {
     }
 }
 
+const MV_COMPACT_COLUMNS: &[(&str, fn(&MvCompact) -> String)] = &[
+    ("frame", |v| v.frame.to_string()),
+    ("source", |v| v.source.to_string()),
+    ("src_x", |v| v.src_x.to_string()),
+    ("src_y", |v| v.src_y.to_string()),
+    ("dst_x", |v| v.dst_x.to_string()),
+    ("dst_y", |v| v.dst_y.to_string()),
+];
+
+pub struct MvCompactCsvWriter<W: Write> {
+    inner: W,
+    total: i32,
+}
+
+impl<W: Write> MvCompactCsvWriter<W> {
+    pub fn new(mut inner: W) -> std::io::Result<Self> {
+        let header: Vec<String> = MV_COMPACT_COLUMNS
+            .iter()
+            .map(|(name, _)| name.to_string())
+            .collect();
+        write_row(&mut inner, &header)?;
+        Ok(Self { inner, total: 0 })
+    }
+
+    pub fn write(&mut self, v: &MvCompact) -> std::io::Result<()> {
+        let row: Vec<String> = MV_COMPACT_COLUMNS.iter().map(|(_, fmt)| fmt(v)).collect();
+        write_row(&mut self.inner, &row)?;
+        self.total += 1;
+        Ok(())
+    }
+
+    pub fn total(&self) -> i32 {
+        self.total
+    }
+
+    pub fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 pub fn get_frame_vectors(all_vectors: &[MotionVector], frame_number: i32) -> Vec<MotionVector> {
     all_vectors
         .iter()
@@ -209,7 +265,9 @@ pub fn reduce_motion_vectors(
         .iter()
         .enumerate()
         .filter_map(|(i, v)| {
-            let mag = (v.motion_x * v.motion_x + v.motion_y * v.motion_y).sqrt();
+            let dx = v.dst_x - v.src_x;
+            let dy = v.dst_y - v.src_y;
+            let mag = (dx * dx + dy * dy).sqrt();
             if mag > 2.0 {
                 Some((mag, i))
             } else {

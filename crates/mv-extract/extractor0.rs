@@ -1,7 +1,7 @@
 use std::ffi::CString;
 use std::ptr;
 
-use ffmpeg_next::sys as ff;
+use ffmpeg_sys_next as ff;
 
 use mv_extract::ffmpeg_common::{
     get_current_rss_kb, open_mv_writer, print_ffmpeg_version, write_side_data, ExtractorArgs,

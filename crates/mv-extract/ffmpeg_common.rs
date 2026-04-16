@@ -2,8 +2,13 @@ use std::ffi::CStr;
 use std::fs::File;
 use std::io::BufWriter;
 
-use ffmpeg_next::sys::{self as ff, AVMotionVector};
-use mv_types::motion_vector::{MotionVector, MotionVectorCsvWriter};
+use ffmpeg_sys_next::{self as ff, AVMotionVector};
+use mv_types::motion_vector::{MotionVector, MotionVectorCsvWriter, MvCompactCsvWriter};
+
+#[cfg(feature = "custom_ffmpeg")]
+use ffmpeg_sys_next::AVMotionVectorCompact;
+#[cfg(feature = "custom_ffmpeg")]
+use mv_types::motion_vector::MvCompact;
 
 /// CLI arguments shared by every extractor binary.
 ///
@@ -41,10 +46,57 @@ impl ExtractorArgs {
 /// extractors don't have to spell out the generics.
 pub type FileMvWriter = MotionVectorCsvWriter<BufWriter<File>>;
 
+/// Compact counterpart to `FileMvWriter`, used when the decoder emits
+/// `AV_FRAME_DATA_MOTION_VECTORS_COMPACT` instead of the full-size side data.
+pub type FileMvCompactWriter = MvCompactCsvWriter<BufWriter<File>>;
+
 /// Open the CSV output file and wrap it in a streaming writer.
 pub fn open_mv_writer(path: &str) -> std::io::Result<FileMvWriter> {
     let file = File::create(path)?;
     MotionVectorCsvWriter::new(BufWriter::new(file))
+}
+
+pub fn open_mv_compact_writer(path: &str) -> std::io::Result<FileMvCompactWriter> {
+    let file = File::create(path)?;
+    MvCompactCsvWriter::new(BufWriter::new(file))
+}
+
+/// Open an `MvWriter`, picking the compact flavour when the custom FFmpeg
+/// feature is enabled and the full flavour otherwise. Keeps the dispatch out
+/// of every extractor binary.
+pub fn open_mv_any(path: &str) -> std::io::Result<MvWriter> {
+    #[cfg(feature = "custom_ffmpeg")]
+    {
+        Ok(MvWriter::Compact(open_mv_compact_writer(path)?))
+    }
+    #[cfg(not(feature = "custom_ffmpeg"))]
+    {
+        Ok(MvWriter::Full(open_mv_writer(path)?))
+    }
+}
+
+/// Unified writer the extractors hold. Kept as an enum so the same binary can
+/// deal with either side-data flavour without pulling feature gates into every
+/// call site.
+pub enum MvWriter {
+    Full(FileMvWriter),
+    Compact(FileMvCompactWriter),
+}
+
+impl MvWriter {
+    pub fn total(&self) -> i32 {
+        match self {
+            MvWriter::Full(w) => w.total(),
+            MvWriter::Compact(w) => w.total(),
+        }
+    }
+
+    pub fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            MvWriter::Full(w) => w.flush(),
+            MvWriter::Compact(w) => w.flush(),
+        }
+    }
 }
 
 /// Convert a raw `AVMotionVector` into our shared `MotionVector` type. Any
@@ -100,6 +152,97 @@ pub unsafe fn write_side_data(
             }
         }
     }
+}
+
+#[cfg(feature = "custom_ffmpeg")]
+fn convert_av_mv_compact(frame_num: i32, mv: &AVMotionVectorCompact) -> MvCompact {
+    MvCompact {
+        frame: frame_num,
+        source: mv.source,
+        src_x: mv.src_x,
+        src_y: mv.src_y,
+        dst_x: mv.dst_x,
+        dst_y: mv.dst_y,
+    }
+}
+
+/// Compact counterpart to `write_side_data`. Reads a contiguous array of
+/// `AVMotionVectorCompact` produced by the custom FFmpeg patch when
+/// `motion_vectors_only=1` and appends each one to the compact writer.
+///
+/// # Safety
+/// Same contract as `write_side_data` but for `AVMotionVectorCompact`.
+#[cfg(feature = "custom_ffmpeg")]
+pub unsafe fn write_side_data_compact(
+    writer: &mut FileMvCompactWriter,
+    frame_num: i32,
+    mvs: *const AVMotionVectorCompact,
+    size_bytes: usize,
+) {
+    if mvs.is_null() {
+        eprintln!("Invalid motion vector");
+        return;
+    }
+    let count = size_bytes / std::mem::size_of::<AVMotionVectorCompact>();
+    for i in 0..count {
+        let av = unsafe { &*mvs.add(i) };
+        let v = convert_av_mv_compact(frame_num, av);
+        if let Err(e) = writer.write(&v) {
+            eprintln!("Failed to write motion vector: {}", e);
+            return;
+        }
+    }
+}
+
+/// Pull motion vectors off a decoded frame and feed them to the writer,
+/// picking the compact or full side-data slot based on what the decoder
+/// populated. Returns `true` if any side data was found.
+///
+/// When built with `custom_ffmpeg`, `AV_FRAME_DATA_MOTION_VECTORS_COMPACT`
+/// is checked first — the custom decoder populates exactly one of the two
+/// slots based on `motion_vectors_only`.
+///
+/// # Safety
+/// `frame` must be a valid, non-null `*mut AVFrame` owned by the caller.
+pub unsafe fn write_frame_mvs(
+    writer: &mut MvWriter,
+    frame_num: i32,
+    frame: *mut ff::AVFrame,
+) -> bool {
+    #[cfg(feature = "custom_ffmpeg")]
+    if let MvWriter::Compact(w) = writer {
+        let sd = ff::av_frame_get_side_data(
+            frame,
+            ff::AVFrameSideDataType::AV_FRAME_DATA_MOTION_VECTORS_COMPACT,
+        );
+        if !sd.is_null() && !(*sd).data.is_null() && (*sd).size > 0 {
+            write_side_data_compact(
+                w,
+                frame_num,
+                (*sd).data as *const AVMotionVectorCompact,
+                (*sd).size as usize,
+            );
+            return true;
+        }
+        return false;
+    }
+
+    if let MvWriter::Full(w) = writer {
+        let sd = ff::av_frame_get_side_data(
+            frame,
+            ff::AVFrameSideDataType::AV_FRAME_DATA_MOTION_VECTORS,
+        );
+        if !sd.is_null() && !(*sd).data.is_null() && (*sd).size > 0 {
+            write_side_data(
+                w,
+                frame_num,
+                (*sd).data as *const AVMotionVector,
+                (*sd).size as usize,
+            );
+            return true;
+        }
+    }
+    false
 }
 
 /// Read the current VmRSS of this process from `/proc/self/status`.
