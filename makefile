@@ -93,7 +93,8 @@ install_vtune:
 	@echo "VTune installation complete."
 
 install: install_vtune
-	apt install -y build-essential gcc g++ make pkg-config nasm xdg-utils libnss3 libnotify4 wkhtmltopdf linux-tools-common linux-tools-realtime
+	curl https://sh.rustup.rs -sSf | sh
+	apt install -y build-essential gcc g++ make pkg-config nasm xdg-utils libnss3 libnotify4 wkhtmltopdf linux-tools-common linux-tools-realtime cargo rustup libclang-dev libopencv-dev
 	cp -n .env_template .env
 	mkdir -p $(VENV_FOLDER)
 	mkdir -p $(EXECUTABLES_DIR)
