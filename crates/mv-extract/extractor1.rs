@@ -4,7 +4,7 @@ use std::ptr;
 use ffmpeg_sys_next as ff;
 
 use mv_extract::ffmpeg_common::{
-    get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs,
+    get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs, set_av_flags, unset_av_flags
 };
 
 fn main() {
@@ -28,10 +28,18 @@ fn main() {
             std::process::exit(255);
         }
 
-        if ff::avformat_find_stream_info(fmt_ctx, ptr::null_mut()) < 0 {
+        //region setting up motion_vectors_only for av_find_stream_info
+        let mut stream_opts: Vec<*mut ff::AVDictionary> = set_av_flags(&mut *fmt_ctx);
+        //endregion
+
+        if ff::avformat_find_stream_info(fmt_ctx, stream_opts.as_mut_ptr()) < 0 {
             eprintln!("Could not find stream info.");
             std::process::exit(255);
         }
+
+        // region, unsetting flags
+        unset_av_flags(stream_opts);
+        //endregion
 
         //region video stream
         let mut vsi: i32 = -1;

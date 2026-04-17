@@ -18,6 +18,7 @@ fn usage() {
     println!("    3 = Generate MV comparison");
     println!("    4 = Generate Plots and PowerPoint");
     println!("    5 = Profiler (VTune on FFmpeg hacked)");
+    println!("    6 = Flamegraph (perf or VTune data)");
     println!("    0 = Run ALL steps");
     println!();
 }
@@ -50,6 +51,7 @@ fn main() {
     println!("  3: Generate MV comparison");
     println!("  4: Generate Plots and PowerPoint");
     println!("  5: Profiler (VTune on FFmpeg hacked)");
+    println!("  6: Flamegraph (perf or VTune data)");
     println!("  0: Run ALL steps");
     println!();
 
@@ -70,6 +72,7 @@ fn main() {
             "3" => runner.generate_mv_comparison(),
             "4" => runner.plot(),
             "5" => runner.profiler(),
+            "6" => runner.flamegraph(),
             "0" => {
                 runner.run_all();
                 break;

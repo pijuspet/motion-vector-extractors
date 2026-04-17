@@ -1,6 +1,8 @@
 use std::ffi::CStr;
 use std::fs::File;
 use std::io::BufWriter;
+use std::ffi::CString;
+use std::ptr;
 
 use ffmpeg_sys_next::{self as ff, AVMotionVector};
 use mv_types::motion_vector::{MotionVector, MotionVectorCsvWriter, MvCompactCsvWriter};
@@ -268,5 +270,30 @@ pub fn print_ffmpeg_version() {
     unsafe {
         let v = CStr::from_ptr(ff::av_version_info()).to_string_lossy();
         eprintln!("FFmpeg version: {}", v);
+    }
+}
+
+pub unsafe fn set_av_flags(fmt_ctx: &mut ff::AVFormatContext) -> Vec<*mut ff::AVDictionary> {
+    let nb_streams = (*fmt_ctx).nb_streams as usize;
+    let mut stream_opts: Vec<*mut ff::AVDictionary> = vec![ptr::null_mut(); nb_streams];
+
+    let mv_only_key = CString::new("motion_vectors_only").unwrap();
+    let mv_only_val = CString::new("1").unwrap();
+    let export_key = CString::new("export_side_data").unwrap();
+    let export_val = CString::new("+mvs").unwrap();
+
+    for i in 0..nb_streams {
+        ff::av_dict_set(&mut stream_opts[i], mv_only_key.as_ptr(), mv_only_val.as_ptr(), 0);
+        ff::av_dict_set(&mut stream_opts[i], export_key.as_ptr(), export_val.as_ptr(), 0);
+    }
+
+    stream_opts
+}
+
+pub unsafe fn unset_av_flags(stream_opts: Vec<*mut ff::AVDictionary>) { 
+    for mut dict in stream_opts {
+        if !dict.is_null() {
+            ff::av_dict_free(&mut dict);
+        }
     }
 }

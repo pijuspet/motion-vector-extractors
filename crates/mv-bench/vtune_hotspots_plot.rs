@@ -99,7 +99,11 @@ pub fn build_vtune_tree(
     Ok((nodes, root_nodes))
 }
 
-pub fn generate_tree_html(nodes: &HashMap<String, TreeNode>, node_id: &str) -> String {
+pub fn generate_tree_html(
+    nodes: &HashMap<String, TreeNode>,
+    node_id: &str,
+    total_time_s: f64,
+) -> String {
     let node = match nodes.get(node_id) {
         Some(n) => n,
         None => return String::new(),
@@ -122,7 +126,7 @@ pub fn generate_tree_html(nodes: &HashMap<String, TreeNode>, node_id: &str) -> S
     <span class="arrow">{arrow}</span>
     <span class="name">{escaped_name}</span>
     <span class="cpu-total">{cpu_total:.1}%</span>
-    <span class="cpu-self">{cpu_self:.1}s</span>
+    <span class="cpu-self">{total_seconds:.3}s</span>
   </span>
 "#,
         collapsed_class = collapsed_class,
@@ -130,7 +134,7 @@ pub fn generate_tree_html(nodes: &HashMap<String, TreeNode>, node_id: &str) -> S
         arrow = arrow,
         escaped_name = escaped_name,
         cpu_total = node.cpu_total,
-        cpu_self = node.cpu_self,
+        total_seconds = node.cpu_total / 100.0 * total_time_s,
     );
 
     if has_children {
@@ -140,7 +144,7 @@ pub fn generate_tree_html(nodes: &HashMap<String, TreeNode>, node_id: &str) -> S
             node_id = node_id,
         ));
         for child_id in &node.children {
-            html.push_str(&generate_tree_html(nodes, child_id));
+            html.push_str(&generate_tree_html(nodes, child_id, total_time_s));
         }
         html.push_str("  </ul>\n");
     }
@@ -154,9 +158,11 @@ pub fn generate_complete_html(
     root_nodes: &[String],
     output_file: &str,
 ) -> Result<(), String> {
+    let total_time_s: f64 = nodes.values().map(|n| n.cpu_self).sum();
+
     let tree_html: String = root_nodes
         .iter()
-        .map(|root_id| generate_tree_html(nodes, root_id))
+        .map(|root_id| generate_tree_html(nodes, root_id, total_time_s))
         .collect();
 
     let template_source = include_str!("templates/vtune.html.jinja");

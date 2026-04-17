@@ -215,7 +215,7 @@ impl BenchmarkRunner {
 
         let is_single_threaded = 1;
         let is_verbose = 0;
-        let write_to_csv = 0;
+        let write_to_csv = 1;
 
         println!("Running Rust benchmark visualization and PPT generation...");
         benchmark(
@@ -296,7 +296,7 @@ impl BenchmarkRunner {
 
         fs::create_dir_all(&self.vtune_dir).ok();
 
-        let do_print = 0;
+        let do_print = 1;
         let is_verbose = 1;
         let is_single_threaded = 1;
 
@@ -372,6 +372,65 @@ impl BenchmarkRunner {
         println!("Profiler run complete. Results in {}.", self.vtune_dir.display());
     }
 
+    pub fn flamegraph(&self) {
+        println!("Generating flamegraph for extractor4...");
+
+        let flamegraph_dir = self.results_dir.join("flamegraph");
+        fs::create_dir_all(&flamegraph_dir).ok();
+
+        let output_html = flamegraph_dir.join("extractor4_flamegraph.html");
+
+        if let Some(perf_bin) = crate::flamegraph::find_perf() {
+            println!("Using perf binary: {}", perf_bin);
+
+            let ffmpeg_lib = self
+                .current_dir
+                .join("ffmpeg")
+                .join("FFmpeg-8.0-custom")
+                .join("lib");
+
+            let perf_data = flamegraph_dir.join("perf.data");
+            let output_csv = self.results_dir.join("method4_output_flamegraph.csv");
+            let extractor_exec = self.extractor_executables.join("extractor4");
+
+            let existing_ld = env::var("LD_LIBRARY_PATH").unwrap_or_default();
+            let ld_path = format!("{}:{}", ffmpeg_lib.display(), existing_ld);
+
+            let perf_cmd = format!(
+                "LD_LIBRARY_PATH={} {} record -g --call-graph dwarf -F 99 -o {} -- {} {} 1 {} 1 1",
+                ld_path,
+                perf_bin,
+                perf_data.display(),
+                extractor_exec.display(),
+                self.video_file,
+                output_csv.display(),
+            );
+
+            println!("Running: perf record on extractor4...");
+            if !self.run_shell_command(&perf_cmd, Some(&self.extractor_executables), None) {
+                eprintln!("perf record failed.");
+                return;
+            }
+
+            if let Err(e) = crate::flamegraph::flamegraph_from_perf(
+                &perf_bin,
+                &perf_data.to_string_lossy(),
+                &output_html.to_string_lossy(),
+                "extractor4 Flamegraph (perf)",
+            ) {
+                eprintln!("Flamegraph generation failed: {}", e);
+                return;
+            }
+        } else {
+            println!("Perf not found.")
+        }
+
+        println!(
+            "Flamegraph complete.\n  HTML: {}",
+            output_html.display()
+        );
+    }
+
     pub fn run_all(&self) {
         if !self.build() {
             println!("Build failed, aborting.");
@@ -381,5 +440,6 @@ impl BenchmarkRunner {
         self.generate_mv_comparison();
         self.plot();
         self.profiler();
+        self.flamegraph();
     }
 }
