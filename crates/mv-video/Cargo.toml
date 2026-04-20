@@ -1,0 +1,16 @@
+[package]
+name = "mv-video"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+opencv = { version = "0.98.2", features = ["clang-runtime"] }
+mv-types = { path = "../mv-types" }
+
+[[bin]]
+name = "generate_motion_vectors_video"
+path = "generate_motion_vectors_video.rs"
+
+[[bin]]
+name = "combine_motion_vectors_with_video"
+path = "combine_motion_vectors_with_video.rs"

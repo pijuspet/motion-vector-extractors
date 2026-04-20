@@ -1,0 +1,44 @@
+[package]
+name = "mv-extract"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+# Opt-in to bindings/behaviours that only exist in the custom FFmpeg patch
+# (AVMotionVectorCompact, AV_FRAME_DATA_MOTION_VECTORS_COMPACT). The makefile
+# enables this feature only when building against CUSTOM_PREFIX.
+custom_ffmpeg = []
+
+[dependencies]
+# We depend on the raw FFI bindings directly. The high-level `ffmpeg-next`
+# wrapper exhaustively matches on `AVFrameSideDataType`, which breaks when our
+# custom FFmpeg adds `AV_FRAME_DATA_MOTION_VECTORS_COMPACT`. The FFmpeg install
+# to link against is selected at build time via `PKG_CONFIG_PATH`, so
+# `ffmpeg/FFmpeg-8.0{,-custom}/lib/pkgconfig` is injected by the makefile targets.
+ffmpeg-sys-next = "8.1.0"
+libc = "0.2"
+mv-types = { path = "../mv-types" }
+
+[lib]
+name = "mv_extract"
+path = "lib.rs"
+
+[[bin]]
+name = "extractor0"
+path = "extractor0.rs"
+
+[[bin]]
+name = "extractor1"
+path = "extractor1.rs"
+
+[[bin]]
+name = "extractor2"
+path = "extractor2.rs"
+
+[[bin]]
+name = "extractor3"
+path = "extractor3.rs"
+
+[[bin]]
+name = "extractor5"
+path = "extractor5.rs"

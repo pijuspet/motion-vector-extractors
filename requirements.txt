@@ -1,12 +1,5 @@
-atlassian_python_api==4.0.7
 imgkit==1.2.3
-jinja2==3.1.6
 matplotlib==3.10.3
-numpy==2.2.6
-opencv-python==4.12.0.88
-pandas==2.3.1
-python-dotenv==1.2.1
+pandas==3.0.2
 python-pptx==1.0.2
-requests==2.32.4
 seaborn==0.13.2
-tqdm==4.67.1

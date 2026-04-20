@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "crates/mv-types",
+    "crates/mv-extract",
+    "crates/mv-bench",
+    "crates/mv-publish",
+    "crates/mv-video",
+]
+resolver = "2"

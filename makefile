@@ -3,10 +3,10 @@
 # =============================================================================
 
 STREAMS = 15
-NRUNS = 1
+NRUNS = 3
 
-# VIDEO_NAME ?= bigbunny_walking.mp4
-VIDEO_NAME ?= bigbunny.mp4
+VIDEO_NAME ?= bigbunny_walking.mp4
+# VIDEO_NAME ?= bigbunny.mp4
 # VIDEO_NAME ?= stickman.mp4
 # VIDEO_NAME ?= dashcam.mp4
 
@@ -27,10 +27,7 @@ PARENT_DIR  := $(shell dirname $(CURRENT_DIR))
 VENV_FOLDER = $(PARENT_DIR)/venv-motion-vectors
 PYTHON = $(VENV_FOLDER)/bin/python
 
-EXTRACTOR_DIR = extractors
-BENCHMARKING_DIR = benchmarking
 EXECUTABLES_DIR = executables
-WRITER_SRC = $(EXTRACTOR_DIR)/writer.cpp -Iextractors
 
 VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/$(VIDEO_NAME)
 
@@ -96,11 +93,11 @@ install_vtune:
 	@echo "VTune installation complete."
 
 install: install_vtune
-	apt install -y build-essential gcc g++ make pkg-config nasm xdg-utils libnss3 libnotify4 wkhtmltopdf
+	curl https://sh.rustup.rs -sSf | sh
+	apt install -y build-essential gcc g++ make pkg-config nasm xdg-utils libnss3 libnotify4 wkhtmltopdf linux-tools-common linux-tools-realtime cargo rustup libclang-dev libopencv-dev clang
 	cp -n .env_template .env
 	mkdir -p $(VENV_FOLDER)
-	mkdir -p $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)
-	mkdir -p $(BENCHMARKING_DIR)/$(EXECUTABLES_DIR)
+	mkdir -p $(EXECUTABLES_DIR)
 	python3 -m venv $(VENV_FOLDER)
 	. $(VENV_FOLDER)/bin/activate && pip install -r requirements.txt
 
@@ -111,22 +108,51 @@ setup_ffmpeg:
 # =============================================================================
 # BUILD TARGETS
 # =============================================================================
+build_tools:
+	cargo build --workspace --release
 
+TARGET_SYS  := $(CURRENT_DIR)/target/extractor-sys
+TARGET_CUST := $(CURRENT_DIR)/target/extractor-cust
+
+# $(1) = FFmpeg prefix, $(2) = CARGO_TARGET_DIR to use, $(3) = extra cargo flags
+# Builds every extractor in the mv-extract crate linked against the given
+# FFmpeg prefix. $(3) is used to enable the `custom_ffmpeg` Cargo feature when
+# linking against the patched FFmpeg — that feature gates access to
+# AVMotionVectorCompact / AV_FRAME_DATA_MOTION_VECTORS_COMPACT, which only
+# exist in the custom build.
+define build_extractors
+	PKG_CONFIG_PATH=$(1)/lib/pkgconfig \
+	RUSTFLAGS="-C link-arg=-Wl,-rpath,$(1)/lib -C link-arg=-Wl,--disable-new-dtags" \
+	CARGO_TARGET_DIR=$(2) \
+	cargo build --release -p mv-extract $(3)
+endef
+
+# Build every extractor twice: once against the regular FFmpeg and once
+# against the custom patched FFmpeg. Extractors 0/1/2 are deployed from the
+# system build; 3/5 from the custom build; extractor1 from the custom build
+# is renamed to extractor4 (custom-FFmpeg flush-decoder variant).
 build:
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0 $(EXTRACTOR_DIR)/extractor0.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor1 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor2 $(EXTRACTOR_DIR)/extractor2.cpp  $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3 $(EXTRACTOR_DIR)/extractor3.cpp $(WRITER_SRC) $(CUST_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor4 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(CUST_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor5 $(EXTRACTOR_DIR)/extractor5.cpp $(WRITER_SRC) $(CUST_FF)
+	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
+	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
+	cp $(TARGET_SYS)/release/extractor0  $(EXECUTABLES_DIR)/extractor0
+	cp $(TARGET_SYS)/release/extractor1  $(EXECUTABLES_DIR)/extractor1
+	cp $(TARGET_SYS)/release/extractor2  $(EXECUTABLES_DIR)/extractor2
+	cp $(TARGET_CUST)/release/extractor3 $(EXECUTABLES_DIR)/extractor3
+	cp $(TARGET_CUST)/release/extractor1 $(EXECUTABLES_DIR)/extractor4
+	cp $(TARGET_CUST)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
 
+# System-only build: every extractor links against the regular system FFmpeg.
+# Useful for isolating whether a regression comes from the custom patch or
+# from the extractor code itself. extractor4 here is just extractor1 under a
+# different name — identical binary to method 1.
 build_sys:
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor0 $(EXTRACTOR_DIR)/extractor0.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor1 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor2 $(EXTRACTOR_DIR)/extractor2.cpp  $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor3 $(EXTRACTOR_DIR)/extractor3.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor4 $(EXTRACTOR_DIR)/extractor1.cpp $(WRITER_SRC) $(SYS_FF)
-	$(CC) -O2 -o $(EXTRACTOR_DIR)/$(EXECUTABLES_DIR)/extractor5 $(EXTRACTOR_DIR)/extractor5.cpp $(WRITER_SRC) $(SYS_FF)
+	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
+	cp $(TARGET_SYS)/release/extractor0 $(EXECUTABLES_DIR)/extractor0
+	cp $(TARGET_SYS)/release/extractor1 $(EXECUTABLES_DIR)/extractor1
+	cp $(TARGET_SYS)/release/extractor2 $(EXECUTABLES_DIR)/extractor2
+	cp $(TARGET_SYS)/release/extractor3 $(EXECUTABLES_DIR)/extractor3
+	cp $(TARGET_SYS)/release/extractor1 $(EXECUTABLES_DIR)/extractor4
+	cp $(TARGET_SYS)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
 
 # =============================================================================
 # BENCHMARKING
@@ -149,9 +175,9 @@ benchmark_all:
 		if [ -f "$$filepath" ]; then \
 			echo "\n========== $$vtype / $$filepath =========="; \
 			if [ -z "$(TYPE)" ]; then \
-				$(PYTHON) -m benchmarking.full_benchmark $$filepath $(STREAMS) $$vtype cust $(NRUNS) 0; \
+				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype cust $(NRUNS) 0; \
 			else \
-				$(PYTHON) -m benchmarking.full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) $(NRUNS) 0; \
+				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) $(NRUNS) 0; \
 			fi; \
 		else \
 			echo "SKIP: $$filepath not found"; \
@@ -159,7 +185,7 @@ benchmark_all:
 	done
 
 benchmark:
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS)
+	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS)
 
 # =============================================================================
 # DEVELOPMENT & TESTING TOOLS
@@ -167,7 +193,7 @@ benchmark:
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	$(PYTHON) -m benchmarking.full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) 1 2 5
+	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) 1 2 5
 #   chromium --no-sandbox $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)/vtune_results/call_tree.html
 
 decode_ffmpeg:
@@ -178,11 +204,11 @@ decode_ffmpeg:
 # =============================================================================
 
 publish:
-	$(PYTHON) -m publishing.publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) $(VIDEO_TYPE) test_git test_git 1
+	cargo run --bin publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) $(VIDEO_TYPE) test_git test_git 1
 
 generate_video:
-	$(PYTHON) -m video_generation.combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
-	$(PYTHON) -m video_generation.generate_motion_vectors_video $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
+	cargo run --bin generate_motion_vectors_video $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
+	cargo run --bin combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
 
 # =============================================================================
 # INSTALLER DIFF GENERATION

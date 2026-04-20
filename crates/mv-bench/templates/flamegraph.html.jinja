@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0f172a;
+        }
+
+        .header {
+            background: #1e293b;
+            color: white;
+            padding: 14px 24px;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .header-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .header h1 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e2e8f0;
+        }
+
+        .hint {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr auto auto auto;
+            gap: 8px 28px;
+            align-items: end;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+
+        .detail-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        .detail-value {
+            font-size: 15px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #fn-name .detail-value {
+            color: #f1f5f9;
+            max-width: 700px;
+        }
+
+        #fn-pct .detail-value {
+            color: #fbbf24;
+            font-size: 20px;
+        }
+
+        #fn-time .detail-value {
+            color: #38bdf8;
+            font-size: 20px;
+        }
+
+        #fn-samples .detail-value {
+            color: #a78bfa;
+        }
+
+        .flamegraph-container {
+            background: white;
+        }
+
+        .flamegraph-container svg {
+            display: block;
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <div class="header-top">
+            <h1>{{ title }}</h1>
+            <span class="hint">Click frame to zoom | Right-click to reset | Ctrl+F to search</span>
+        </div>
+        <div class="details-grid">
+            <div class="detail-item" id="fn-name">
+                <span class="detail-label">Function</span>
+                <span class="detail-value">Hover over a frame to see details</span>
+            </div>
+            <div class="detail-item" id="fn-pct">
+                <span class="detail-label">Percentage</span>
+                <span class="detail-value">-</span>
+            </div>
+            <div class="detail-item" id="fn-time">
+                <span class="detail-label">Time</span>
+                <span class="detail-value">-</span>
+            </div>
+            <div class="detail-item" id="fn-samples">
+                <span class="detail-label">Samples</span>
+                <span class="detail-value">-</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="flamegraph-container">
+        {{ svg_content|safe }}
+    </div>
+
+    <script>
+        const sampleDurationMs = {{ sample_duration_ms }};
+
+        function formatTime(ms) {
+            if (ms >= 60000) {
+                const s = ms / 1000;
+                const m = Math.floor(s / 60);
+                return m + ' m ' + (s % 60).toFixed(1) + ' s';
+            }
+            if (ms >= 1000) return (ms / 1000).toFixed(3) + ' s';
+            if (ms >= 1) return ms.toFixed(1) + ' ms';
+            if (ms >= 0.001) return (ms * 1000).toFixed(0) + ' us';
+            return '0 ms';
+        }
+
+        const nameEl = document.querySelector('#fn-name .detail-value');
+        const pctEl = document.querySelector('#fn-pct .detail-value');
+        const timeEl = document.querySelector('#fn-time .detail-value');
+        const samplesEl = document.querySelector('#fn-samples .detail-value');
+
+        document.querySelectorAll('.flamegraph-container svg g').forEach(g => {
+            const titleEl = g.querySelector('title');
+            if (!titleEl) return;
+
+            g.addEventListener('mouseenter', () => {
+                const text = titleEl.textContent.trim();
+
+                // inferno tooltip: "func_name (COUNT unit, PCT%)"
+                const match = text.match(/^(.+?)\s+\(([\d,.]+)\s+(\w+),\s*([\d.]+)%\)\s*$/);
+
+                if (match) {
+                    const name = match[1];
+                    const count = parseFloat(match[2].replace(/,/g, ''));
+                    const unit = match[3];
+                    const pct = parseFloat(match[4]);
+
+                    nameEl.textContent = name;
+                    pctEl.textContent = pct.toFixed(2) + '%';
+                    samplesEl.textContent = count.toLocaleString(undefined, {
+                        maximumFractionDigits: 1
+                    }) + ' ' + unit;
+
+                    let timeMs;
+                    if (unit === 'ms') {
+                        timeMs = count;
+                    } else if (unit === 's' || unit === 'seconds') {
+                        timeMs = count * 1000;
+                    } else {
+                        timeMs = count * sampleDurationMs;
+                    }
+                    timeEl.textContent = formatTime(timeMs);
+                } else {
+                    nameEl.textContent = text || '-';
+                    pctEl.textContent = '-';
+                    timeEl.textContent = '-';
+                    samplesEl.textContent = '-';
+                }
+            });
+        });
+
+        /* Reset panel when the mouse leaves the flamegraph */
+        document.querySelector('.flamegraph-container').addEventListener('mouseleave', () => {
+            nameEl.textContent = 'Hover over a frame to see details';
+            pctEl.textContent = '-';
+            timeEl.textContent = '-';
+            samplesEl.textContent = '-';
+        });
+    </script>
+</body>
+
+</html>

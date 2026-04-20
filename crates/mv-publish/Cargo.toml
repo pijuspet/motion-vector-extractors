@@ -1,0 +1,19 @@
+[package]
+name = "mv-publish"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mv-bench = { path = "../mv-bench" }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "multipart", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+minijinja = "2"
+uuid = { version = "1", features = ["v4"] }
+glob = "0.3"
+regex = "1"
+chrono = "0.4"
+
+[[bin]]
+name = "publish_report"
+path = "publish_report.rs"
