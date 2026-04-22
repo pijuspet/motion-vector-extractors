@@ -8,3 +8,5 @@ name = "mv_types"
 path = "lib.rs"
 
 [dependencies]
+itoa = "1"
+ryu = "1"
