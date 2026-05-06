@@ -169,9 +169,9 @@ fn collect_process_results(
     output_prefix: &str,
     print_csv: bool,
     is_verbose: bool,
-) -> (i32, i32) {
+) -> (i32, i64) {
     let mut total_frames = 0i32;
-    let mut total_mvs = 0i32;
+    let mut total_mvs = 0i64;
 
     for (i, proc) in processes.iter_mut().enumerate() {
         let mut status: i32 = 0;
@@ -203,7 +203,7 @@ fn collect_process_results(
                     let parts: Vec<&str> = text.split_whitespace().collect();
                     if parts.len() >= 2 {
                         if let (Ok(frames), Ok(mvs)) =
-                            (parts[0].parse::<i32>(), parts[1].parse::<i32>())
+                            (parts[0].parse::<i32>(), parts[1].parse::<i64>())
                         {
                             if is_verbose {
                                 println!("; {} frames, {} motion vectors", frames, mvs);

@@ -86,7 +86,7 @@ pub enum MvWriter {
 }
 
 impl MvWriter {
-    pub fn total(&self) -> i32 {
+    pub fn total(&self) -> i64 {
         match self {
             MvWriter::Full(w) => w.total(),
             MvWriter::Compact(w) => w.total(),

@@ -151,7 +151,7 @@ pub fn load_motion_vectors(
 /// churn on the tiny per-column `String`s.
 pub struct MotionVectorCsvWriter<W: Write> {
     inner: W,
-    total: i32,
+    total: i64,
 }
 
 const MV_HEADER: &[u8] =
@@ -196,7 +196,7 @@ impl<W: Write> MotionVectorCsvWriter<W> {
         Ok(())
     }
 
-    pub fn total(&self) -> i32 {
+    pub fn total(&self) -> i64 {
         self.total
     }
 
@@ -207,7 +207,7 @@ impl<W: Write> MotionVectorCsvWriter<W> {
 
 pub struct MvCompactCsvWriter<W: Write> {
     inner: W,
-    total: i32,
+    total: i64,
 }
 
 const MV_COMPACT_HEADER: &[u8] = b"frame,source,src_x,src_y,dst_x,dst_y\n";
@@ -237,7 +237,7 @@ impl<W: Write> MvCompactCsvWriter<W> {
         Ok(())
     }
 
-    pub fn total(&self) -> i32 {
+    pub fn total(&self) -> i64 {
         self.total
     }
 
