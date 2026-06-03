@@ -247,11 +247,14 @@ pub unsafe fn write_frame_mvs(
     false
 }
 
-/// Read the current VmRSS of this process from `/proc/self/status`.
-/// Returns the RSS in kilobytes, or 0 if it cannot be read.
+/// Return the current resident set size of this process in kilobytes,
+/// or 0 if it cannot be read.
 ///
-/// Unlike `ru_maxrss` from `wait4`, this returns the *current* RSS after
-/// `exec` — it is not inflated by the parent's RSS at `fork` time.
+/// Linux: parses `/proc/self/status` (VmRSS). This reflects the *current*
+/// RSS after `exec`, unlike `ru_maxrss` from `wait4`.
+/// Windows: queries `GetProcessMemoryInfo` via psapi.
+/// Other unix: returns 0 (no portable equivalent without extra deps).
+#[cfg(target_os = "linux")]
 pub fn get_current_rss_kb() -> i64 {
     let Ok(status) = std::fs::read_to_string("/proc/self/status") else {
         return 0;
@@ -262,6 +265,50 @@ pub fn get_current_rss_kb() -> i64 {
             return val.parse().unwrap_or(0);
         }
     }
+    0
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_current_rss_kb() -> i64 {
+    use std::mem;
+    #[repr(C)]
+    struct ProcessMemoryCounters {
+        cb: u32,
+        page_fault_count: u32,
+        peak_working_set_size: usize,
+        working_set_size: usize,
+        quota_peak_paged_pool_usage: usize,
+        quota_paged_pool_usage: usize,
+        quota_peak_non_paged_pool_usage: usize,
+        quota_non_paged_pool_usage: usize,
+        pagefile_usage: usize,
+        peak_pagefile_usage: usize,
+    }
+    type Handle = *mut core::ffi::c_void;
+    // K32GetProcessMemoryInfo lives in kernel32 (Vista+), so no extra .lib
+    // link is needed. The legacy psapi entry point requires psapi.lib.
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentProcess() -> Handle;
+        fn K32GetProcessMemoryInfo(
+            process: Handle,
+            counters: *mut ProcessMemoryCounters,
+            cb: u32,
+        ) -> i32;
+    }
+    unsafe {
+        let mut pmc: ProcessMemoryCounters = mem::zeroed();
+        pmc.cb = mem::size_of::<ProcessMemoryCounters>() as u32;
+        if K32GetProcessMemoryInfo(GetCurrentProcess(), &mut pmc, pmc.cb) != 0 {
+            (pmc.working_set_size / 1024) as i64
+        } else {
+            0
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub fn get_current_rss_kb() -> i64 {
     0
 }
 

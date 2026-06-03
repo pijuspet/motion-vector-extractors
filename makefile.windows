@@ -1,0 +1,307 @@
+SHELL := /bin/bash
+
+# =============================================================================
+# Windows / MSYS2 MINGW64 build for motion-vector-extractors.
+#
+# Run from the "MSYS2 MinGW x64" shell (NOT plain MSYS, NOT cmd, NOT PowerShell).
+# Linux-only paths (VTune, perf, /proc, LD_LIBRARY_PATH, apt) have been removed
+# or no-op'd; the corresponding Rust targets (profiler, flamegraph) are gated
+# behind cfg(unix) and will print a notice on Windows instead of running.
+# =============================================================================
+
+# =============================================================================
+# CONFIGURATION & GLOBAL VARIABLES
+# =============================================================================
+
+STREAMS = 1
+NRUNS = 3
+
+VIDEO_NAME ?= MCTTR0102b.mp4
+
+VIDEO_TYPES := h264_cabac h264_cavlc h264_avi h265
+VIDEO_TYPE ?= h264_cabac
+
+CC = g++
+EXE_EXT := .exe
+
+# =============================================================================
+# PATHS & ENVIRONMENTS
+# =============================================================================
+
+# $(CURDIR) is portable (no `pwd` shell-out); also yields a forward-slash
+# MSYS2-style path when invoked from MINGW64.
+CURRENT_DIR := $(CURDIR)
+PARENT_DIR  := $(patsubst %/,%,$(dir $(CURRENT_DIR)))
+VENV_FOLDER ?= $(PARENT_DIR)/venv-motion-vectors
+PYTHON      := $(VENV_FOLDER)/Scripts/python.exe
+
+EXECUTABLES_DIR := executables
+
+VIDEO_FILE := $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/$(VIDEO_NAME)
+
+INITIAL_RUN_DATA := $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results_$(VIDEO_TYPE)
+LAST_RESULTS_DIR  = $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* 2>/dev/null | sort | tail -n 1)
+
+CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv
+CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method4_output_0.csv
+
+# =============================================================================
+# FFMPEG & PKG-CONFIG SETUP
+# =============================================================================
+
+FF_PKGS := libavformat libavcodec libavutil libswresample
+pkg_cmd  = PKG_CONFIG_PATH=$(1)/lib/pkgconfig pkg-config
+
+get_cflags = $(shell $(call pkg_cmd,$(1)) --cflags $(FF_PKGS) 2>/dev/null)
+get_libs   = $(shell $(call pkg_cmd,$(1)) --libs $(FF_PKGS) 2>/dev/null)
+
+define def_ff_flags
+$(2)_CFLAGS := $$(call get_cflags,$(1))
+$(2)_LIBS   := $$(call get_libs,$(1))
+$(2)        := $$($(2)_CFLAGS) $$($(2)_LIBS)
+endef
+
+# On Windows DLLs live in <prefix>/bin, not <prefix>/lib — runtime resolution
+# happens via PATH, not via rpath, so there is no -Wl,-rpath equivalent here.
+CUSTOM_PREFIX   := $(abspath $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0-custom)
+REGULAR_PREFIX  := $(abspath $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0)
+$(eval $(call def_ff_flags,$(CUSTOM_PREFIX),CUST_FF))
+$(eval $(call def_ff_flags,$(REGULAR_PREFIX),SYS_FF))
+
+# FFmpeg build macro — targets MinGW64 (matches ffmpeg_installer/makefile.windows).
+FFMPEG_BUILD = \
+	cd $1/FFmpeg && \
+	chmod +x ./configure ./ffbuild/*.sh && \
+	./configure --prefix='$(abspath $1)' --enable-shared --disable-static --enable-swresample \
+		--target-os=mingw32 --arch=x86_64 \
+		--enable-debug --disable-stripping --pkg-config-flags="--static" && \
+	make && make install
+
+# =============================================================================
+# SHELL ENVIRONMENT CHECK & DEPENDENCIES
+# =============================================================================
+
+check-shell:
+	@if [ "$$MSYSTEM" != "MINGW64" ]; then \
+		echo "[ERROR] Run this from the MSYS2 MINGW64 shell."; \
+		echo "        Open 'MSYS2 MinGW x64' from the Start Menu."; \
+		exit 1; \
+	fi
+	@echo "[OK]    Running in MINGW64."
+
+# pacman packages mirror the Linux apt list as closely as MSYS2 allows.
+# Skipped on Windows: vtune (Linux profiler), linux-tools (perf), wkhtmltopdf
+# (call from native Windows installer if needed), opencv (only used by an
+# optional rust crate; install separately if you enable it).
+install: check-shell
+	@echo "[INFO]  Installing MSYS2/MinGW64 build dependencies..."
+	pacman -S --needed --noconfirm \
+		mingw-w64-x86_64-toolchain \
+		mingw-w64-x86_64-rust \
+		mingw-w64-x86_64-nasm \
+		mingw-w64-x86_64-pkg-config \
+		mingw-w64-x86_64-clang \
+		mingw-w64-x86_64-python \
+		mingw-w64-x86_64-python-pip \
+		make git patch diffutils
+	@if [ ! -f .env ] && [ -f .env_template ]; then cp .env_template .env; fi
+	@mkdir -p '$(VENV_FOLDER)'
+	@mkdir -p '$(EXECUTABLES_DIR)'
+	python -m venv '$(VENV_FOLDER)'
+	'$(VENV_FOLDER)/Scripts/pip.exe' install -r requirements.txt
+	@echo "[OK]    Install complete."
+
+setup_ffmpeg: check-shell
+	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
+	$(call FFMPEG_BUILD,$(REGULAR_PREFIX))
+
+# =============================================================================
+# BUILD TARGETS
+# =============================================================================
+
+build_tools: check-shell
+	cargo build --workspace --release
+
+TARGET_SYS  := $(CURRENT_DIR)/target/extractor-sys
+TARGET_CUST := $(CURRENT_DIR)/target/extractor-cust
+
+# $(1) = FFmpeg prefix, $(2) = CARGO_TARGET_DIR, $(3) = extra cargo flags.
+# Windows note: no RUSTFLAGS rpath — runtime DLL resolution is by PATH instead.
+# The `cp` step appends .exe and adds the FFmpeg bin dir to PATH at build time
+# so the linker can find import libraries.
+define build_extractors
+	PATH='$(1)/bin':$$PATH \
+	PKG_CONFIG_PATH=$(1)/lib/pkgconfig \
+	CARGO_TARGET_DIR=$(2) \
+	cargo build --release -p mv-extract $(3)
+endef
+
+build: check-shell
+	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
+	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
+	cp '$(TARGET_SYS)/release/extractor0$(EXE_EXT)'  '$(EXECUTABLES_DIR)/extractor0$(EXE_EXT)'
+	cp '$(TARGET_SYS)/release/extractor1$(EXE_EXT)'  '$(EXECUTABLES_DIR)/extractor1$(EXE_EXT)'
+	cp '$(TARGET_SYS)/release/extractor2$(EXE_EXT)'  '$(EXECUTABLES_DIR)/extractor2$(EXE_EXT)'
+	cp '$(TARGET_CUST)/release/extractor3$(EXE_EXT)' '$(EXECUTABLES_DIR)/extractor3$(EXE_EXT)'
+	cp '$(TARGET_CUST)/release/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR)/extractor4$(EXE_EXT)'
+	cp '$(TARGET_CUST)/release/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR)/extractor5$(EXE_EXT)'
+	@echo "[INFO]  Copying FFmpeg DLLs next to extractors..."
+	@cp -u '$(CUSTOM_PREFIX)/bin/'*.dll '$(EXECUTABLES_DIR)/' 2>/dev/null || true
+	@cp -u '$(REGULAR_PREFIX)/bin/'*.dll '$(EXECUTABLES_DIR)/' 2>/dev/null || true
+	@echo "[OK]    Build complete."
+
+build_sys: check-shell
+	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
+	cp '$(TARGET_SYS)/release/extractor0$(EXE_EXT)' '$(EXECUTABLES_DIR)/extractor0$(EXE_EXT)'
+	cp '$(TARGET_SYS)/release/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR)/extractor1$(EXE_EXT)'
+	cp '$(TARGET_SYS)/release/extractor2$(EXE_EXT)' '$(EXECUTABLES_DIR)/extractor2$(EXE_EXT)'
+	cp '$(TARGET_SYS)/release/extractor3$(EXE_EXT)' '$(EXECUTABLES_DIR)/extractor3$(EXE_EXT)'
+	cp '$(TARGET_SYS)/release/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR)/extractor4$(EXE_EXT)'
+	cp '$(TARGET_SYS)/release/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR)/extractor5$(EXE_EXT)'
+	@cp -u '$(REGULAR_PREFIX)/bin/'*.dll '$(EXECUTABLES_DIR)/' 2>/dev/null || true
+
+# =============================================================================
+# BENCHMARKING
+# =============================================================================
+
+all:
+	$(MAKE) -f makefile.windows benchmark_all TYPE=sys
+	$(MAKE) -f makefile.windows benchmark_all TYPE=cust
+
+benchmark_all:
+	@vname="$(VIDEO_NAME)"; \
+	for vtype in $(VIDEO_TYPES); do \
+		if [ "$$vtype" = "h264_avi" ]; then \
+			filepath=$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi; \
+		else \
+			filepath=$(CURRENT_DIR)/videos/$$vtype/$$vname; \
+		fi; \
+		if [ -f "$$filepath" ]; then \
+			echo ""; \
+			echo "========== $$vtype / $$filepath =========="; \
+			if [ -z "$(TYPE)" ]; then \
+				cargo run --bin full_benchmark "$$filepath" $(STREAMS) $$vtype cust $(NRUNS) 0; \
+			else \
+				cargo run --bin full_benchmark "$$filepath" $(STREAMS) $$vtype $(TYPE) $(NRUNS) 0; \
+			fi; \
+		else \
+			echo "SKIP: $$filepath not found"; \
+		fi; \
+	done
+
+benchmark:
+	cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS)
+
+# =============================================================================
+# DEVELOPMENT & TESTING TOOLS
+# =============================================================================
+
+test_ffmpeg:
+	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
+	cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) 1 2 5
+
+# Decode a single video through the custom FFmpeg. PATH carries the DLLs.
+decode_ffmpeg:
+	PATH='$(CUSTOM_PREFIX)/bin':$$PATH '$(CUSTOM_PREFIX)/bin/ffmpeg.exe' \
+		-y -i '$(VIDEO_FILE)' -c copy -an '$(LAST_RESULTS_DIR)/decoded_output.mp4'
+
+# =============================================================================
+# PUBLISHING & VIDEO GENERATION
+# =============================================================================
+
+publish:
+	cargo run --bin publish_report 3 '$(INITIAL_RUN_DATA)' '$(LAST_RESULTS_DIR)' $(VIDEO_TYPE) test_git test_git 1
+
+generate_video:
+	cargo run --bin generate_motion_vectors_video '$(CSV_FILE_PATH_CUST)' '$(LAST_RESULTS_DIR)'
+	cargo run --bin combine_motion_vectors_with_video '$(VIDEO_FILE)' '$(CSV_FILE_PATH_ORIG)' '$(CSV_FILE_PATH_CUST)' '$(LAST_RESULTS_DIR)'
+
+# =============================================================================
+# INSTALLER DIFF GENERATION
+# =============================================================================
+
+FFMPEG_INSTALLER_DIR := $(CURRENT_DIR)/ffmpeg_installer
+# MSYS2 maps /tmp to its own tmp dir; keep that convention.
+FRESH_FFMPEG_DIR     ?= /tmp/ffmpeg-8.0-fresh
+FFMPEG_BRANCH        ?= release/8.0
+
+fetch_fresh_ffmpeg:
+	@if [ ! -d "$(FRESH_FFMPEG_DIR)" ]; then \
+		echo "Cloning fresh FFmpeg $(FFMPEG_BRANCH)..."; \
+		git clone --depth 1 --branch $(FFMPEG_BRANCH) \
+			https://github.com/FFmpeg/FFmpeg.git $(FRESH_FFMPEG_DIR); \
+	else \
+		echo "Fresh FFmpeg already at $(FRESH_FFMPEG_DIR)"; \
+	fi
+
+installer_diff: fetch_fresh_ffmpeg
+	@echo "Generating diff: fresh $(FFMPEG_BRANCH) → custom..."
+	diff -u -I '/tmp/ffconf\.' \
+		-x '.git' \
+		-x 'config.h' \
+		-x 'config_components.h' \
+		-x '*tests' \
+		-x '*.pc' \
+		-x 'ffmpeg_g' \
+		-x 'ffprobe_g' \
+		-x 'ffmpeg' \
+		-x 'ffprobe' \
+		-x '.version' \
+		-x '*.so' \
+		-x '*.so.*' \
+		-x '*.ver.*' \
+		-x '*.dll' \
+		-x '*.dll.a' \
+		-x '*.exe' \
+		-x '*.a' \
+		-x '*.o' \
+		-x '*.d' \
+		-x '*.S' \
+		-x '*.asm' \
+		-x 'doc' \
+		-x 'ffversion.h' \
+		-r $(FRESH_FFMPEG_DIR)/ $(CUSTOM_PREFIX)/FFmpeg/ \
+		| sed 's|$(FRESH_FFMPEG_DIR)/|a/|g' \
+		| sed 's|$(CUSTOM_PREFIX)/FFmpeg/|b/|g' \
+		| sed '/Binary\ files\ /d' \
+		| grep -v '^Only in b/' \
+		> $(FFMPEG_INSTALLER_DIR)/custom_ffmpeg.diff \
+		|| true
+	@echo "Diff written to $(FFMPEG_INSTALLER_DIR)/custom_ffmpeg.diff"
+	@echo "$$(grep -c '^diff ' $(FFMPEG_INSTALLER_DIR)/custom_ffmpeg.diff) file(s) changed"
+
+installer_publish: installer_diff
+	cd '$(FFMPEG_INSTALLER_DIR)' && git add ffmpeg_version.diff && git status
+	@echo "Diff staged in ffmpeg-installer. Commit when ready."
+
+clean_fresh_ffmpeg:
+	rm -rf '$(FRESH_FFMPEG_DIR)'
+
+# =============================================================================
+# HELP
+# =============================================================================
+
+help:
+	@echo ""
+	@echo "  Usage (run from MSYS2 MINGW64 shell):"
+	@echo ""
+	@echo "    make -f makefile.windows install              # MSYS2 deps + venv + pip"
+	@echo "    make -f makefile.windows setup_ffmpeg         # build both FFmpeg variants"
+	@echo "    make -f makefile.windows build                # build all extractors (sys + custom)"
+	@echo "    make -f makefile.windows build_sys            # build extractors against system FFmpeg only"
+	@echo "    make -f makefile.windows build_tools          # cargo build --workspace --release"
+	@echo "    make -f makefile.windows benchmark            # single-video benchmark"
+	@echo "    make -f makefile.windows benchmark_all        # iterate over VIDEO_TYPES"
+	@echo "    make -f makefile.windows all                  # benchmark_all for sys + cust"
+	@echo "    make -f makefile.windows decode_ffmpeg        # decode VIDEO_FILE via custom FFmpeg"
+	@echo "    make -f makefile.windows publish              # publish report"
+	@echo "    make -f makefile.windows generate_video       # render MV overlay video"
+	@echo "    make -f makefile.windows installer_diff       # regenerate custom_ffmpeg.diff"
+	@echo ""
+	@echo "  Vars: VIDEO_NAME=$(VIDEO_NAME)  VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)"
+	@echo ""
+	@echo "  Notes:"
+	@echo "    - VTune (profiler) and perf (flamegraph) are Linux-only and skipped on Windows."
+	@echo "    - DLL resolution uses PATH, not LD_LIBRARY_PATH. The build target copies"
+	@echo "      FFmpeg DLLs into $(EXECUTABLES_DIR)/ so the .exe files run in place."
+	@echo ""

@@ -1,8 +1,7 @@
-use crate::motion_vector::{MotionVector, load_motion_vectors};
+use crate::motion_vector::{MotionVector, MvCsvReader};
 use std::collections::BTreeMap;
-use std::fmt::Write as FmtWrite;
-use std::fs;
-use std::path::Path;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Write};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Key {
@@ -140,16 +139,53 @@ pub fn compare_frames(first: &[MotionVector], second: &[MotionVector]) -> Vec<(K
     diffs
 }
 
-pub fn write_results(differences: &[(Key, String)], output_path: &Path) -> Result<(), String> {
-    let mut content = String::new();
-    if differences.is_empty() {
-        writeln!(content, "No differences found in frames in all frames.").unwrap();
-    } else {
-        for (_, msg) in differences {
-            writeln!(content, "{}", msg).unwrap();
+/// Pulls the next group of motion vectors that share the same frame number.
+/// Relies on extractor CSVs being written in monotonically non-decreasing
+/// frame order — extractors emit MVs frame-by-frame in decode order, so a
+/// frame's rows are always contiguous.
+fn next_frame_batch<I>(
+    iter: &mut I,
+    peeked: &mut Option<MotionVector>,
+) -> std::io::Result<Option<(i32, Vec<MotionVector>)>>
+where
+    I: Iterator<Item = std::io::Result<MotionVector>>,
+{
+    let first = match peeked.take() {
+        Some(mv) => mv,
+        None => match iter.next() {
+            Some(Ok(mv)) => mv,
+            Some(Err(e)) => return Err(e),
+            None => return Ok(None),
+        },
+    };
+    let frame = first.frame;
+    let mut batch = vec![first];
+    loop {
+        match iter.next() {
+            Some(Ok(mv)) if mv.frame == frame => batch.push(mv),
+            Some(Ok(mv)) => {
+                *peeked = Some(mv);
+                break;
+            }
+            Some(Err(e)) => return Err(e),
+            None => break,
         }
     }
-    fs::write(output_path, content).map_err(|e| format!("Failed to write output: {}", e))
+    Ok(Some((frame, batch)))
+}
+
+fn emit_only<W: Write>(
+    batch: &[MotionVector],
+    other_side: &str,
+    out: &mut W,
+    diff_count: &mut usize,
+) -> std::io::Result<()> {
+    for mv in batch {
+        let key = Key::from_mv(mv);
+        writeln!(out, "{}: missing in {} file", key.display(), other_side)?;
+        *diff_count += 1;
+    }
+    Ok(())
 }
 
 pub fn compare(
@@ -157,19 +193,73 @@ pub fn compare(
     second_csv: &str,
     output_file: &str,
 ) -> Result<(), String> {
-    let first = load_motion_vectors(first_csv)
-        .map_err(|e| format!("Error loading first CSV: {}", e))?;
-    let second = load_motion_vectors(second_csv)
-        .map_err(|e| format!("Error loading second CSV: {}", e))?;
+    let f1 = File::open(first_csv).map_err(|e| format!("Error opening first CSV: {}", e))?;
+    let f2 = File::open(second_csv).map_err(|e| format!("Error opening second CSV: {}", e))?;
+    let mut r1 = MvCsvReader::new(BufReader::new(f1))
+        .map_err(|e| format!("Error reading first CSV header: {}", e))?;
+    let mut r2 = MvCsvReader::new(BufReader::new(f2))
+        .map_err(|e| format!("Error reading second CSV header: {}", e))?;
 
-    let differences = compare_frames(&first, &second);
-    let output_path = Path::new(output_file);
+    let out_file = File::create(output_file)
+        .map_err(|e| format!("Failed to create output: {}", e))?;
+    let mut out = BufWriter::new(out_file);
 
-    write_results(&differences, output_path)?;
+    let mut peek1: Option<MotionVector> = None;
+    let mut peek2: Option<MotionVector> = None;
+    let mut next1 = next_frame_batch(&mut r1, &mut peek1)
+        .map_err(|e| format!("Error reading first CSV: {}", e))?;
+    let mut next2 = next_frame_batch(&mut r2, &mut peek2)
+        .map_err(|e| format!("Error reading second CSV: {}", e))?;
 
-    println!(
-        "Comparison complete. Results written to {}",
-        output_path.display()
-    );
+    let mut diff_count: usize = 0;
+
+    loop {
+        use std::cmp::Ordering;
+        let order = match (&next1, &next2) {
+            (None, None) => break,
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (Some((f1n, _)), Some((f2n, _))) => f1n.cmp(f2n),
+        };
+
+        match order {
+            Ordering::Less => {
+                let (_, batch) = next1.take().unwrap();
+                emit_only(&batch, "second", &mut out, &mut diff_count)
+                    .map_err(|e| format!("Failed to write output: {}", e))?;
+                next1 = next_frame_batch(&mut r1, &mut peek1)
+                    .map_err(|e| format!("Error reading first CSV: {}", e))?;
+            }
+            Ordering::Greater => {
+                let (_, batch) = next2.take().unwrap();
+                emit_only(&batch, "first", &mut out, &mut diff_count)
+                    .map_err(|e| format!("Failed to write output: {}", e))?;
+                next2 = next_frame_batch(&mut r2, &mut peek2)
+                    .map_err(|e| format!("Error reading second CSV: {}", e))?;
+            }
+            Ordering::Equal => {
+                let (_, b1) = next1.take().unwrap();
+                let (_, b2) = next2.take().unwrap();
+                let diffs = compare_frames(&b1, &b2);
+                for (_, msg) in &diffs {
+                    writeln!(out, "{}", msg)
+                        .map_err(|e| format!("Failed to write output: {}", e))?;
+                }
+                diff_count += diffs.len();
+                next1 = next_frame_batch(&mut r1, &mut peek1)
+                    .map_err(|e| format!("Error reading first CSV: {}", e))?;
+                next2 = next_frame_batch(&mut r2, &mut peek2)
+                    .map_err(|e| format!("Error reading second CSV: {}", e))?;
+            }
+        }
+    }
+
+    if diff_count == 0 {
+        writeln!(out, "No differences found in frames in all frames.")
+            .map_err(|e| format!("Failed to write output: {}", e))?;
+    }
+    out.flush().map_err(|e| format!("Failed to flush output: {}", e))?;
+
+    println!("Comparison complete. Results written to {}", output_file);
     Ok(())
 }

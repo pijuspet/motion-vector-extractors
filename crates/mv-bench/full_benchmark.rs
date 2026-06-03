@@ -106,7 +106,7 @@ impl BenchmarkRunner {
     }
 
     pub fn run_shell_command(&self, cmd: &str, cwd: Option<&PathBuf>, env_vars: Option<&[(String, String)]>) -> bool {
-        let mut command = Command::new("/bin/bash");
+        let mut command = Command::new("sh");
         command.args(["-c", cmd]);
 
         if let Some(dir) = cwd {
@@ -129,7 +129,7 @@ impl BenchmarkRunner {
     }
 
     pub fn run_shell_capture(&self, cmd: &str, env_vars: Option<&[(String, String)]>) -> Option<String> {
-        let mut command = Command::new("/bin/bash");
+        let mut command = Command::new("sh");
         command.args(["-c", cmd]);
 
         if let Some(vars) = env_vars {
@@ -237,19 +237,20 @@ impl BenchmarkRunner {
 
     pub fn generate_mv_comparison(&self) {
         let method1_csv = self.results_dir.join("method1_output_0.csv");
-        let method4_csv = self.results_dir.join("method4_output_0.csv");
+        let method5_csv = self.results_dir.join("method5_output_0.csv");
 
         if let Err(e) = mv_types::mv_compare::compare(
             &method1_csv.to_string_lossy(),
-            &method4_csv.to_string_lossy(),
+            &method5_csv.to_string_lossy(),
             &self.motion_vectors_comparison_file.to_string_lossy(),
         ) {
             eprintln!("MV comparison error: {}", e);
         }
     }
 
+    #[cfg(unix)]
     pub fn get_vtune_env(&self) -> Option<Vec<(String, String)>> {
-        let result = Command::new("/bin/bash")
+        let result = Command::new("sh")
             .args(["-c", ". /opt/intel/oneapi/setvars.sh --force 2>/dev/null && env"])
             .output();
 
@@ -285,8 +286,19 @@ impl BenchmarkRunner {
         }
     }
 
+    #[cfg(not(unix))]
     pub fn profiler(&self) {
-        println!("Running VTune profiler on extractor4 with motion_vectors_only=1...");
+        println!("VTune profiler step skipped: not supported on this platform.");
+    }
+
+    #[cfg(not(unix))]
+    pub fn flamegraph(&self) {
+        println!("Flamegraph step skipped: perf is Linux-only.");
+    }
+
+    #[cfg(unix)]
+    pub fn profiler(&self) {
+        println!("Running VTune profiler on extractor5 with motion_vectors_only=1...");
 
         let ffmpeg_lib = self
             .current_dir
@@ -302,10 +314,10 @@ impl BenchmarkRunner {
 
         let extractor_exec = self
             .extractor_executables
-            .join("extractor4");
+            .join("extractor5");
         let output_csv = self
             .results_dir
-            .join("method4_output_vtune.csv");
+            .join("method5_output_vtune.csv");
 
         let vtune_env = self.get_vtune_env().unwrap_or_else(|| {
             env::vars().map(|(k, v)| (k, v)).collect()
@@ -372,13 +384,14 @@ impl BenchmarkRunner {
         println!("Profiler run complete. Results in {}.", self.vtune_dir.display());
     }
 
+    #[cfg(unix)]
     pub fn flamegraph(&self) {
-        println!("Generating flamegraph for extractor4...");
+        println!("Generating flamegraph for extractor5...");
 
         let flamegraph_dir = self.results_dir.join("flamegraph");
         fs::create_dir_all(&flamegraph_dir).ok();
 
-        let output_html = flamegraph_dir.join("extractor4_flamegraph.html");
+        let output_html = flamegraph_dir.join("extractor5_flamegraph.html");
 
         if let Some(perf_bin) = crate::flamegraph::find_perf() {
             println!("Using perf binary: {}", perf_bin);
@@ -390,8 +403,8 @@ impl BenchmarkRunner {
                 .join("lib");
 
             let perf_data = flamegraph_dir.join("perf.data");
-            let output_csv = self.results_dir.join("method4_output_flamegraph.csv");
-            let extractor_exec = self.extractor_executables.join("extractor4");
+            let output_csv = self.results_dir.join("method5_output_flamegraph.csv");
+            let extractor_exec = self.extractor_executables.join("extractor5");
 
             let existing_ld = env::var("LD_LIBRARY_PATH").unwrap_or_default();
             let ld_path = format!("{}:{}", ffmpeg_lib.display(), existing_ld);
@@ -406,7 +419,7 @@ impl BenchmarkRunner {
                 output_csv.display(),
             );
 
-            println!("Running: perf record on extractor4...");
+            println!("Running: perf record on extractor5...");
             if !self.run_shell_command(&perf_cmd, Some(&self.extractor_executables), None) {
                 eprintln!("perf record failed.");
                 return;
@@ -416,7 +429,7 @@ impl BenchmarkRunner {
                 &perf_bin,
                 &perf_data.to_string_lossy(),
                 &output_html.to_string_lossy(),
-                "extractor4 Flamegraph (perf)",
+                "extractor5 Flamegraph (perf)",
             ) {
                 eprintln!("Flamegraph generation failed: {}", e);
                 return;

@@ -95,7 +95,7 @@ impl BenchmarkPublisher {
     }
 
     fn run_shell_command(&self, cmd: &str) -> bool {
-        match Command::new("/bin/bash")
+        match Command::new("sh")
             .args(["-c", cmd])
             .status()
         {

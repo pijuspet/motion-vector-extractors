@@ -35,7 +35,7 @@ INITIAL_RUN_DATA = $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results_$(VIDE
 LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)
 
 CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv # original ffmpeg
-CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method4_output_0.csv # custom ffmpeg
+CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method5_output_0.csv # custom ffmpeg
 
 # =============================================================================
 # FFMPEG & PKG-CONFIG SETUP
@@ -128,31 +128,41 @@ define build_extractors
 endef
 
 # Build every extractor twice: once against the regular FFmpeg and once
-# against the custom patched FFmpeg. Extractors 0/1/2 are deployed from the
-# system build; 3/5 from the custom build; extractor1 from the custom build
-# is renamed to extractor4 (custom-FFmpeg flush-decoder variant).
+# against the custom patched FFmpeg. Methods 0/1/2/3 are deployed from the
+# system build, 4/5/6/7 from the custom build. Note the deployed name is the
+# benchmark *method id*, which differs from the source binary name:
+#   method3 (orig key-frames only)   <- source extractor6
+#   method4 (custom MV-only RTSP)     <- source extractor3
+#   method5 (custom flush decoder)    <- source extractor1 (custom build)
+#   method6 (custom)                  <- source extractor5
+#   method7 (custom key-frames only)  <- source extractor7
 build:
 	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
 	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
 	cp $(TARGET_SYS)/release/extractor0  $(EXECUTABLES_DIR)/extractor0
 	cp $(TARGET_SYS)/release/extractor1  $(EXECUTABLES_DIR)/extractor1
 	cp $(TARGET_SYS)/release/extractor2  $(EXECUTABLES_DIR)/extractor2
-	cp $(TARGET_CUST)/release/extractor3 $(EXECUTABLES_DIR)/extractor3
-	cp $(TARGET_CUST)/release/extractor1 $(EXECUTABLES_DIR)/extractor4
-	cp $(TARGET_CUST)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
+	cp $(TARGET_SYS)/release/extractor6  $(EXECUTABLES_DIR)/extractor3
+	cp $(TARGET_CUST)/release/extractor3 $(EXECUTABLES_DIR)/extractor4
+	cp $(TARGET_CUST)/release/extractor1 $(EXECUTABLES_DIR)/extractor5
+	cp $(TARGET_CUST)/release/extractor5 $(EXECUTABLES_DIR)/extractor6
+	cp $(TARGET_CUST)/release/extractor7 $(EXECUTABLES_DIR)/extractor7
 
 # System-only build: every extractor links against the regular system FFmpeg.
 # Useful for isolating whether a regression comes from the custom patch or
-# from the extractor code itself. extractor4 here is just extractor1 under a
-# different name — identical binary to method 1.
+# from the extractor code itself. Deploy names are the benchmark method ids
+# (see `build` above for the method-id -> source-binary mapping); method5 here
+# is just extractor1 under a different name — identical binary to method 1.
 build_sys:
 	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
 	cp $(TARGET_SYS)/release/extractor0 $(EXECUTABLES_DIR)/extractor0
 	cp $(TARGET_SYS)/release/extractor1 $(EXECUTABLES_DIR)/extractor1
 	cp $(TARGET_SYS)/release/extractor2 $(EXECUTABLES_DIR)/extractor2
-	cp $(TARGET_SYS)/release/extractor3 $(EXECUTABLES_DIR)/extractor3
-	cp $(TARGET_SYS)/release/extractor1 $(EXECUTABLES_DIR)/extractor4
-	cp $(TARGET_SYS)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
+	cp $(TARGET_SYS)/release/extractor6 $(EXECUTABLES_DIR)/extractor3
+	cp $(TARGET_SYS)/release/extractor3 $(EXECUTABLES_DIR)/extractor4
+	cp $(TARGET_SYS)/release/extractor1 $(EXECUTABLES_DIR)/extractor5
+	cp $(TARGET_SYS)/release/extractor5 $(EXECUTABLES_DIR)/extractor6
+	cp $(TARGET_SYS)/release/extractor7 $(EXECUTABLES_DIR)/extractor7
 
 # =============================================================================
 # BENCHMARKING

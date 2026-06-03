@@ -7,6 +7,10 @@ use mv_extract::ffmpeg_common::{
     get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs, set_av_flags, unset_av_flags
 };
 
+// Custom FFmpeg, key-frames only. Identical to extractor5 (custom FFmpeg)
+// except the decoder is told to discard every non-key frame via
+// `skip_frame = AVDISCARD_NONKEY`, so `avcodec_receive_frame` only ever yields
+// key frames.
 fn main() {
     let Some(args) = ExtractorArgs::from_env() else {
         std::process::exit(255);
@@ -82,6 +86,8 @@ fn main() {
         (*dec_ctx).thread_count = if args.is_single_threaded { 1 } else { 0 };
         // (*dec_ctx).thread_type = ff::FF_THREAD_SLICE as i32;
         (*dec_ctx).export_side_data |= ff::AV_CODEC_EXPORT_DATA_MVS as i32;
+        // Key-frames only: drop every non-key frame at decode time.
+        (*dec_ctx).skip_frame = ff::AVDiscard::AVDISCARD_NONKEY;
         let mv_only_key = CString::new("motion_vectors_only").unwrap();
         ff::av_opt_set_int(dec_ctx as *mut c_void, mv_only_key.as_ptr(), 1, 0);
         //endregion
@@ -141,16 +147,6 @@ fn main() {
                 }
             }
             ff::av_packet_unref(pkt);
-        }
-
-        // Flush decoder
-        ff::avcodec_send_packet(dec_ctx, ptr::null());
-        while ff::avcodec_receive_frame(dec_ctx, frame) == 0 {
-            if let Some(w) = writer.as_mut() {
-                write_frame_mvs(w, frame_num, frame);
-            }
-            ff::av_frame_unref(frame);
-            frame_num += 1;
         }
 
         let total_mvs = writer.as_ref().map(|w| w.total()).unwrap_or(0);
