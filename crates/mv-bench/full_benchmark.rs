@@ -53,6 +53,9 @@ impl BenchmarkRunner {
         let slides_config = current_dir.join("scripts").join("slides_config.json");
         let plots_dir = results_dir.join("plots");
 
+        #[cfg(windows)]
+        let venv_dir = current_dir.join("venv-motion-vectors");
+        #[cfg(not(windows))]
         let venv_dir = current_dir.join("..").join("venv-motion-vectors");
 
         let vtune_dir = results_dir.join("vtune_results");
@@ -106,7 +109,7 @@ impl BenchmarkRunner {
     }
 
     pub fn run_shell_command(&self, cmd: &str, cwd: Option<&PathBuf>, env_vars: Option<&[(String, String)]>) -> bool {
-        let mut command = Command::new("/bin/bash");
+        let mut command = Command::new("sh");
         command.args(["-c", cmd]);
 
         if let Some(dir) = cwd {
@@ -129,7 +132,7 @@ impl BenchmarkRunner {
     }
 
     pub fn run_shell_capture(&self, cmd: &str, env_vars: Option<&[(String, String)]>) -> Option<String> {
-        let mut command = Command::new("/bin/bash");
+        let mut command = Command::new("sh");
         command.args(["-c", cmd]);
 
         if let Some(vars) = env_vars {
@@ -156,19 +159,19 @@ impl BenchmarkRunner {
     pub fn build(&self) -> bool {
         println!("Building all extractors and tools...");
 
-        let make_cmd = if self.build_type == "sys" {
-            "make build_sys"
-        } else {
-            "make build"
-        };
+        #[cfg(windows)]
+        let mf = "-f makefile.windows ";
+        #[cfg(not(windows))]
+        let mf = "";
 
-        if !self.run_command(make_cmd, Some(&self.current_dir), None) {
+        let target = if self.build_type == "sys" { "build_sys" } else { "build" };
+        let make_cmd = format!("make {}{}", mf, target);
+        let compile_cmd = format!("make {}build_tools", mf);
+
+        if !self.run_command(&make_cmd, Some(&self.current_dir), None) {
             return false;
         }
-
-        let compile_cmd = "make build_tools";
-
-        if !self.run_command(compile_cmd, Some(&self.current_dir), None) {
+        if !self.run_command(&compile_cmd, Some(&self.current_dir), None) {
             return false;
         }
 
@@ -184,7 +187,7 @@ impl BenchmarkRunner {
 
         println!("Running 9-method benchmark suite...");
 
-        let is_single_threaded = true; // true
+        let is_single_threaded = false; // true
         let is_verbose = true;
         let write_to_csv = true;
 
@@ -215,7 +218,7 @@ impl BenchmarkRunner {
 
         let is_single_threaded = 1;
         let is_verbose = 0;
-        let write_to_csv = 1;
+        let write_to_csv = 0;
 
         println!("Running Rust benchmark visualization and PPT generation...");
         benchmark(
@@ -248,8 +251,9 @@ impl BenchmarkRunner {
         }
     }
 
+    #[cfg(unix)]
     pub fn get_vtune_env(&self) -> Option<Vec<(String, String)>> {
-        let result = Command::new("/bin/bash")
+        let result = Command::new("sh")
             .args(["-c", ". /opt/intel/oneapi/setvars.sh --force 2>/dev/null && env"])
             .output();
 
@@ -285,6 +289,212 @@ impl BenchmarkRunner {
         }
     }
 
+    #[cfg(windows)]
+    fn find_vtune() -> Option<std::path::PathBuf> {
+        // Check PATH first (user may have run setvars.bat)
+        if Command::new("vtune").arg("--version")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status().map(|s| s.success()).unwrap_or(false)
+        {
+            return Some(std::path::PathBuf::from("vtune"));
+        }
+
+        // Check VTUNE_PROFILER_DIR env var (set by setvars.bat / oneAPI installer)
+        if let Ok(dir) = std::env::var("VTUNE_PROFILER_DIR") {
+            let candidate = std::path::Path::new(&dir).join("bin64").join("vtune.exe");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+
+        // Common install paths for Intel oneAPI on Windows
+        let roots = [
+            r"C:\Program Files (x86)\Intel\oneAPI",
+            r"C:\Program Files\Intel\oneAPI",
+        ];
+        for root in &roots {
+            let candidate = std::path::Path::new(root)
+                .join("vtune").join("latest").join("bin64").join("vtune.exe");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+
+        None
+    }
+
+    #[cfg(windows)]
+    pub fn profiler(&self) {
+        let vtune = match Self::find_vtune() {
+            Some(v) => v,
+            None => {
+                eprintln!(
+                    "vtune not found. Either:\n  \
+                     1. Run setvars.bat from the Intel oneAPI install dir to add it to PATH, or\n  \
+                     2. Install Intel VTune from https://www.intel.com/vtune"
+                );
+                return;
+            }
+        };
+
+        println!("Running VTune profiler on extractor4 (Windows)...");
+
+        std::fs::create_dir_all(&self.vtune_dir).ok();
+
+        let extractor_exec = self.extractor_executables.join("cust").join("extractor4.exe");
+        let output_csv    = self.results_dir.join("method4_output_vtune.csv");
+
+        let status = Command::new(&vtune)
+            .args([
+                "-collect", "hotspots",
+                "-knob", "sampling-mode=sw",
+                "-result-dir", &self.vtune_dir.to_string_lossy(),
+                "--",
+                &extractor_exec.to_string_lossy(),
+                &self.video_file,
+                "1",
+                &output_csv.to_string_lossy(),
+                "1", "1",
+            ])
+            .stdin(std::process::Stdio::null())
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => { eprintln!("vtune exited with status: {}", s); return; }
+            Err(e) => { eprintln!("Failed to run vtune: {}", e); return; }
+        }
+
+        // Generate hotspots and top-down reports
+        let vtune_hotspots_file = self.vtune_dir.join("hotspots.csv");
+        for (report, output) in [
+            ("hotspots",  vtune_hotspots_file.as_path()),
+            ("top-down",  self.vtune_topdown_file.as_path()),
+        ] {
+            Command::new(&vtune)
+                .args([
+                    "-report", report,
+                    "-result-dir", &self.vtune_dir.to_string_lossy(),
+                    "-format", "csv",
+                    "-report-output", &output.to_string_lossy(),
+                ])
+                .stdin(std::process::Stdio::null())
+                .status()
+                .ok();
+        }
+
+        if let Err(e) = crate::vtune_hotspots_plot::build_tree(&self.vtune_topdown_file.to_string_lossy()) {
+            eprintln!("VTune tree build error: {}", e);
+        }
+
+        println!("Profiler run complete. Results in {}.", self.vtune_dir.display());
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    pub fn profiler(&self) {
+        println!("VTune profiler step skipped: not supported on this platform.");
+    }
+
+    #[cfg(windows)]
+    pub fn flamegraph(&self) {
+        // Uses VTune software sampling (no ETW, no admin) to collect stacks,
+        // then converts the top-down report to inferno folded format and renders
+        // a self-contained HTML flamegraph — same pipeline as Linux/perf.
+        println!("Generating flamegraph for extractor4 (VTune sw-sampling, no admin required)...");
+
+        let vtune = match Self::find_vtune() {
+            Some(v) => v,
+            None => {
+                eprintln!("vtune not found. Install VTune and re-run (step 2 checks the same paths).");
+                return;
+            }
+        };
+
+        let flamegraph_dir = self.results_dir.join("flamegraph");
+        fs::create_dir_all(&flamegraph_dir).ok();
+
+        let vtune_dir   = flamegraph_dir.join("vtune_fg");
+        let topdown_csv = vtune_dir.join("topdown.csv");
+        let output_csv  = flamegraph_dir.join("method4_output_flamegraph.csv");
+        let output_html = flamegraph_dir.join("extractor4_flamegraph.html");
+        let extractor   = self.extractor_executables.join("cust").join("extractor4.exe");
+
+        fs::create_dir_all(&vtune_dir).ok();
+
+        // Collect hotspots with software sampling — no admin needed
+        let collect = Command::new(&vtune)
+            .args([
+                "-collect", "hotspots",
+                "-knob", "sampling-mode=sw",
+                "-result-dir", &vtune_dir.to_string_lossy(),
+                "--",
+                &extractor.to_string_lossy(),
+                &self.video_file, "1",
+                &output_csv.to_string_lossy(),
+                "1", "0",
+            ])
+            .stdin(std::process::Stdio::null())
+            .status();
+
+        match collect {
+            Ok(s) if s.success() => {}
+            Ok(s) => { eprintln!("vtune collect exited: {}", s); return; }
+            Err(e) => { eprintln!("vtune failed: {}", e); return; }
+        }
+
+        // Export the top-down tree in the tab-separated format build_vtune_tree expects
+        Command::new(&vtune)
+            .args([
+                "-report", "top-down",
+                "-result-dir", &vtune_dir.to_string_lossy(),
+                "-format", "csv",
+                "-report-output", &topdown_csv.to_string_lossy(),
+            ])
+            .stdin(std::process::Stdio::null())
+            .status()
+            .ok();
+
+        // Parse the tree, convert to inferno folded format, render SVG + HTML
+        let (nodes, root_nodes) = match crate::vtune_hotspots_plot::build_vtune_tree(
+            &topdown_csv.to_string_lossy(),
+        ) {
+            Ok(r) => r,
+            Err(e) => { eprintln!("Failed to parse VTune output: {}", e); return; }
+        };
+
+        let folded = crate::vtune_hotspots_plot::vtune_tree_to_folded(&nodes, &root_nodes);
+        if folded.is_empty() {
+            eprintln!("No samples in VTune output — nothing to render.");
+            return;
+        }
+
+        let mut svg: Vec<u8> = Vec::new();
+        {
+            use inferno::flamegraph::{self, Options};
+            use std::io::BufReader;
+            let mut opts = Options::default();
+            opts.title = "extractor4 Flamegraph (VTune sw-sampling)".to_string();
+            opts.count_name = "ms".to_string();
+            if let Err(e) = flamegraph::from_reader(&mut opts, BufReader::new(folded.as_slice()), &mut svg) {
+                eprintln!("Flamegraph render failed: {}", e);
+                return;
+            }
+        }
+
+        let svg_str = match String::from_utf8(svg) {
+            Ok(s) => s,
+            Err(e) => { eprintln!("SVG encoding error: {}", e); return; }
+        };
+
+        match crate::flamegraph::write_html(&svg_str, &output_html.to_string_lossy(), "extractor4 Flamegraph", 1.0) {
+            Ok(()) => println!("Flamegraph saved to: {}", output_html.display()),
+            Err(e) => eprintln!("Failed to write flamegraph HTML: {}", e),
+        }
+    }
+
+    #[cfg(unix)]
     pub fn profiler(&self) {
         println!("Running VTune profiler on extractor4 with motion_vectors_only=1...");
 
@@ -372,6 +582,7 @@ impl BenchmarkRunner {
         println!("Profiler run complete. Results in {}.", self.vtune_dir.display());
     }
 
+    #[cfg(unix)]
     pub fn flamegraph(&self) {
         println!("Generating flamegraph for extractor4...");
 

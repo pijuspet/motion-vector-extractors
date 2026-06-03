@@ -1,9 +1,11 @@
-use std::ffi::CString;
 use std::fs;
 use std::io::Read;
-use std::os::unix::io::{FromRawFd, RawFd};
-use std::process;
 use std::time::SystemTime;
+
+#[cfg(unix)]
+use std::ffi::CString;
+#[cfg(unix)]
+use std::os::unix::io::{FromRawFd, RawFd};
 
 use crate::benchmark::BenchmarkResult as SharedBenchmarkResult;
 
@@ -25,6 +27,15 @@ const METHODS: &[MethodInfo] = &[
 
 impl MethodInfo {
     fn exe_path(&self, exe_dir: &str) -> String {
+        #[cfg(windows)]
+        {
+            // On Windows there is no RPATH; DLLs are loaded from the exe's
+            // directory. Separate sys/ and cust/ subdirs carry the matching
+            // FFmpeg DLLs so each extractor loads the correct runtime.
+            let subdir = if self.id <= 2 { "sys" } else { "cust" };
+            format!("{}/executables/{}/extractor{}.exe", exe_dir, subdir, self.id)
+        }
+        #[cfg(not(windows))]
         format!("{}/executables/extractor{}", exe_dir, self.id)
     }
 
@@ -61,11 +72,25 @@ struct BenchmarkResult {
     frame_count: i32,
 }
 
+// Platform-agnostic child descriptor. Unix-specific fields (pid, pipe_fd,
+// rusage) are cfg-gated; Windows uses std::process::Child with piped stdout.
+// cpu_user_ms / cpu_sys_ms / peak_rss_kb are filled by collect_process_results
+// on each platform so that run_benchmark can read them uniformly.
 struct ChildProcess {
-    pid: libc::pid_t,
-    pipe_fd: RawFd,
-    usage: libc::rusage,
     self_rss_kb: i64,
+    cpu_user_ms: f64,
+    cpu_sys_ms: f64,
+    peak_rss_kb: i64,
+
+    #[cfg(unix)]
+    pid: libc::pid_t,
+    #[cfg(unix)]
+    pipe_fd: RawFd,
+    #[cfg(unix)]
+    usage: libc::rusage,
+
+    #[cfg(windows)]
+    child: std::process::Child,
 }
 
 fn get_timestamp_ms() -> f64 {
@@ -75,6 +100,17 @@ fn get_timestamp_ms() -> f64 {
         .unwrap_or(0.0)
 }
 
+fn get_num_cores() -> i64 {
+    std::thread::available_parallelism()
+        .map(|n| n.get() as i64)
+        .unwrap_or(1)
+}
+
+// =============================================================================
+// Unix implementation
+// =============================================================================
+
+#[cfg(unix)]
 fn spawn_processes(
     method: &MethodInfo,
     video_file: &str,
@@ -91,13 +127,13 @@ fn spawn_processes(
         let mut pipe_fds = [0i32; 2];
         if unsafe { libc::pipe(pipe_fds.as_mut_ptr()) } == -1 {
             eprintln!("Pipe failed");
-            process::exit(1);
+            std::process::exit(1);
         }
 
         let pid = unsafe { libc::fork() };
         if pid < 0 {
             eprintln!("Fork failed");
-            process::exit(1);
+            std::process::exit(1);
         }
 
         if pid == 0 {
@@ -154,6 +190,9 @@ fn spawn_processes(
             pipe_fd: pipe_fds[0],
             usage: unsafe { std::mem::zeroed() },
             self_rss_kb: 0,
+            cpu_user_ms: 0.0,
+            cpu_sys_ms: 0.0,
+            peak_rss_kb: 0,
         });
         if is_verbose {
             println!("Forked child {} with pid {}", i, pid);
@@ -163,6 +202,7 @@ fn spawn_processes(
     processes
 }
 
+#[cfg(unix)]
 fn collect_process_results(
     processes: &mut Vec<ChildProcess>,
     output_dir: &str,
@@ -185,6 +225,13 @@ fn collect_process_results(
             }
             continue;
         }
+
+        // Derive platform-agnostic fields from rusage while we still have it.
+        proc.cpu_user_ms = proc.usage.ru_utime.tv_sec as f64 * 1000.0
+            + proc.usage.ru_utime.tv_usec as f64 / 1e3;
+        proc.cpu_sys_ms = proc.usage.ru_stime.tv_sec as f64 * 1000.0
+            + proc.usage.ru_stime.tv_usec as f64 / 1e3;
+        proc.peak_rss_kb = proc.usage.ru_maxrss;
 
         if libc::WIFEXITED(status) {
             if is_verbose {
@@ -237,6 +284,136 @@ fn collect_process_results(
             unsafe {
                 libc::close(proc.pipe_fd);
             }
+        }
+    }
+
+    (total_frames, total_mvs)
+}
+
+// =============================================================================
+// Windows implementation
+// =============================================================================
+
+#[cfg(windows)]
+fn get_process_cpu_ms(child: &std::process::Child) -> (f64, f64) {
+    use std::os::windows::io::AsRawHandle;
+    use winapi::shared::minwindef::FILETIME;
+    use winapi::um::processthreadsapi::GetProcessTimes;
+
+    let handle = child.as_raw_handle() as *mut _;
+    let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+    let (mut creation, mut exit, mut kernel, mut user) = (zero, zero, zero, zero);
+
+    let ok = unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) };
+    if ok == 0 {
+        return (0.0, 0.0);
+    }
+
+    fn ft_to_ms(ft: &FILETIME) -> f64 {
+        let ticks = ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64;
+        ticks as f64 / 10_000.0  // 100-ns intervals → ms
+    }
+
+    (ft_to_ms(&user), ft_to_ms(&kernel))
+}
+
+#[cfg(windows)]
+fn spawn_processes(
+    method: &MethodInfo,
+    video_file: &str,
+    stream_count: i32,
+    print_csv: bool,
+    output_dir: &str,
+    exe_dir: &str,
+    is_verbose: bool,
+    single_threaded: bool,
+) -> Vec<ChildProcess> {
+    use std::process::{Command, Stdio};
+    let mut processes = Vec::with_capacity(stream_count as usize);
+
+    for i in 0..stream_count {
+        let exe_path = method.exe_path(exe_dir);
+        let csv_path = format!("{}/{}_{}.csv", output_dir, method.output_csv_prefix(), i);
+        let print_str = if print_csv { "1" } else { "0" };
+        let verbose_str = if i > 0 || !is_verbose { "0" } else { "1" };
+        let single_thr_str = if single_threaded { "1" } else { "0" };
+
+        let child = Command::new(&exe_path)
+            .args([video_file, print_str, &csv_path, verbose_str, single_thr_str])
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to spawn {}: {}", exe_path, e);
+                std::process::exit(1);
+            });
+
+        if is_verbose {
+            println!("Spawned child {} with pid {}", i, child.id());
+        }
+        processes.push(ChildProcess {
+            child,
+            self_rss_kb: 0,
+            cpu_user_ms: 0.0,
+            cpu_sys_ms: 0.0,
+            peak_rss_kb: 0,
+        });
+    }
+
+    processes
+}
+
+#[cfg(windows)]
+fn collect_process_results(
+    processes: &mut Vec<ChildProcess>,
+    output_dir: &str,
+    output_prefix: &str,
+    print_csv: bool,
+    is_verbose: bool,
+) -> (i32, i64) {
+    let mut total_frames = 0i32;
+    let mut total_mvs = 0i64;
+
+    for (i, proc) in processes.iter_mut().enumerate() {
+        // Take stdout before wait() consumes the child.
+        let mut stdout = proc.child.stdout.take().expect("stdout not piped");
+
+        match proc.child.wait() {
+            Ok(status) => {
+                let (user_ms, sys_ms) = get_process_cpu_ms(&proc.child);
+                proc.cpu_user_ms = user_ms;
+                proc.cpu_sys_ms = sys_ms;
+                if is_verbose {
+                    println!("Child {} exited with status: {:?}", i, status.code());
+                }
+                let mut buffer = [0u8; 128];
+                if let Ok(bytes) = stdout.read(&mut buffer) {
+                    if bytes > 0 {
+                        let text = String::from_utf8_lossy(&buffer[..bytes]);
+                        let parts: Vec<&str> = text.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            if let (Ok(frames), Ok(mvs)) =
+                                (parts[0].parse::<i32>(), parts[1].parse::<i64>())
+                            {
+                                if is_verbose {
+                                    println!("; {} frames, {} motion vectors", frames, mvs);
+                                }
+                                total_frames += frames;
+                                total_mvs += mvs;
+                                if parts.len() >= 3 {
+                                    if let Ok(rss) = parts[2].parse::<i64>() {
+                                        proc.self_rss_kb = rss;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if i != 0 && print_csv {
+                    let csv_path = format!("{}/{}_{}.csv", output_dir, output_prefix, i);
+                    let _ = fs::remove_file(&csv_path);
+                }
+            }
+            Err(e) => eprintln!("Wait failed for child {}: {}", i, e),
         }
     }
 
@@ -317,18 +494,14 @@ fn run_benchmark(
     let mut peak_memory = 0i64;
 
     for proc in &processes {
-        let user_time =
-            proc.usage.ru_utime.tv_sec as f64 * 1000.0 + proc.usage.ru_utime.tv_usec as f64 / 1e3;
-        let sys_time =
-            proc.usage.ru_stime.tv_sec as f64 * 1000.0 + proc.usage.ru_stime.tv_usec as f64 / 1e3;
-        total_cpu_time += user_time + sys_time;
+        total_cpu_time += proc.cpu_user_ms + proc.cpu_sys_ms;
 
         // Prefer self-reported VmRSS (read after exec, before cleanup)
         // over ru_maxrss which is inflated by the parent's RSS at fork time.
         let rss_kb = if proc.self_rss_kb > 0 {
             proc.self_rss_kb
         } else {
-            proc.usage.ru_maxrss
+            proc.peak_rss_kb
         };
         total_memory += rss_kb;
         peak_memory = peak_memory.max(rss_kb);
@@ -338,7 +511,7 @@ fn run_benchmark(
         let avg_cpu_per_stream = total_cpu_time / stream_count as f64;
         result.cpu_usage_percent = (avg_cpu_per_stream / result.total_time_ms) * 100.0;
 
-        let num_cores = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
+        let num_cores = get_num_cores();
         result.cpu_total_percent = if num_cores > 0 {
             (total_cpu_time / result.total_time_ms) * 100.0 / num_cores as f64
         } else {
@@ -363,7 +536,7 @@ fn print_results(results: &[BenchmarkResult], stream_count: i32) {
     let dash = "-".repeat(line);
 
     let title = "COMPLETE MOTION VECTOR EXTRACTION BENCHMARK";
-    let num_cores = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
+    let num_cores = get_num_cores();
     let streams_title = format!(
         "Streams per Method: {}   |   Logical Cores: {}",
         stream_count, num_cores

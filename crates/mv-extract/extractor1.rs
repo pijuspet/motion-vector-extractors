@@ -81,7 +81,13 @@ fn main() {
         let mut opts: *mut ff::AVDictionary = ptr::null_mut();
         (*dec_ctx).thread_count = if args.is_single_threaded { 1 } else { 0 };
         (*dec_ctx).thread_type = ff::FF_THREAD_SLICE as i32;
-        (*dec_ctx).export_side_data |= ff::AV_CODEC_EXPORT_DATA_MVS as i32;
+        // Use the dict/option API instead of direct struct write: the custom
+        // FFmpeg added `motion_vectors_only` to AVCodecContext, shifting
+        // export_side_data to a different offset than ffmpeg-sys-next expects.
+        // flags2=+export_mvs is processed by the DLL via its own offsetof.
+        let flags2_key = CString::new("flags2").unwrap();
+        let flags2_val = CString::new("+export_mvs").unwrap();
+        ff::av_dict_set(&mut opts, flags2_key.as_ptr(), flags2_val.as_ptr(), 0);
         let mv_only_key = CString::new("motion_vectors_only").unwrap();
         ff::av_opt_set_int(dec_ctx as *mut c_void, mv_only_key.as_ptr(), 1, 0);
         //endregion

@@ -107,7 +107,7 @@ fn generate_svg(
     Ok(svg_bytes)
 }
 
-fn write_html(
+pub fn write_html(
     svg_content: &str,
     output_html: &str,
     title: &str,

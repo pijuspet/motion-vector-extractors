@@ -1,4 +1,5 @@
 imgkit==1.2.3
+jinja2
 matplotlib==3.10.3
 pandas==3.0.2
 python-pptx==1.0.2

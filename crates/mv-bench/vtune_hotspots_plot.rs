@@ -319,6 +319,47 @@ pub fn generate_hotspots_chart(csv_file: &str, output_directory: &str) -> Result
     Ok(())
 }
 
+fn collect_folded(
+    nodes: &HashMap<String, TreeNode>,
+    node_id: &str,
+    path: &mut Vec<String>,
+    out: &mut Vec<u8>,
+) {
+    use std::io::Write;
+    let node = match nodes.get(node_id) {
+        Some(n) => n,
+        None => return,
+    };
+    path.push(node.name.clone());
+
+    if node.cpu_self > 0.0 {
+        let count = (node.cpu_self * 1000.0).round() as u64;
+        if count > 0 {
+            let _ = writeln!(out, "{} {}", path.join(";"), count);
+        }
+    }
+
+    let children = node.children.clone();
+    for child_id in &children {
+        collect_folded(nodes, child_id, path, out);
+    }
+    path.pop();
+}
+
+// Converts a parsed VTune top-down tree to inferno's folded-stacks format.
+// Each leaf path is emitted as "frame1;frame2;...;frameN count" where count
+// is cpu_self (seconds) scaled to integer milliseconds.
+pub fn vtune_tree_to_folded(
+    nodes: &HashMap<String, TreeNode>,
+    root_nodes: &[String],
+) -> Vec<u8> {
+    let mut folded = Vec::new();
+    for root_id in root_nodes {
+        collect_folded(nodes, root_id, &mut Vec::new(), &mut folded);
+    }
+    folded
+}
+
 pub fn build_tree(csv_file: &str) -> Result<(), String> {
     println!("Building VTune call tree...");
 
