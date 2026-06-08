@@ -160,9 +160,11 @@ build: check-shell
 	cp '$(TARGET_SYS)/release/extractor0$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor0$(EXE_EXT)'
 	cp '$(TARGET_SYS)/release/extractor1$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor1$(EXE_EXT)'
 	cp '$(TARGET_SYS)/release/extractor2$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor2$(EXE_EXT)'
-	cp '$(TARGET_CUST)/release/extractor3$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor3$(EXE_EXT)'
-	cp '$(TARGET_CUST)/release/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor4$(EXE_EXT)'
-	cp '$(TARGET_CUST)/release/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)'
+	cp '$(TARGET_SYS)/release/extractor3$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor3$(EXE_EXT)'
+	cp '$(TARGET_CUST)/release/extractor4$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor4$(EXE_EXT)'
+	cp '$(TARGET_CUST)/release/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)'
+	cp '$(TARGET_CUST)/release/extractor6$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor6$(EXE_EXT)'
+	cp '$(TARGET_CUST)/release/extractor7$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor7$(EXE_EXT)'
 	@echo "[INFO]  Copying FFmpeg DLLs (sys → sys/, cust → cust/)..."
 	@cp -u '$(REGULAR_PREFIX)/bin/'*.dll '$(EXECUTABLES_DIR_SYS)/' 2>/dev/null || true
 	@cp -u '$(CUSTOM_PREFIX)/bin/'*.dll  '$(EXECUTABLES_DIR_CUST)/' 2>/dev/null || true
@@ -175,8 +177,10 @@ build_sys: check-shell
 	cp '$(TARGET_SYS)/release/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor1$(EXE_EXT)'
 	cp '$(TARGET_SYS)/release/extractor2$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor2$(EXE_EXT)'
 	cp '$(TARGET_SYS)/release/extractor3$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor3$(EXE_EXT)'
-	cp '$(TARGET_SYS)/release/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor4$(EXE_EXT)'
-	cp '$(TARGET_SYS)/release/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor5$(EXE_EXT)'
+	cp '$(TARGET_SYS)/release/extractor4$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor4$(EXE_EXT)'
+	cp '$(TARGET_SYS)/release/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor5$(EXE_EXT)'
+	cp '$(TARGET_SYS)/release/extractor6$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor6$(EXE_EXT)'
+	cp '$(TARGET_SYS)/release/extractor7$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor7$(EXE_EXT)'
 	@cp -u '$(REGULAR_PREFIX)/bin/'*.dll '$(EXECUTABLES_DIR_SYS)/' 2>/dev/null || true
 
 # =============================================================================

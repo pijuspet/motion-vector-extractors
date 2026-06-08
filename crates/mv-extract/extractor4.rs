@@ -13,7 +13,17 @@ fn main() {
     };
 
     unsafe {
-        ff::avformat_network_init();
+        // RTSP open options — matches extractor3.cpp.
+        let mut options: *mut ff::AVDictionary = ptr::null_mut();
+        let k_transport = CString::new("rtsp_transport").unwrap();
+        let v_transport = CString::new("udp").unwrap();
+        ff::av_dict_set(&mut options, k_transport.as_ptr(), v_transport.as_ptr(), 0);
+        let k_stimeout = CString::new("stimeout").unwrap();
+        let v_stimeout = CString::new("2500000").unwrap();
+        ff::av_dict_set(&mut options, k_stimeout.as_ptr(), v_stimeout.as_ptr(), 0);
+        let k_buffer = CString::new("buffer_size").unwrap();
+        let v_buffer = CString::new("32768").unwrap();
+        ff::av_dict_set(&mut options, k_buffer.as_ptr(), v_buffer.as_ptr(), 0);
 
         let mut fmt_ctx: *mut ff::AVFormatContext = ptr::null_mut();
         let c_video = CString::new(args.video_file.as_str()).unwrap();
@@ -21,12 +31,13 @@ fn main() {
             &mut fmt_ctx,
             c_video.as_ptr(),
             ptr::null_mut(),
-            ptr::null_mut(),
+            &mut options,
         ) < 0
         {
             eprintln!("Could not open input file.");
             std::process::exit(255);
         }
+        ff::av_dict_free(&mut options);
 
         //region setting up motion_vectors_only for av_find_stream_info
         let mut stream_opts: Vec<*mut ff::AVDictionary> = set_av_flags(&mut *fmt_ctx);
@@ -42,15 +53,14 @@ fn main() {
         //endregion
 
         //region video stream
-        let mut vsi: i32 = -1;
-        let nb_streams = (*fmt_ctx).nb_streams as usize;
-        for i in 0..nb_streams {
-            let s = *(*fmt_ctx).streams.add(i);
-            if (*(*s).codecpar).codec_type == ff::AVMediaType::AVMEDIA_TYPE_VIDEO {
-                vsi = i as i32;
-                break;
-            }
-        }
+        let vsi = ff::av_find_best_stream(
+            fmt_ctx,
+            ff::AVMediaType::AVMEDIA_TYPE_VIDEO,
+            -1,
+            -1,
+            ptr::null_mut(),
+            0,
+        );
         if vsi < 0 {
             eprintln!("Could not find video stream");
             std::process::exit(255);
@@ -59,13 +69,11 @@ fn main() {
         let video_stream = *(*fmt_ctx).streams.add(vsi as usize);
         //endregion
 
-        //region codec
         let codec = ff::avcodec_find_decoder((*(*video_stream).codecpar).codec_id);
         if codec.is_null() {
             eprintln!("Codec not found.");
             std::process::exit(255);
         }
-        //endregion
 
         let dec_ctx = ff::avcodec_alloc_context3(codec);
         if dec_ctx.is_null() {
@@ -80,7 +88,7 @@ fn main() {
         //region flag setting
         let mut opts: *mut ff::AVDictionary = ptr::null_mut();
         (*dec_ctx).thread_count = if args.is_single_threaded { 1 } else { 0 };
-        (*dec_ctx).thread_type = ff::FF_THREAD_SLICE as i32;
+        // (*dec_ctx).thread_type = ff::FF_THREAD_SLICE as i32;
         let flags2_key = CString::new("flags2").unwrap();
         let flags2_val = CString::new("+export_mvs").unwrap();
         ff::av_dict_set(&mut opts, flags2_key.as_ptr(), flags2_val.as_ptr(), 0);

@@ -40,5 +40,13 @@ name = "extractor3"
 path = "extractor3.rs"
 
 [[bin]]
-name = "extractor5"
-path = "extractor5.rs"
+name = "extractor4"
+path = "extractor4.rs"
+
+[[bin]]
+name = "extractor6"
+path = "extractor6.rs"
+
+[[bin]]
+name = "extractor7"
+path = "extractor7.rs"

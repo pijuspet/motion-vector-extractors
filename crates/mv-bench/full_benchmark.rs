@@ -240,11 +240,11 @@ impl BenchmarkRunner {
 
     pub fn generate_mv_comparison(&self) {
         let method1_csv = self.results_dir.join("method1_output_0.csv");
-        let method4_csv = self.results_dir.join("method4_output_0.csv");
+        let method5_csv = self.results_dir.join("method5_output_0.csv");
 
         if let Err(e) = mv_types::mv_compare::compare(
             &method1_csv.to_string_lossy(),
-            &method4_csv.to_string_lossy(),
+            &method5_csv.to_string_lossy(),
             &self.motion_vectors_comparison_file.to_string_lossy(),
         ) {
             eprintln!("MV comparison error: {}", e);

@@ -80,7 +80,7 @@ fn main() {
         //region flag setting
         let mut opts: *mut ff::AVDictionary = ptr::null_mut();
         (*dec_ctx).thread_count = if args.is_single_threaded { 1 } else { 0 };
-        (*dec_ctx).thread_type = ff::FF_THREAD_SLICE as i32;
+        // (*dec_ctx).thread_type = ff::FF_THREAD_SLICE as i32;
         // Use the dict/option API instead of direct struct write: the custom
         // FFmpeg added `motion_vectors_only` to AVCodecContext, shifting
         // export_side_data to a different offset than ffmpeg-sys-next expects.

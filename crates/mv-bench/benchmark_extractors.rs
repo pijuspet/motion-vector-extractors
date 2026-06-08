@@ -20,9 +20,11 @@ const METHODS: &[MethodInfo] = &[
     MethodInfo { id: 0, name: "Original FFmpeg MV only" },
     MethodInfo { id: 1, name: "Original FFmpeg - Flush decoder" },
     MethodInfo { id: 2, name: "Original FFMPEG decode frames" },
-    MethodInfo { id: 3, name: "Custom FFmpeg MV-Only - RTSP protocol" },
-    MethodInfo { id: 4, name: "Custom FFmpeg - Flush decoder" },
-    MethodInfo { id: 5, name: "Custom FFmpeg" },
+    MethodInfo { id: 3, name: "Original FFmpeg - Key frames only" },
+    MethodInfo { id: 4, name: "Custom FFmpeg MV-Only - RTSP protocol" },
+    MethodInfo { id: 5, name: "Custom FFmpeg - Flush decoder" },
+    MethodInfo { id: 6, name: "Custom FFmpeg" },
+    MethodInfo { id: 7, name: "Custom FFmpeg - Key frames only" },
 ];
 
 impl MethodInfo {
