@@ -45,8 +45,8 @@ FF_PKGS := libavformat libavcodec libavutil libswresample
 pkg_cmd = PKG_CONFIG_PATH=$(1)/lib/pkgconfig pkg-config
 
 # Functions to extract flags, libs, and rpath
-get_cflags = $(shell $(call pkg_cmd,$(1)) --cflags $(FF_PKGS))
-get_libs   = $(shell $(call pkg_cmd,$(1)) --libs $(FF_PKGS))
+get_cflags = $(shell $(call pkg_cmd,$(1)) --cflags $(FF_PKGS) 2>/dev/null)
+get_libs   = $(shell $(call pkg_cmd,$(1)) --libs $(FF_PKGS) 2>/dev/null)
 get_rpath  = -Wl,-rpath,$(1)/lib -Wl,--disable-new-dtags
 
 define def_ff_flags
@@ -77,8 +77,10 @@ FFMPEG_BUILD = \
 # to `sudo` by CI.
 SUDO ?=
 
-# Packages required to build + benchmark.
-APT_CORE  := build-essential gcc g++ make pkg-config nasm cargo rustup libclang-dev libopencv-dev clang
+# Packages required to build + benchmark. Rust is bootstrapped separately via
+# rustup (see the install recipe) — the apt `cargo`/`rustup` packages conflict
+# with each other on recent Ubuntu, so they're intentionally not listed here.
+APT_CORE  := build-essential gcc g++ make pkg-config nasm libclang-dev libopencv-dev clang
 # Profiler / report-generation extras (perf, notifications, pdf/plot rendering).
 APT_EXTRA := xdg-utils libnss3 libnotify4 wkhtmltopdf linux-tools-common linux-tools-realtime
 
