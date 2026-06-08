@@ -3,6 +3,9 @@ name = "mv-bench"
 version = "0.1.0"
 edition = "2021"
 
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["processthreadsapi", "winnt"] }
+
 [dependencies]
 mv-types = { path = "../mv-types" }
 serde = { version = "1", features = ["derive"] }

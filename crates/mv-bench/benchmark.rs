@@ -210,8 +210,17 @@ pub fn benchmark(
 
     // ── Python slide generation via scripts/slides.py ──
     println!("Running Python slide generation...");
+    #[cfg(windows)]
+    let venv_python = format!("{}/venv-motion-vectors/bin/python.exe", project_absolute_path);
+    #[cfg(not(windows))]
     let venv_python = format!("{}/../venv-motion-vectors/bin/python3", project_absolute_path);
     let scripts_dir = format!("{}/scripts", project_absolute_path);
+    // Normalise to forward slashes: Windows paths embedded in a Python string
+    // literal cause SyntaxError because \U, \t, \D etc. are unicode escapes.
+    let scripts_dir   = scripts_dir.replace('\\', "/");
+    let csv_path_fwd  = csv_path.replace('\\', "/");
+    let cfg_fwd       = slides_config.replace('\\', "/");
+    let plots_fwd     = plots_folder.replace('\\', "/");
     let py_code = format!(
         "import sys; sys.path.insert(0, '{scripts}'); \
          import pandas as pd; \
@@ -219,16 +228,33 @@ pub fn benchmark(
          df = pd.read_csv('{csv}'); \
          s.produce_slides(df, '{cfg}', 'benchmark_comparison_slides.pptx', '{plots}', '{vtype}')",
         scripts = scripts_dir,
-        csv = csv_path,
-        cfg = slides_config,
-        plots = plots_folder,
+        csv = csv_path_fwd,
+        cfg = cfg_fwd,
+        plots = plots_fwd,
         vtype = video_type,
     );
 
-    let status = Command::new(&venv_python)
-        .args(["-c", &py_code])
-        .current_dir(project_absolute_path)
-        .status();
+    // On Windows the Python child inherits the Windows system PATH, not
+    // MSYS2's ~/.bashrc PATH. Prepend the wkhtmltopdf bin dir explicitly so
+    // imgkit can find wkhtmltoimage.exe regardless of system PATH setup.
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = Command::new(&venv_python);
+        c.args(["-c", &py_code]).current_dir(project_absolute_path);
+        let sys_path = std::env::var("PATH").unwrap_or_default();
+        let wk_bin = "C:\\Program Files\\wkhtmltopdf\\bin";
+        if std::path::Path::new(wk_bin).exists() {
+            c.env("PATH", format!("{};{}", wk_bin, sys_path));
+        }
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = Command::new(&venv_python);
+        c.args(["-c", &py_code]).current_dir(project_absolute_path);
+        c
+    };
+    let status = cmd.status();
 
     match status {
         Ok(s) if s.success() => println!("Python slide generation complete."),

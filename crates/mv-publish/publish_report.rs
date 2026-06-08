@@ -55,14 +55,14 @@ impl BenchmarkPublisher {
         dirs.last().cloned()
     }
 
-    fn run_command(&self, cmd: &str, cwd: Option<&Path>) -> bool {
-        let parts: Vec<&str> = cmd.split_whitespace().collect();
-        if parts.is_empty() {
-            return false;
-        }
+    fn run_command(&self, args: &[&str], cwd: Option<&Path>) -> bool {
+        let (cmd, rest) = match args.split_first() {
+            Some(v) => v,
+            None => return false,
+        };
 
-        let mut command = Command::new(parts[0]);
-        command.args(&parts[1..]);
+        let mut command = Command::new(cmd);
+        command.args(rest);
         if let Some(dir) = cwd {
             command.current_dir(dir);
         }
@@ -70,22 +70,21 @@ impl BenchmarkPublisher {
         match command.status() {
             Ok(status) => status.success(),
             Err(e) => {
-                eprintln!("Error executing command '{}': {}", cmd, e);
+                eprintln!("Error executing command '{:?}': {}", args, e);
                 false
             }
         }
     }
 
-    fn run_command_capture(&self, cmd: &str) -> Option<String> {
-        let parts: Vec<&str> = cmd.split_whitespace().collect();
-        if parts.is_empty() {
-            return None;
-        }
+    fn run_command_capture(&self, args: &[&str], cwd: Option<&Path>) -> Option<String> {
+        let (cmd, rest) = args.split_first()?;
 
-        let output = Command::new(parts[0])
-            .args(&parts[1..])
-            .output()
-            .ok()?;
+        let mut command = Command::new(cmd);
+        command.args(rest);
+        if let Some(dir) = cwd {
+            command.current_dir(dir);
+        }
+        let output = command.output().ok()?;
 
         if output.status.success() {
             Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -94,18 +93,6 @@ impl BenchmarkPublisher {
         }
     }
 
-    fn run_shell_command(&self, cmd: &str) -> bool {
-        match Command::new("/bin/bash")
-            .args(["-c", cmd])
-            .status()
-        {
-            Ok(status) => status.success(),
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                false
-            }
-        }
-    }
 
     fn run_benchmark(&self) -> Option<PathBuf> {
         println!("DEBUG: Starting benchmark...");
@@ -127,10 +114,8 @@ impl BenchmarkPublisher {
     fn publish_git(&self) -> Option<String> {
         println!("Committing and pushing all changes to git in {}...", self.repo_path.display());
 
-        self.run_command(
-            &format!("git -C {} add .", self.repo_path.display()),
-            None,
-        );
+        let repo = &self.repo_path;
+        self.run_command(&["git", "add", "."], Some(repo));
 
         let commit_msg = format!(
             "Automated benchmark and report update {}",
@@ -138,26 +123,13 @@ impl BenchmarkPublisher {
         );
 
         // Don't track failure for commit (might be nothing to commit)
-        self.run_shell_command(&format!(
-            "git -C {} commit -m \"{}\"",
-            self.repo_path.display(),
-            commit_msg
-        ));
+        self.run_command(&["git", "commit", "--no-gpg-sign", "-m", &commit_msg], Some(repo));
 
-        self.run_command(
-            &format!("git -C {} push origin", self.repo_path.display()),
-            None,
-        );
+        self.run_command(&["git", "push", "origin"], Some(repo));
 
-        let commit_hash = self.run_command_capture(&format!(
-            "git -C {} rev-parse HEAD",
-            self.repo_path.display()
-        ))?;
+        let commit_hash = self.run_command_capture(&["git", "rev-parse", "HEAD"], Some(repo))?;
 
-        let remote_url = self.run_command_capture(&format!(
-            "git -C {} config --get remote.origin.url",
-            self.repo_path.display()
-        ));
+        let remote_url = self.run_command_capture(&["git", "config", "--get", "remote.origin.url"], Some(repo));
 
         match remote_url {
             Some(url) => Some(format!("{}/commit/{}", url, commit_hash)),
@@ -229,10 +201,7 @@ impl BenchmarkPublisher {
                 fs::create_dir_all(parent).ok();
             }
             println!("Copying files to a published directory");
-            self.run_command(
-                &format!("cp -r {} {}", latest_dir, published_dir),
-                None,
-            );
+            self.run_command(&["cp", "-r", latest_dir, &published_dir], None);
             println!("Published results copied to: {}", published_dir);
         }
     }
