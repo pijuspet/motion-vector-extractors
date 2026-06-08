@@ -127,13 +127,10 @@ impl BenchmarkPublisher {
     fn publish_git(&self) -> Option<String> {
         println!("Committing and pushing all changes to git in {}...", self.repo_path.display());
 
-        let repo = self.repo_path.to_str()?;
-
-        Command::new("git")
-            .args(["-C", repo, "add", "."])
-            .stdin(std::process::Stdio::null())
-            .status()
-            .ok();
+        self.run_command(
+            &format!("git -C {} add .", self.repo_path.display()),
+            None,
+        );
 
         let commit_msg = format!(
             "Automated benchmark and report update {}",
@@ -141,33 +138,26 @@ impl BenchmarkPublisher {
         );
 
         // Don't track failure for commit (might be nothing to commit)
-        Command::new("git")
-            .args(["-C", repo, "commit", "--no-gpg-sign", "-m", &commit_msg])
-            .stdin(std::process::Stdio::null())
-            .status()
-            .ok();
+        self.run_shell_command(&format!(
+            "git -C {} commit -m \"{}\"",
+            self.repo_path.display(),
+            commit_msg
+        ));
 
-        Command::new("git")
-            .args(["-C", repo, "push", "origin"])
-            .stdin(std::process::Stdio::null())
-            .status()
-            .ok();
+        self.run_command(
+            &format!("git -C {} push origin", self.repo_path.display()),
+            None,
+        );
 
-        let commit_hash = Command::new("git")
-            .args(["-C", repo, "rev-parse", "HEAD"])
-            .stdin(std::process::Stdio::null())
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())?;
+        let commit_hash = self.run_command_capture(&format!(
+            "git -C {} rev-parse HEAD",
+            self.repo_path.display()
+        ))?;
 
-        let remote_url = Command::new("git")
-            .args(["-C", repo, "config", "--get", "remote.origin.url"])
-            .stdin(std::process::Stdio::null())
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+        let remote_url = self.run_command_capture(&format!(
+            "git -C {} config --get remote.origin.url",
+            self.repo_path.display()
+        ));
 
         match remote_url {
             Some(url) => Some(format!("{}/commit/{}", url, commit_hash)),
@@ -239,11 +229,10 @@ impl BenchmarkPublisher {
                 fs::create_dir_all(parent).ok();
             }
             println!("Copying files to a published directory");
-            Command::new("cp")
-                .args(["-r", latest_dir, &published_dir])
-                .stdin(std::process::Stdio::null())
-                .status()
-                .ok();
+            self.run_command(
+                &format!("cp -r {} {}", latest_dir, published_dir),
+                None,
+            );
             println!("Published results copied to: {}", published_dir);
         }
     }
