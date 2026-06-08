@@ -345,11 +345,6 @@ pub fn get_current_rss_kb() -> i64 {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub fn get_current_rss_kb() -> i64 {
-    0
-}
-
 /// Print the FFmpeg runtime version to stderr.
 pub fn print_ffmpeg_version() {
     unsafe {
