@@ -7,9 +7,9 @@ use mv_extract::ffmpeg_common::{
     get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs, set_av_flags, unset_av_flags
 };
 
-// Original FFmpeg, reference frames only. Identical to extractor1 (orig FFmpeg
-// with flush decoder) except the decoder is told to discard every non-reference
-// frame via `skip_frame = AVDISCARD_NONREF`. This decodes fewer frames (throwaway
+// Custom FFmpeg, reference frames only. Identical to extractor5 (custom FFmpeg)
+// except the decoder is told to discard every non-reference frame via
+// `skip_frame = AVDISCARD_NONREF`. This decodes fewer frames (throwaway
 // non-reference frames are dropped) while still yielding motion vectors, since
 // reference P/B-frames carry them. Note: `AVDISCARD_NONKEY` would discard all
 // inter-coded frames and thus produce zero motion vectors.
@@ -150,16 +150,6 @@ fn main() {
                 }
             }
             ff::av_packet_unref(pkt);
-        }
-
-        // Flush decoder
-        ff::avcodec_send_packet(dec_ctx, ptr::null());
-        while ff::avcodec_receive_frame(dec_ctx, frame) == 0 {
-            if let Some(w) = writer.as_mut() {
-                write_frame_mvs(w, frame_num, frame);
-            }
-            ff::av_frame_unref(frame);
-            frame_num += 1;
         }
 
         let total_mvs = writer.as_ref().map(|w| w.total()).unwrap_or(0);
