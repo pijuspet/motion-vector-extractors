@@ -2,6 +2,7 @@ use inferno::collapse::perf::{Folder, Options as CollapseOptions};
 use inferno::collapse::Collapse;
 use inferno::flamegraph::{self, Options as FlamegraphOptions};
 use minijinja::{context, Environment};
+#[cfg(unix)]
 use std::env;
 use std::fs;
 use std::io::BufReader;

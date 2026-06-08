@@ -1,5 +1,3 @@
-use std::env;
-use std::fs;
 use std::process::Command;
 
 use crate::full_benchmark::BenchmarkRunner;
@@ -44,7 +42,7 @@ impl BenchmarkRunner {
     }
 
     #[cfg(windows)]
-    fn find_vtune() -> Option<std::path::PathBuf> {
+    pub fn find_vtune() -> Option<std::path::PathBuf> {
         // Check PATH first (user may have run setvars.bat)
         if Command::new("vtune").arg("--version")
             .stdin(std::process::Stdio::null())
