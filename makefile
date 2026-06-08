@@ -72,7 +72,18 @@ FFMPEG_BUILD = \
 # INSTALLATION & DEPENDENCIES
 # =============================================================================
 
+# CI (GitHub Actions sets CI=true) skips profiler/report-only tooling so a build
+# can be verified without VTune/perf. SUDO is empty for local root runs and set
+# to `sudo` by CI.
+SUDO ?=
+
+# Packages required to build + benchmark.
+APT_CORE  := build-essential gcc g++ make pkg-config nasm cargo rustup libclang-dev libopencv-dev clang
+# Profiler / report-generation extras (perf, notifications, pdf/plot rendering).
+APT_EXTRA := xdg-utils libnss3 libnotify4 wkhtmltopdf linux-tools-common linux-tools-realtime
+
 install_vtune:
+ifndef CI
 	@echo "Adding Intel oneAPI repository..."
 	wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
 		| gpg --dearmor \
@@ -91,15 +102,21 @@ install_vtune:
 	fi
 	sysctl -p /etc/sysctl.d/10-ptrace.conf
 	@echo "VTune installation complete."
+else
+	@echo "[CI] Skipping VTune / oneAPI install."
+endif
 
 install: install_vtune
-	curl https://sh.rustup.rs -sSf | sh
-	apt install -y build-essential gcc g++ make pkg-config nasm xdg-utils libnss3 libnotify4 wkhtmltopdf linux-tools-common linux-tools-realtime cargo rustup libclang-dev libopencv-dev clang
+	command -v cargo >/dev/null 2>&1 || curl https://sh.rustup.rs -sSf | sh -s -- -y
+	$(SUDO) apt install -y $(APT_CORE)
 	cp -n .env_template .env
-	mkdir -p $(VENV_FOLDER)
 	mkdir -p $(EXECUTABLES_DIR)
+ifndef CI
+	$(SUDO) apt install -y $(APT_EXTRA)
+	mkdir -p $(VENV_FOLDER)
 	python3 -m venv $(VENV_FOLDER)
 	. $(VENV_FOLDER)/bin/activate && pip install -r requirements.txt
+endif
 
 setup_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
@@ -184,8 +201,10 @@ benchmark_all:
 		fi; \
 	done
 
+# STEPS (optional) selects benchmark steps non-interactively (e.g. STEPS=2 to
+# run only the extraction pass). Left empty, full_benchmark prompts on stdin.
 benchmark:
-	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS)
+	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(STEPS)
 
 # =============================================================================
 # DEVELOPMENT & TESTING TOOLS

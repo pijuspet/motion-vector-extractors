@@ -1,0 +1,127 @@
+name: build
+
+# Verifies the full local flow — install → setup_ffmpeg → build → build_tools →
+# benchmark — on both Linux and Windows, so platform breakage is caught in CI
+# instead of by hand. GitHub sets CI=true automatically, which makes the
+# makefiles skip profiler/report-only tooling (VTune, perf, Python venv).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: linux (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SUDO: sudo
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: FFmpeg submodule revision
+        id: ff
+        run: echo "sha=$(git -C ffmpeg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      # The two FFmpeg builds are the slow part; cache the prefixes keyed on the
+      # submodule revision so `setup_ffmpeg` is incremental on a cache hit.
+      - name: Cache built FFmpeg
+        uses: actions/cache@v4
+        with:
+          path: |
+            ffmpeg/FFmpeg-8.0
+            ffmpeg/FFmpeg-8.0-custom
+          key: ${{ runner.os }}-ffmpeg-${{ steps.ff.outputs.sha }}-${{ hashFiles('makefile') }}
+
+      - name: apt update
+        run: sudo apt-get update
+
+      - name: make install
+        run: make install
+
+      - name: make setup_ffmpeg
+        run: make setup_ffmpeg
+
+      - name: make build
+        run: make build
+
+      - name: make build_tools
+        run: make build_tools
+
+      # STEPS=2 runs the extraction pass non-interactively (smoke-test sizing).
+      - name: make benchmark
+        run: make benchmark STEPS=2 STREAMS=2 NRUNS=1
+
+  windows:
+    name: windows (msys2/mingw64)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      # FFmpeg's configure/build scripts must keep LF endings; the Windows
+      # runner defaults to autocrlf=true which would corrupt them.
+      - name: Configure git line endings
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            make git patch diffutils base-devel
+
+      - name: FFmpeg submodule revision
+        id: ff
+        run: echo "sha=$(git -C ffmpeg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache built FFmpeg
+        uses: actions/cache@v4
+        with:
+          path: |
+            ffmpeg/FFmpeg-8.0
+            ffmpeg/FFmpeg-8.0-custom
+          key: ${{ runner.os }}-ffmpeg-${{ steps.ff.outputs.sha }}-${{ hashFiles('makefile.windows') }}
+
+      - name: make install
+        run: make -f makefile.windows install
+
+      - name: make setup_ffmpeg
+        run: make -f makefile.windows setup_ffmpeg
+
+      - name: make build
+        run: make -f makefile.windows build
+
+      - name: make build_tools
+        run: make -f makefile.windows build_tools
+
+      - name: make benchmark
+        run: make -f makefile.windows benchmark STEPS=2 STREAMS=2 NRUNS=1

@@ -123,9 +123,13 @@ install: check-shell
 	@if [ ! -f .env ] && [ -f .env_template ]; then cp .env_template .env; fi
 	@mkdir -p '$(VENV_FOLDER)'
 	@mkdir -p '$(EXECUTABLES_DIR)'
+# CI (GitHub Actions sets CI=true) skips the report-only Python venv/pip layer;
+# the pacman packages above are enough to build + benchmark.
+ifndef CI
 	python -m venv --upgrade-deps --system-site-packages '$(VENV_WIN)'
 	grep -vE '^\s*(matplotlib|pandas|seaborn)' requirements.txt > /tmp/pip-reqs.txt && \
 	'$(PYTHON)' -m pip install -r /tmp/pip-reqs.txt
+endif
 	@echo "[OK]    Install complete."
 
 setup_ffmpeg: check-shell
@@ -208,8 +212,15 @@ benchmark_all:
 		fi; \
 	done
 
+# STEPS (optional) selects benchmark steps non-interactively (e.g. STEPS=2).
+# When set, skip winpty (no interactive console needed); when empty, keep the
+# winpty-wrapped interactive prompt.
 benchmark:
+ifeq ($(strip $(STEPS)),)
 	winpty cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS)
+else
+	cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(STEPS)
+endif
 
 # =============================================================================
 # DEVELOPMENT & TESTING TOOLS
