@@ -39,6 +39,13 @@ export CARGO_TARGET_DIR := $(CARGO_BASE)/tools
 # pkg-config must receive POSIX colon-separated paths; Rust build scripts emit
 # Windows semicolon-separated paths that MSYS2 pkg-config mis-parses.
 export PKG_CONFIG_PATH := /mingw64/lib/pkgconfig:/mingw64/share/pkgconfig
+# bindgen (via ffmpeg-sys-next) must parse the MinGW system headers with MinGW's
+# own libclang + the GNU target. Otherwise clang-sys can pick up an MSVC-targeted
+# libclang (e.g. C:\Program Files\LLVM on CI runners), which parses the headers
+# with the wrong predefined macros and fails ("expected ';'" in stdlib.h). Use a
+# Windows-style path so the (native) clang-sys can resolve it.
+export LIBCLANG_PATH := $(shell cygpath -m '$(MINGW_PREFIX)/bin')
+export BINDGEN_EXTRA_CLANG_ARGS := --target=x86_64-w64-windows-gnu
 VENV_WIN    := $(shell cygpath -m '$(VENV_FOLDER)')
 PYTHON      := $(VENV_FOLDER)/bin/python.exe
 

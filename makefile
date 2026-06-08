@@ -127,7 +127,12 @@ setup_ffmpeg:
 # =============================================================================
 # BUILD TARGETS
 # =============================================================================
+# Point pkg-config at the built regular FFmpeg prefix (and bake its rpath) so
+# the workspace's ffmpeg-sys-next links against FFmpeg 8.0 instead of whatever
+# incomplete/older FFmpeg happens to be on the system pkg-config path.
 build_tools:
+	PKG_CONFIG_PATH=$(REGULAR_PREFIX)/lib/pkgconfig \
+	RUSTFLAGS="-C link-arg=-Wl,-rpath,$(REGULAR_PREFIX)/lib -C link-arg=-Wl,--disable-new-dtags" \
 	cargo build --workspace --release
 
 TARGET_SYS  := $(CURRENT_DIR)/target/extractor-sys
