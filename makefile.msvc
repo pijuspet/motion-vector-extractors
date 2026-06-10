@@ -102,11 +102,15 @@ REGULAR_PREFIX  := $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0
 #     and h264's MV export is compile-gated behind CONFIG_MPEGVIDEODEC, which an
 #     mpegvideo decoder (mpeg4) turns on — without it h264 exports zero MVs.
 #   - rtsp/sdp are demuxers (RTSP rides on the rtp/tcp/udp protocols).
+#   - No muxer: the extractors only demux/decode. Omitting the mov muxer avoids
+#     dragging in FFmpeg's coded-bitstream (cbs) layer with zero cbs types,
+#     whose empty table fails to compile under MSVC (error C7757). This only
+#     disables the optional `decode_ffmpeg` remux helper; re-add
+#     `--enable-muxer=mov --enable-cbs_av1` if you need it.
 SLIM_FFMPEG := --disable-everything \
 	--enable-decoder=h264,hevc,mpeg4 \
 	--enable-parser=h264,hevc,mpeg4video \
 	--enable-demuxer=mov,avi,h264,hevc,mpegts,rtsp,sdp \
-	--enable-muxer=mov \
 	--enable-protocol=file,rtp,tcp,udp \
 	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
 
