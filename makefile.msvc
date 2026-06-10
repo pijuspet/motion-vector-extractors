@@ -55,6 +55,17 @@ REL         := $(RUST_TARGET)/release
 
 CURRENT_DIR := $(CURDIR)
 PARENT_DIR  := $(patsubst %/,%,$(dir $(CURRENT_DIR)))
+
+# MSYS2 ships /usr/bin/link.exe (GNU coreutils `link`), and a login shell puts
+# /usr/bin ahead of the inherited VS PATH — so a bare `link.exe`, like the one
+# rustc invokes for the MSVC target, resolves to coreutils and dies with
+# "extra operand ...rcgu.o". cl.exe exists only in the MSVC toolchain and lives
+# in the same dir as the real link.exe, so derive that dir from cl and push it
+# to the front of PATH for every recipe (FFmpeg + cargo alike).
+MSVC_BIN := $(shell dirname "$$(command -v cl 2>/dev/null)" 2>/dev/null)
+ifneq ($(MSVC_BIN),)
+export PATH := $(MSVC_BIN):$(PATH)
+endif
 VENV_FOLDER ?= $(CURRENT_DIR)/venv-motion-vectors
 # Cargo target dir must be on a space-free path.
 CARGO_BASE  := $(HOME)/cargo-target/motion-vector-extractors
@@ -145,7 +156,7 @@ FFMPEG_BUILD = \
 
 check-env:
 	@command -v cl   >/dev/null 2>&1 || { echo "[ERROR] cl.exe not on PATH. Launch MSYS2 bash from the 'x64 Native Tools Command Prompt for VS'."; exit 1; }
-	@command -v link >/dev/null 2>&1 || { echo "[ERROR] link.exe (MSVC linker) not on PATH."; exit 1; }
+	@[ -n "$(MSVC_BIN)" ] && [ -x "$(MSVC_BIN)/link.exe" ] || { echo "[ERROR] MSVC link.exe not found next to cl.exe (got MSVC_BIN='$(MSVC_BIN)'). NB: 'command -v link' finds MSYS2 coreutils 'link', not the linker."; exit 1; }
 	@command -v nasm >/dev/null 2>&1 || { echo "[ERROR] nasm not on PATH (needed for FFmpeg asm)."; exit 1; }
 	@command -v cargo >/dev/null 2>&1 || { echo "[ERROR] cargo not found (install rustup + the $(RUST_TARGET) toolchain)."; exit 1; }
 	@rustup target list --installed 2>/dev/null | grep -qx '$(RUST_TARGET)' || echo "[WARN]  rustup target '$(RUST_TARGET)' not installed: rustup target add $(RUST_TARGET)"
