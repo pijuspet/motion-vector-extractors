@@ -64,6 +64,20 @@ REGULAR_PREFIX  := $(abspath $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0)
 $(eval $(call def_ff_flags,$(CUSTOM_PREFIX),CUST_FF))
 $(eval $(call def_ff_flags,$(REGULAR_PREFIX),SYS_FF))
 
+# Slimmed component set — only what the extractors actually use. Validated to
+# produce byte-identical MV output to a full build across h264/hevc/mpeg4.
+#   - mpeg4 decoder is REQUIRED: the "h264_avi" inputs are really MPEG-4 Part 2,
+#     and h264's MV export is compile-gated behind CONFIG_MPEGVIDEODEC, which an
+#     mpegvideo decoder (mpeg4) turns on — without it h264 exports zero MVs.
+#   - rtsp/sdp are demuxers (RTSP rides on the rtp/tcp/udp protocols).
+SLIM_FFMPEG := --disable-everything \
+	--enable-decoder=h264,hevc,mpeg4 \
+	--enable-parser=h264,hevc,mpeg4video \
+	--enable-demuxer=mov,avi,h264,hevc,mpegts,rtsp,sdp \
+	--enable-muxer=mov \
+	--enable-protocol=file,rtp,tcp,udp \
+	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
+
 # FFmpeg build macro
 FFMPEG_BUILD = \
 	cd $1/FFmpeg && \
@@ -219,6 +233,15 @@ benchmark:
 # =============================================================================
 # DEVELOPMENT & TESTING TOOLS
 # =============================================================================
+
+# Run the workspace test suite. Mirrors build_tools' FFmpeg env so the
+# ffmpeg-linking crates compile and the test binaries resolve libs at runtime.
+# There are no tests yet, so today this just compiles the workspace and runs
+# zero tests — it's the placeholder the future suite will hang off of.
+test:
+	PKG_CONFIG_PATH=$(REGULAR_PREFIX)/lib/pkgconfig \
+	RUSTFLAGS="-C link-arg=-Wl,-rpath,$(REGULAR_PREFIX)/lib -C link-arg=-Wl,--disable-new-dtags" \
+	cargo test --workspace
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))

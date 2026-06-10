@@ -84,6 +84,20 @@ REGULAR_PREFIX  := $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0
 $(eval $(call def_ff_flags,$(CUSTOM_PREFIX),CUST_FF))
 $(eval $(call def_ff_flags,$(REGULAR_PREFIX),SYS_FF))
 
+# Slimmed component set — only what the extractors actually use. Validated to
+# produce byte-identical MV output to a full build across h264/hevc/mpeg4.
+#   - mpeg4 decoder is REQUIRED: the "h264_avi" inputs are really MPEG-4 Part 2,
+#     and h264's MV export is compile-gated behind CONFIG_MPEGVIDEODEC, which an
+#     mpegvideo decoder (mpeg4) turns on — without it h264 exports zero MVs.
+#   - rtsp/sdp are demuxers (RTSP rides on the rtp/tcp/udp protocols).
+SLIM_FFMPEG := --disable-everything \
+	--enable-decoder=h264,hevc,mpeg4 \
+	--enable-parser=h264,hevc,mpeg4video \
+	--enable-demuxer=mov,avi,h264,hevc,mpegts,rtsp,sdp \
+	--enable-muxer=mov \
+	--enable-protocol=file,rtp,tcp,udp \
+	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
+
 # FFmpeg build macro — targets MinGW64 (matches ffmpeg_installer/makefile.windows).
 FFMPEG_BUILD = \
 	cd '$1/FFmpeg' && \
@@ -233,6 +247,12 @@ endif
 # DEVELOPMENT & TESTING TOOLS
 # =============================================================================
 
+# Run the workspace test suite. Mirrors build_tools (PATH-based DLL resolution,
+# /mingw64 pkg-config). No tests exist yet, so this compiles the workspace and
+# runs zero tests today — a placeholder for the future suite.
+test: check-shell
+	cargo test --workspace
+
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
 	cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) 1 2 5
@@ -327,6 +347,7 @@ help:
 	@echo "    make -f makefile.windows build                # build all extractors (sys + custom)"
 	@echo "    make -f makefile.windows build_sys            # build extractors against system FFmpeg only"
 	@echo "    make -f makefile.windows build_tools          # cargo build --workspace --release"
+	@echo "    make -f makefile.windows test                 # cargo test --workspace"
 	@echo "    make -f makefile.windows benchmark            # single-video benchmark"
 	@echo "    make -f makefile.windows benchmark_all        # iterate over VIDEO_TYPES"
 	@echo "    make -f makefile.windows all                  # benchmark_all for sys + cust"

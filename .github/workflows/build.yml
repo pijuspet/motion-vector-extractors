@@ -71,6 +71,9 @@ jobs:
       - name: make build_tools
         run: make build_tools
 
+      - name: make test
+        run: make test
+
       # STEPS=2 runs the extraction pass non-interactively (smoke-test sizing).
       - name: make benchmark
         run: make benchmark STEPS=2 STREAMS=2 NRUNS=1
@@ -128,6 +131,9 @@ jobs:
 
       - name: make build_tools
         run: make -f makefile.windows build_tools
+
+      - name: make test
+        run: make -f makefile.windows test
 
       - name: make benchmark
         run: make -f makefile.windows benchmark STEPS=2 STREAMS=2 NRUNS=1
