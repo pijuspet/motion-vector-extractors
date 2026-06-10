@@ -102,11 +102,12 @@ REGULAR_PREFIX  := $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0
 #     and h264's MV export is compile-gated behind CONFIG_MPEGVIDEODEC, which an
 #     mpegvideo decoder (mpeg4) turns on — without it h264 exports zero MVs.
 #   - rtsp/sdp are demuxers (RTSP rides on the rtp/tcp/udp protocols).
-#   - No muxer: the extractors only demux/decode. Omitting the mov muxer avoids
-#     dragging in FFmpeg's coded-bitstream (cbs) layer with zero cbs types,
-#     whose empty table fails to compile under MSVC (error C7757). This only
-#     disables the optional `decode_ffmpeg` remux helper; re-add
-#     `--enable-muxer=mov --enable-cbs_av1` if you need it.
+#   - No mov muxer here (unlike makefile / makefile.windows, which keep it):
+#     the mov muxer drags in FFmpeg's coded-bitstream (cbs) layer with zero cbs
+#     types enabled, and MSVC rejects the resulting empty table (error C7757).
+#     The extractors only demux/decode, so this just disables the optional
+#     `decode_ffmpeg` remux helper; re-add `--enable-muxer=mov --enable-cbs_av1`
+#     if you need it on MSVC.
 SLIM_FFMPEG := --disable-everything \
 	--enable-decoder=h264,hevc,mpeg4 \
 	--enable-parser=h264,hevc,mpeg4video \
@@ -117,12 +118,24 @@ SLIM_FFMPEG := --disable-everything \
 # FFmpeg build macro — MSVC toolchain. `cl`/`link`/`nasm` must be on PATH
 # (launch MSYS2 bash from the VS x64 Native Tools prompt). Produces DLLs +
 # MSVC import libs. -j parallelises the (native cl.exe) compile phase.
+#
+# Flags mirror a known-good MSVC build:
+#   --extra-cflags=-MD                : dynamic CRT, matching Rust's MSVC default
+#                                       (a /MT vs /MD mismatch breaks the link).
+#   --extra-ldflags=/NODEFAULTLIB:libcmt : keep the static CRT out of the link.
+#   --disable-programs                : no ffmpeg/ffprobe/ffplay CLIs (unneeded;
+#                                       this also disables the decode_ffmpeg helper).
+#   --disable-{bzlib,libopenjpeg,iconv,zlib} : skip external libs awkward on MSVC.
+#   --enable-asm                      : keep nasm/external asm (NOT GCC inline asm,
+#                                       which MSVC lacks — HAVE_INLINE_ASM stays 0).
 FFMPEG_BUILD = \
 	cd '$1/FFmpeg' && \
 	chmod +x ./configure ./ffbuild/*.sh && \
-	./configure --prefix='$1' --toolchain=msvc --arch=x86_64 \
-		--enable-shared --disable-static --enable-swresample \
-		--enable-debug --disable-stripping --disable-doc \
+	./configure --prefix='$1' --toolchain=msvc --arch=amd64 \
+		--enable-asm --enable-shared --disable-static --enable-swresample \
+		--enable-debug --disable-stripping --disable-doc --disable-programs \
+		--disable-bzlib --disable-libopenjpeg --disable-iconv --disable-zlib \
+		--extra-cflags="-MD" --extra-ldflags="/NODEFAULTLIB:libcmt" \
 		--pkg-config-flags="--static" $(SLIM_FFMPEG) && \
 	make -j"$$(nproc)" && make install
 
