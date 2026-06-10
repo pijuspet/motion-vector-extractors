@@ -1,0 +1,279 @@
+SHELL := /bin/bash
+
+# =============================================================================
+# Windows / MSVC build for motion-vector-extractors.   ** BEST-EFFORT / UNTESTED **
+#
+# This mirrors makefile.windows but targets the native MSVC toolchain instead
+# of MinGW64:
+#   - FFmpeg is built with `--toolchain=msvc` (cl.exe / link.exe), producing
+#     MSVC import libraries (avcodec.lib, ...) + DLLs.
+#   - Rust builds against the `x86_64-pc-windows-msvc` target (MSVC ABI).
+#   - bindgen parses headers with an MSVC-targeted libclang.
+#
+# IMPORTANT — this file was written without a Windows+MSVC machine to test on,
+# so expect to iterate. The spots most likely to need adjustment are flagged
+# with `# VERIFY:` comments (import-lib location, LIB path, libclang path).
+#
+# Performance note: MSVC does NOT fix the main Windows slowness. FFmpeg's
+# ./configure is a POSIX shell script that still runs under MSYS2/bash and
+# spawns thousands of probe processes; that cost (plus Defender) dominates.
+# The real wins are the parallel `-j` and slimmed `configure` below, and adding
+# Windows Defender exclusions for this tree + the toolchain dirs.
+#
+# HOW TO RUN
+#   1. Install: Visual Studio Build Tools (C++ workload → cl.exe, link.exe),
+#      NASM, LLVM-for-Windows (libclang), rustup with the
+#      `stable-x86_64-pc-windows-msvc` toolchain, and an MSYS2 install for
+#      bash/make/git/pkgconf.  (See `make -f makefile.msvc help`.)
+#   2. Open "x64 Native Tools Command Prompt for VS", then launch the MSYS2
+#      bash from it so `cl`/`link`/`nasm` are inherited on PATH, e.g.:
+#          C:\msys64\usr\bin\bash.exe -l
+#   3. cd to the repo and run the targets below.
+# =============================================================================
+
+# =============================================================================
+# CONFIGURATION & GLOBAL VARIABLES
+# =============================================================================
+
+STREAMS = 1
+NRUNS = 3
+
+VIDEO_NAME ?= bigbunny_walking.mp4
+
+VIDEO_TYPES := h264_cabac h264_cavlc h264_avi h265
+VIDEO_TYPE ?= h264_cabac
+
+EXE_EXT := .exe
+
+# Rust MSVC target triple and its release output subpath.
+RUST_TARGET := x86_64-pc-windows-msvc
+REL         := $(RUST_TARGET)/release
+
+# =============================================================================
+# PATHS & ENVIRONMENTS
+# =============================================================================
+
+CURRENT_DIR := $(CURDIR)
+PARENT_DIR  := $(patsubst %/,%,$(dir $(CURRENT_DIR)))
+VENV_FOLDER ?= $(CURRENT_DIR)/venv-motion-vectors
+# Cargo target dir must be on a space-free path.
+CARGO_BASE  := $(HOME)/cargo-target/motion-vector-extractors
+export CARGO_TARGET_DIR := $(CARGO_BASE)/tools
+
+# pkg-config wants POSIX colon-separated paths.
+export PKG_CONFIG_PATH := /mingw64/lib/pkgconfig
+
+# bindgen (via ffmpeg-sys-next) must parse the MSVC system headers with the
+# MSVC target triple, otherwise the predefined macros are wrong.
+export BINDGEN_EXTRA_CLANG_ARGS := --target=x86_64-pc-windows-msvc
+# VERIFY: point this at an MSVC-built libclang (LLVM for Windows). Override on
+# the command line if LLVM is installed elsewhere:
+#     make -f makefile.msvc build_tools LIBCLANG_PATH='/c/Program Files/LLVM/bin'
+LIBCLANG_PATH ?= /c/Program Files/LLVM/bin
+export LIBCLANG_PATH
+
+VENV_WIN := $(shell cygpath -m '$(VENV_FOLDER)' 2>/dev/null)
+PYTHON   := $(VENV_FOLDER)/bin/python.exe
+
+EXECUTABLES_DIR      := executables
+EXECUTABLES_DIR_SYS  := executables/sys
+EXECUTABLES_DIR_CUST := executables/cust
+
+VIDEO_FILE := $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/$(VIDEO_NAME)
+
+INITIAL_RUN_DATA := $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results_$(VIDEO_TYPE)
+LAST_RESULTS_DIR  = $(shell ls -d "$(CURRENT_DIR)/results/$(VIDEO_TYPE)/"* 2>/dev/null | sort | tail -n 1)
+
+CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv
+CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method4_output_0.csv
+
+CUSTOM_PREFIX   := $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0-custom
+REGULAR_PREFIX  := $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0
+
+# =============================================================================
+# FFMPEG BUILD
+# =============================================================================
+
+# Slimmed component set — only what the extractors need. --disable-everything
+# then re-enable, which cuts both configure probes and compiled units — the
+# biggest structural build speedup, and disproportionately helps Windows.
+# Validated on Linux to produce byte-identical MV output across h264/hevc/mpeg4.
+#   - mpeg4 decoder is REQUIRED: the "h264_avi" inputs are really MPEG-4 Part 2,
+#     and h264's MV export is compile-gated behind CONFIG_MPEGVIDEODEC, which an
+#     mpegvideo decoder (mpeg4) turns on — without it h264 exports zero MVs.
+#   - rtsp/sdp are demuxers (RTSP rides on the rtp/tcp/udp protocols).
+SLIM_FFMPEG := --disable-everything \
+	--enable-decoder=h264,hevc,mpeg4 \
+	--enable-parser=h264,hevc,mpeg4video \
+	--enable-demuxer=mov,avi,h264,hevc,mpegts,rtsp,sdp \
+	--enable-muxer=mov \
+	--enable-protocol=file,rtp,tcp,udp \
+	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
+
+# FFmpeg build macro — MSVC toolchain. `cl`/`link`/`nasm` must be on PATH
+# (launch MSYS2 bash from the VS x64 Native Tools prompt). Produces DLLs +
+# MSVC import libs. -j parallelises the (native cl.exe) compile phase.
+FFMPEG_BUILD = \
+	cd '$1/FFmpeg' && \
+	chmod +x ./configure ./ffbuild/*.sh && \
+	./configure --prefix='$1' --toolchain=msvc --arch=x86_64 \
+		--enable-shared --disable-static --enable-swresample \
+		--enable-debug --disable-stripping --disable-doc \
+		--pkg-config-flags="--static" $(SLIM_FFMPEG) && \
+	make -j"$$(nproc)" && make install
+
+# =============================================================================
+# ENVIRONMENT CHECK & DEPENDENCIES
+# =============================================================================
+
+check-env:
+	@command -v cl   >/dev/null 2>&1 || { echo "[ERROR] cl.exe not on PATH. Launch MSYS2 bash from the 'x64 Native Tools Command Prompt for VS'."; exit 1; }
+	@command -v link >/dev/null 2>&1 || { echo "[ERROR] link.exe (MSVC linker) not on PATH."; exit 1; }
+	@command -v nasm >/dev/null 2>&1 || { echo "[ERROR] nasm not on PATH (needed for FFmpeg asm)."; exit 1; }
+	@command -v cargo >/dev/null 2>&1 || { echo "[ERROR] cargo not found (install rustup + the $(RUST_TARGET) toolchain)."; exit 1; }
+	@rustup target list --installed 2>/dev/null | grep -qx '$(RUST_TARGET)' || echo "[WARN]  rustup target '$(RUST_TARGET)' not installed: rustup target add $(RUST_TARGET)"
+	@echo "[OK]    MSVC toolchain visible (cl, link, nasm, cargo)."
+
+# MSVC deps can't be installed via pacman; they come from external installers.
+# This target only prints guidance (and optional winget commands behind GUI/
+# admin). It does not auto-install.
+install:
+	@echo "Install the MSVC build prerequisites (admin shell):"
+	@echo "  winget install --id Microsoft.VisualStudio.2022.BuildTools  # add 'Desktop development with C++'"
+	@echo "  winget install --id LLVM.LLVM            # provides libclang for bindgen"
+	@echo "  winget install --id NASM.NASM            # FFmpeg assembler"
+	@echo "  winget install --id Rustlang.Rustup      # then: rustup default stable-$(RUST_TARGET)"
+	@echo "  (MSYS2 from msys2.org for bash/make/git; 'pacman -S pkgconf' for pkg-config)"
+	@echo ""
+	@echo "Then add Windows Defender exclusions (big build speedup, elevated PowerShell):"
+	@echo "  Add-MpPreference -ExclusionPath '$(CURRENT_DIR)'"
+	@echo "  Add-MpPreference -ExclusionProcess 'cl.exe','link.exe','nasm.exe','cargo.exe','rustc.exe'"
+	@if [ ! -f .env ] && [ -f .env_template ]; then cp .env_template .env; fi
+	@mkdir -p '$(EXECUTABLES_DIR)'
+
+setup_ffmpeg: check-env
+	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
+	$(call FFMPEG_BUILD,$(REGULAR_PREFIX))
+
+# =============================================================================
+# BUILD TARGETS
+# =============================================================================
+
+build_tools: check-env
+	cargo build --workspace --release --target $(RUST_TARGET)
+
+TARGET_SYS  := $(CARGO_BASE)/extractor-sys
+TARGET_CUST := $(CARGO_BASE)/extractor-cust
+
+# $(1) = FFmpeg prefix, $(2) = CARGO_TARGET_DIR, $(3) = extra cargo flags.
+# DLLs live in <prefix>/bin (PATH-resolved at runtime, same as MinGW). The MSVC
+# linker finds import libraries via the LIB env var.
+# VERIFY: FFmpeg+MSVC may install the import .libs in <prefix>/bin rather than
+# <prefix>/lib — both are added to LIB so either layout links.
+define build_extractors
+	PATH='$(1)/bin':$$PATH \
+	PKG_CONFIG_PATH='$(1)/lib/pkgconfig' \
+	LIB="$$(cygpath -w '$(1)/lib');$$(cygpath -w '$(1)/bin');$$LIB" \
+	CARGO_TARGET_DIR='$(2)' \
+	cargo build --release --target $(RUST_TARGET) -p mv-extract $(3)
+endef
+
+build: check-env
+	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
+	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
+	@mkdir -p '$(EXECUTABLES_DIR_SYS)' '$(EXECUTABLES_DIR_CUST)'
+	cp '$(TARGET_SYS)/$(REL)/extractor0$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor0$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor1$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor1$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor2$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor2$(EXE_EXT)'
+	cp '$(TARGET_CUST)/$(REL)/extractor3$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor3$(EXE_EXT)'
+	cp '$(TARGET_CUST)/$(REL)/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor4$(EXE_EXT)'
+	cp '$(TARGET_CUST)/$(REL)/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)'
+	@echo "[INFO]  Copying FFmpeg DLLs (sys → sys/, cust → cust/)..."
+	@cp -u '$(REGULAR_PREFIX)/bin/'*.dll '$(EXECUTABLES_DIR_SYS)/' 2>/dev/null || true
+	@cp -u '$(CUSTOM_PREFIX)/bin/'*.dll  '$(EXECUTABLES_DIR_CUST)/' 2>/dev/null || true
+	@echo "[OK]    Build complete."
+
+build_sys: check-env
+	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
+	@mkdir -p '$(EXECUTABLES_DIR_SYS)'
+	cp '$(TARGET_SYS)/$(REL)/extractor0$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor0$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor1$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor2$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor2$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor3$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor3$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor4$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor5$(EXE_EXT)'
+	@cp -u '$(REGULAR_PREFIX)/bin/'*.dll '$(EXECUTABLES_DIR_SYS)/' 2>/dev/null || true
+
+# =============================================================================
+# BENCHMARKING
+# =============================================================================
+
+all:
+	$(MAKE) -f makefile.msvc benchmark_all TYPE=sys
+	$(MAKE) -f makefile.msvc benchmark_all TYPE=cust
+
+benchmark_all:
+	@vname="$(VIDEO_NAME)"; \
+	for vtype in $(VIDEO_TYPES); do \
+		if [ "$$vtype" = "h264_avi" ]; then \
+			filepath=$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi; \
+		else \
+			filepath=$(CURRENT_DIR)/videos/$$vtype/$$vname; \
+		fi; \
+		if [ -f "$$filepath" ]; then \
+			echo ""; \
+			echo "========== $$vtype / $$filepath =========="; \
+			if [ -z "$(TYPE)" ]; then \
+				cargo run --target $(RUST_TARGET) --bin full_benchmark "$$filepath" $(STREAMS) $$vtype cust $(NRUNS) 0; \
+			else \
+				cargo run --target $(RUST_TARGET) --bin full_benchmark "$$filepath" $(STREAMS) $$vtype $(TYPE) $(NRUNS) 0; \
+			fi; \
+		else \
+			echo "SKIP: $$filepath not found"; \
+		fi; \
+	done
+
+# STEPS (optional) selects benchmark steps non-interactively (e.g. STEPS=2).
+benchmark:
+	cargo run --target $(RUST_TARGET) --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(STEPS)
+
+# =============================================================================
+# DEVELOPMENT & TESTING TOOLS
+# =============================================================================
+
+# Run the workspace test suite (cargo test). No tests exist yet, so this just
+# compiles the workspace and runs zero tests today — a placeholder for the
+# future suite, kept in step with makefile / makefile.windows.
+test: check-env
+	cargo test --workspace --target $(RUST_TARGET)
+
+# Decode a single video through the custom FFmpeg CLI. PATH carries the DLLs.
+decode_ffmpeg:
+	PATH='$(CUSTOM_PREFIX)/bin':$$PATH '$(CUSTOM_PREFIX)/bin/ffmpeg.exe' \
+		-y -i '$(VIDEO_FILE)' -c copy -an '$(LAST_RESULTS_DIR)/decoded_output.mp4'
+
+# =============================================================================
+# HELP
+# =============================================================================
+
+help:
+	@echo ""
+	@echo "  motion-vector-extractors — MSVC build (BEST-EFFORT, expect to iterate)"
+	@echo ""
+	@echo "  Prereqs: VS Build Tools (cl/link), NASM, LLVM (libclang), rustup"
+	@echo "           + the $(RUST_TARGET) target, MSYS2 (bash/make/git/pkgconf)."
+	@echo "  Run from MSYS2 bash launched out of the VS x64 Native Tools prompt."
+	@echo ""
+	@echo "    make -f makefile.msvc install         # print prereq + Defender guidance"
+	@echo "    make -f makefile.msvc check-env       # verify cl/link/nasm/cargo on PATH"
+	@echo "    make -f makefile.msvc setup_ffmpeg    # build both FFmpeg variants (--toolchain=msvc)"
+	@echo "    make -f makefile.msvc build           # build all extractors (sys + custom)"
+	@echo "    make -f makefile.msvc build_tools     # cargo build --workspace --release"
+	@echo "    make -f makefile.msvc test            # cargo test --workspace"
+	@echo "    make -f makefile.msvc benchmark       # single-video benchmark"
+	@echo "    make -f makefile.msvc benchmark_all   # iterate over VIDEO_TYPES"
+	@echo ""
+	@echo "  Vars: VIDEO_NAME=$(VIDEO_NAME)  VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)"
+	@echo ""
+
+.PHONY: check-env install setup_ffmpeg build_tools build build_sys all benchmark_all benchmark test decode_ffmpeg help

@@ -1,9 +1,13 @@
 name: build
 
 # Verifies the full local flow — install → setup_ffmpeg → build → build_tools →
-# benchmark — on both Linux and Windows, so platform breakage is caught in CI
-# instead of by hand. GitHub sets CI=true automatically, which makes the
+# benchmark — on Linux and Windows (MinGW64), so platform breakage is caught in
+# CI instead of by hand. GitHub sets CI=true automatically, which makes the
 # makefiles skip profiler/report-only tooling (VTune, perf, Python venv).
+#
+# A third job builds the native-MSVC path (makefile.msvc). It is EXPERIMENTAL:
+# non-blocking (continue-on-error) and skipped on pull_request to save Windows
+# minutes. Flip both once it goes green.
 
 on:
   push:
@@ -137,3 +141,89 @@ jobs:
 
       - name: make benchmark
         run: make -f makefile.windows benchmark STEPS=2 STREAMS=2 NRUNS=1
+
+  windows-msvc:
+    name: windows (msvc, experimental)
+    runs-on: windows-latest
+    # Untested end-to-end: keep non-blocking so it's exercised without gating the
+    # build, and skip it on PRs to save Windows minutes. Remove both once green.
+    continue-on-error: true
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: msys2 {0}
+    env:
+      # windows-latest ships LLVM here; ffmpeg-sys-next's bindgen needs libclang.
+      # VERIFY: adjust if the runner image relocates LLVM.
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+    steps:
+      # FFmpeg's configure/build scripts must keep LF endings.
+      - name: Configure git line endings
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # PAT with read access to the private ffmpeg submodule repos.
+          token: ${{ secrets.SUBMODULES_PAT }}
+
+      # Load the MSVC toolchain env (cl/link + INCLUDE/LIB) into the job so the
+      # inherited-PATH MSYS2 shell below can see it. FFmpeg has no MSVC-native
+      # configure — it runs as a POSIX script under bash but compiles with cl.
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # path-type: inherit carries the MSVC env into MSYS2 bash. We pull in only
+      # bash/make/nasm/pkgconf — no MinGW gcc. Rust + cl come from the runner.
+      # VERIFY: path-type inherit can mangle Windows-style INCLUDE/LIB inside
+      # MSYS2; this is the most likely thing to need adjustment.
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          path-type: inherit
+          install: >-
+            make git patch diffutils nasm pkgconf
+
+      - name: Ensure Rust MSVC target
+        shell: pwsh
+        run: rustup target add x86_64-pc-windows-msvc
+
+      - name: FFmpeg submodule revision
+        id: ff
+        run: echo "sha=$(git -C ffmpeg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache built FFmpeg
+        uses: actions/cache@v4
+        with:
+          path: |
+            ffmpeg/FFmpeg-8.0
+            ffmpeg/FFmpeg-8.0-custom
+          key: windows-msvc-ffmpeg-${{ steps.ff.outputs.sha }}-${{ hashFiles('makefile.msvc') }}
+
+      - name: check-env
+        run: make -f makefile.msvc check-env
+
+      - name: make install
+        run: make -f makefile.msvc install
+
+      - name: make setup_ffmpeg
+        run: make -f makefile.msvc setup_ffmpeg
+
+      - name: make build
+        run: make -f makefile.msvc build
+
+      - name: make build_tools
+        run: make -f makefile.msvc build_tools
+
+      - name: make test
+        run: make -f makefile.msvc test
+
+      - name: make benchmark
+        run: make -f makefile.msvc benchmark STEPS=2 STREAMS=2 NRUNS=1
