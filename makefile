@@ -2,13 +2,16 @@
 # CONFIGURATION & GLOBAL VARIABLES
 # =============================================================================
 
-STREAMS = 15
+STREAMS = 1
 NRUNS = 3
 
 VIDEO_NAME ?= bigbunny_walking.mp4
 # VIDEO_NAME ?= bigbunny.mp4
 # VIDEO_NAME ?= stickman.mp4
 # VIDEO_NAME ?= dashcam.mp4
+# VIDEO_NAME ?= 2018-03-05.09-50-15.09-55-01.school.G423.r13.mp4
+# VIDEO_NAME ?= 2018-03-15.15-55-00.16-00-00.bus.G475.r13.mp4
+# VIDEO_NAME ?= MCTTR0102b.mp4
 
 VIDEO_TYPES := h264_cabac h264_cavlc h264_avi h265
 VIDEO_TYPE = h264_cabac
@@ -65,8 +68,8 @@ $(eval $(call def_ff_flags,$(REGULAR_PREFIX),SYS_FF))
 FFMPEG_BUILD = \
 	cd $1/FFmpeg && \
 	chmod +x ./configure ./ffbuild/*.sh && \
-	./configure --prefix=$(abspath $1) --enable-shared --enable-swresample --enable-debug --disable-stripping --pkg-config-flags="--static" && \
-	make && make install
+	./configure --prefix=$(abspath $1) --enable-shared --enable-swresample --enable-debug --disable-stripping --disable-doc $(SLIM_FFMPEG) --pkg-config-flags="--static" && \
+	make -j"$$(nproc)" && make install
 
 # =============================================================================
 # INSTALLATION & DEPENDENCIES

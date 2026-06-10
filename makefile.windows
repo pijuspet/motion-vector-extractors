@@ -90,8 +90,8 @@ FFMPEG_BUILD = \
 	chmod +x ./configure ./ffbuild/*.sh && \
 	./configure --prefix='$1' --enable-shared --disable-static --enable-swresample \
 		--target-os=mingw32 --arch=x86_64 \
-		--enable-debug --disable-stripping --pkg-config-flags="--static" && \
-	make && make install
+		--enable-debug --disable-stripping --disable-doc $(SLIM_FFMPEG) --pkg-config-flags="--static" && \
+	make -j"$$(nproc)" && make install
 
 # =============================================================================
 # SHELL ENVIRONMENT CHECK & DEPENDENCIES

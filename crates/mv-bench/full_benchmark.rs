@@ -191,7 +191,7 @@ impl BenchmarkRunner {
         let is_verbose = true;
         let write_to_csv = true;
 
-        if run_benchmark_extractors(
+        let results = match run_benchmark_extractors(
             &self.video_file,
             self.streams,
             &self.results_dir.to_string_lossy(),
@@ -199,13 +199,147 @@ impl BenchmarkRunner {
             is_single_threaded,
             is_verbose,
             write_to_csv,
-        )
-        .is_none()
-        {
+        ) {
+            Some(results) => results,
+            None => return,
+        };
+
+        println!("Benchmarks complete.");
+
+        self.report_speedup(&results);
+    }
+
+    /// Compare the custom-FFmpeg methods against the original-FFmpeg methods
+    /// and print whether the expected speedup actually showed up. This runs
+    /// right after the extract pass (`make benchmark STEPS=2`) so the
+    /// custom-vs-original verdict is visible without needing the plot step.
+    ///
+    /// Report-only by design: it never changes the exit code, so a missing or
+    /// shrunk speedup is surfaced loudly but does not fail the build/CI.
+    ///
+    /// "Speedup confirmed" requires the mean custom throughput to beat the mean
+    /// original throughput by at least `SPEEDUP_MIN_RATIO`. The small margin
+    /// keeps the tiny CI smoke run (few streams, NRUNS=1) from flipping the
+    /// verdict on timing noise, while the historical gap (~2x) clears it easily.
+    pub fn report_speedup(&self, results: &[crate::benchmark::BenchmarkResult]) {
+        const SPEEDUP_MIN_RATIO: f64 = 1.2;
+
+        let original: Vec<&crate::benchmark::BenchmarkResult> =
+            results.iter().filter(|r| r.method.starts_with("Original")).collect();
+        let custom: Vec<&crate::benchmark::BenchmarkResult> =
+            results.iter().filter(|r| r.method.starts_with("Custom")).collect();
+
+        println!();
+        println!("============================================================");
+        println!("  SPEEDUP CHECK  (custom FFmpeg vs original FFmpeg)");
+        println!("============================================================");
+
+        if original.is_empty() || custom.is_empty() {
+            println!(
+                "  Skipped: need both groups (got {} original, {} custom).",
+                original.len(),
+                custom.len()
+            );
+            println!("============================================================");
             return;
         }
 
-        println!("Benchmarks complete.");
+        let mean_fps = |group: &[&crate::benchmark::BenchmarkResult]| -> f64 {
+            group.iter().map(|r| r.fps).sum::<f64>() / group.len() as f64
+        };
+        let mean_ms = |group: &[&crate::benchmark::BenchmarkResult]| -> f64 {
+            group.iter().map(|r| r.time_per_frame).sum::<f64>() / group.len() as f64
+        };
+
+        let orig_fps = mean_fps(&original);
+        let cust_fps = mean_fps(&custom);
+        let orig_ms = mean_ms(&original);
+        let cust_ms = mean_ms(&custom);
+        let ratio = if orig_fps > 0.0 { cust_fps / orig_fps } else { 0.0 };
+        let on = original.len();
+        let cn = custom.len();
+
+        println!(
+            "  Original mean : {:>8.1} FPS   ({:>7.2} ms/frame, {} methods)",
+            orig_fps, orig_ms, on
+        );
+        println!(
+            "  Custom   mean : {:>8.1} FPS   ({:>7.2} ms/frame, {} methods)",
+            cust_fps, cust_ms, cn
+        );
+        println!(
+            "  Speedup       : {:>8.2}x  (threshold >= {:.2}x)",
+            ratio, SPEEDUP_MIN_RATIO
+        );
+
+        let (verdict, emoji) = if ratio >= SPEEDUP_MIN_RATIO {
+            ("SPEEDUP CONFIRMED", "⚡")
+        } else if ratio >= 1.0 {
+            ("WARNING: custom faster, but below the speedup threshold", "⚠️")
+        } else {
+            ("REGRESSION: custom is SLOWER than original", "🛑")
+        };
+        println!("  Verdict       : {}", verdict);
+        println!("============================================================");
+
+        self.publish_github_report(emoji, verdict, ratio, SPEEDUP_MIN_RATIO,
+            orig_fps, orig_ms, on, cust_fps, cust_ms, cn);
+    }
+
+    /// Mirror the speedup verdict into GitHub Actions' reporting surfaces so it
+    /// shows up in the run's UI, not just buried in the step log:
+    ///   - `$GITHUB_STEP_SUMMARY`: a markdown table rendered on the run's
+    ///     summary page (the "report").
+    ///   - a `::notice::` annotation (gated on `GITHUB_ACTIONS=true`) that
+    ///     surfaces the headline at the top of the run.
+    /// Both are no-ops locally, where these env vars are unset.
+    #[allow(clippy::too_many_arguments)]
+    fn publish_github_report(
+        &self,
+        emoji: &str,
+        verdict: &str,
+        ratio: f64,
+        threshold: f64,
+        orig_fps: f64,
+        orig_ms: f64,
+        orig_n: usize,
+        cust_fps: f64,
+        cust_ms: f64,
+        cust_n: usize,
+    ) {
+        let vtype = &self.video_type;
+        let video = &self.video_file;
+        let streams = self.streams;
+        let runs = self.n_runs;
+
+        if let Ok(summary_path) = env::var("GITHUB_STEP_SUMMARY") {
+            let md = format!(
+                "## {emoji} Speedup check — {vtype}\n\n\
+                 **{verdict}** — custom is **{ratio:.2}×** vs original (threshold ≥ {threshold:.2}×)\n\n\
+                 | Build | Mean throughput | Mean ms/frame | Methods |\n\
+                 | --- | ---: | ---: | ---: |\n\
+                 | Original FFmpeg | {orig_fps:.1} FPS | {orig_ms:.2} | {orig_n} |\n\
+                 | Custom FFmpeg | {cust_fps:.1} FPS | {cust_ms:.2} | {cust_n} |\n\n\
+                 <sub>streams: {streams} · runs: {runs} · video: {video}</sub>\n\n"
+            );
+            use std::io::Write as _;
+            match fs::OpenOptions::new().create(true).append(true).open(&summary_path) {
+                Ok(mut f) => {
+                    if let Err(e) = f.write_all(md.as_bytes()) {
+                        eprintln!("Could not write GITHUB_STEP_SUMMARY: {}", e);
+                    }
+                }
+                Err(e) => eprintln!("Could not open GITHUB_STEP_SUMMARY: {}", e),
+            }
+        }
+
+        if env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+            // Annotation message can't span lines; keep it to one headline.
+            println!(
+                "::notice title=Speedup check ({vtype})::{verdict} — {ratio:.2}x \
+                 (custom {cust_fps:.0} FPS vs original {orig_fps:.0} FPS)"
+            );
+        }
     }
 
     pub fn plot(&self) {
