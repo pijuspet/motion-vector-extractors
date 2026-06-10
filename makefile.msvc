@@ -199,12 +199,20 @@ TARGET_CUST := $(CARGO_BASE)/extractor-cust
 # VERIFY: FFmpeg+MSVC may install the import .libs in <prefix>/bin rather than
 # <prefix>/lib — both are added to LIB so either layout links.
 #
-# PKG_CONFIG_PATH must be a POSIX path: $(CURDIR) can resolve to a Windows form
-# (D:/a/...), and pkgconf splits PKG_CONFIG_PATH on ':', so the drive-letter
-# colon would shred the path into "D" + "/a/...". cygpath -u → /d/a/... (no
-# colon) so pkgconf finds libavutil.pc. The .pc's own prefix= still emits
-# Windows -L/-I paths the MSVC toolchain understands.
+# PKG_CONFIG_PATH needs care here. The CI MSVC job runs under MSYS2's *MSYS*
+# environment (msystem: MSYS), whose /usr/bin/pkgconf is a cygwin build that
+# splits PKG_CONFIG_PATH on ':' (POSIX) — unlike the MINGW64 pkgconf the MinGW
+# job uses, which splits on ';' and so swallows a Windows "D:/..." path whole.
+# Under MSYS the drive-letter colon in $(CURDIR) (e.g. D:/a/...) gets shredded
+# into "D" + "/a/...", and libavutil.pc is never found. Two things are needed:
+#   1. cygpath -u → a colon-free POSIX path (/d/a/.../lib/pkgconfig).
+#   2. MSYS2_ENV_CONV_EXCL — MSYS2 otherwise rewrites path-shaped env vars back
+#      to Windows form (D:/...) when bash spawns the *native* cargo.exe, undoing
+#      step 1. Excluding PKG_CONFIG_PATH keeps the POSIX form intact end-to-end,
+#      and cygwin pkgconf resolves /d/... via its mount table.
+# The .pc's own prefix= still emits Windows -L/-I paths the MSVC toolchain wants.
 define build_extractors
+	MSYS2_ENV_CONV_EXCL='PKG_CONFIG_PATH' \
 	PATH='$(1)/bin':$$PATH \
 	PKG_CONFIG_PATH="$$(cygpath -u '$(1)/lib/pkgconfig')" \
 	LIB="$$(cygpath -w '$(1)/lib');$$(cygpath -w '$(1)/bin');$$LIB" \
