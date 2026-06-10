@@ -198,9 +198,15 @@ TARGET_CUST := $(CARGO_BASE)/extractor-cust
 # linker finds import libraries via the LIB env var.
 # VERIFY: FFmpeg+MSVC may install the import .libs in <prefix>/bin rather than
 # <prefix>/lib — both are added to LIB so either layout links.
+#
+# PKG_CONFIG_PATH must be a POSIX path: $(CURDIR) can resolve to a Windows form
+# (D:/a/...), and pkgconf splits PKG_CONFIG_PATH on ':', so the drive-letter
+# colon would shred the path into "D" + "/a/...". cygpath -u → /d/a/... (no
+# colon) so pkgconf finds libavutil.pc. The .pc's own prefix= still emits
+# Windows -L/-I paths the MSVC toolchain understands.
 define build_extractors
 	PATH='$(1)/bin':$$PATH \
-	PKG_CONFIG_PATH='$(1)/lib/pkgconfig' \
+	PKG_CONFIG_PATH="$$(cygpath -u '$(1)/lib/pkgconfig')" \
 	LIB="$$(cygpath -w '$(1)/lib');$$(cygpath -w '$(1)/bin');$$LIB" \
 	CARGO_TARGET_DIR='$(2)' \
 	cargo build --release --target $(RUST_TARGET) -p mv-extract $(3)
