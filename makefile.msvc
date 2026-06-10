@@ -66,6 +66,17 @@ MSVC_BIN := $(shell dirname "$$(command -v cl 2>/dev/null)" 2>/dev/null)
 ifneq ($(MSVC_BIN),)
 export PATH := $(MSVC_BIN):$(PATH)
 endif
+
+# Use the MinGW pkgconf (a native-Windows build), NOT MSYS2's cygwin
+# /usr/bin/pkgconf. For an MSVC target the cygwin one is doubly wrong: it splits
+# PKG_CONFIG_PATH on ':' (so a "D:/..." drive-letter colon shreds the path) AND
+# it emits POSIX -I/-L paths (/d/a/...) that native cl.exe/link.exe cannot read
+# (→ "Cannot open include file: 'libavutil/avutil.h'"). The MinGW pkgconf splits
+# on ';' and emits Windows paths the MSVC toolchain consumes — the same pkgconf
+# the working MinGW job (and makefile.windows) already rely on. This needs the
+# mingw-w64-x86_64-pkgconf package; override PKG_CONFIG if it lives elsewhere.
+PKG_CONFIG ?= /mingw64/bin/pkg-config
+export PKG_CONFIG
 VENV_FOLDER ?= $(CURRENT_DIR)/venv-motion-vectors
 # Cargo target dir must be on a space-free path.
 CARGO_BASE  := $(HOME)/cargo-target/motion-vector-extractors
@@ -158,6 +169,7 @@ check-env:
 	@command -v cl   >/dev/null 2>&1 || { echo "[ERROR] cl.exe not on PATH. Launch MSYS2 bash from the 'x64 Native Tools Command Prompt for VS'."; exit 1; }
 	@[ -n "$(MSVC_BIN)" ] && [ -x "$(MSVC_BIN)/link.exe" ] || { echo "[ERROR] MSVC link.exe not found next to cl.exe (got MSVC_BIN='$(MSVC_BIN)'). NB: 'command -v link' finds MSYS2 coreutils 'link', not the linker."; exit 1; }
 	@command -v nasm >/dev/null 2>&1 || { echo "[ERROR] nasm not on PATH (needed for FFmpeg asm)."; exit 1; }
+	@[ -x "$(PKG_CONFIG)" ] || command -v "$(PKG_CONFIG)" >/dev/null 2>&1 || { echo "[ERROR] MinGW pkg-config not found at '$(PKG_CONFIG)'. Install it: pacman -S mingw-w64-x86_64-pkgconf (the MSYS cygwin pkgconf emits POSIX paths cl/link can't read)."; exit 1; }
 	@command -v cargo >/dev/null 2>&1 || { echo "[ERROR] cargo not found (install rustup + the $(RUST_TARGET) toolchain)."; exit 1; }
 	@rustup target list --installed 2>/dev/null | grep -qx '$(RUST_TARGET)' || echo "[WARN]  rustup target '$(RUST_TARGET)' not installed: rustup target add $(RUST_TARGET)"
 	@echo "[OK]    MSVC toolchain visible (cl, link, nasm, cargo)."
@@ -171,7 +183,8 @@ install:
 	@echo "  winget install --id LLVM.LLVM            # provides libclang for bindgen"
 	@echo "  winget install --id NASM.NASM            # FFmpeg assembler"
 	@echo "  winget install --id Rustlang.Rustup      # then: rustup default stable-$(RUST_TARGET)"
-	@echo "  (MSYS2 from msys2.org for bash/make/git; 'pacman -S pkgconf' for pkg-config)"
+	@echo "  (MSYS2 from msys2.org for bash/make/git; 'pacman -S mingw-w64-x86_64-pkgconf'"
+	@echo "   for a native-Windows pkg-config — the MSYS cygwin pkgconf emits POSIX paths cl/link reject)"
 	@echo ""
 	@echo "Then add Windows Defender exclusions (big build speedup, elevated PowerShell):"
 	@echo "  Add-MpPreference -ExclusionPath '$(CURRENT_DIR)'"
@@ -187,7 +200,12 @@ setup_ffmpeg: check-env
 # BUILD TARGETS
 # =============================================================================
 
+# The workspace pulls in ffmpeg-sys-next (via mv-extract), so it needs an FFmpeg
+# prefix on PKG_CONFIG_PATH / LIB just like build_extractors — the global
+# /mingw64 pkgconfig has no FFmpeg. Point it at the regular (sys) build.
 build_tools: check-env
+	PKG_CONFIG_PATH='$(REGULAR_PREFIX)/lib/pkgconfig' \
+	LIB="$$(cygpath -w '$(REGULAR_PREFIX)/lib');$$(cygpath -w '$(REGULAR_PREFIX)/bin');$$LIB" \
 	cargo build --workspace --release --target $(RUST_TARGET)
 
 TARGET_SYS  := $(CARGO_BASE)/extractor-sys
@@ -199,22 +217,13 @@ TARGET_CUST := $(CARGO_BASE)/extractor-cust
 # VERIFY: FFmpeg+MSVC may install the import .libs in <prefix>/bin rather than
 # <prefix>/lib — both are added to LIB so either layout links.
 #
-# PKG_CONFIG_PATH needs care here. The CI MSVC job runs under MSYS2's *MSYS*
-# environment (msystem: MSYS), whose /usr/bin/pkgconf is a cygwin build that
-# splits PKG_CONFIG_PATH on ':' (POSIX) — unlike the MINGW64 pkgconf the MinGW
-# job uses, which splits on ';' and so swallows a Windows "D:/..." path whole.
-# Under MSYS the drive-letter colon in $(CURDIR) (e.g. D:/a/...) gets shredded
-# into "D" + "/a/...", and libavutil.pc is never found. Two things are needed:
-#   1. cygpath -u → a colon-free POSIX path (/d/a/.../lib/pkgconfig).
-#   2. MSYS2_ENV_CONV_EXCL — MSYS2 otherwise rewrites path-shaped env vars back
-#      to Windows form (D:/...) when bash spawns the *native* cargo.exe, undoing
-#      step 1. Excluding PKG_CONFIG_PATH keeps the POSIX form intact end-to-end,
-#      and cygwin pkgconf resolves /d/... via its mount table.
-# The .pc's own prefix= still emits Windows -L/-I paths the MSVC toolchain wants.
+# PKG_CONFIG_PATH stays a plain Windows path ($(CURDIR) form, e.g. D:/a/...):
+# the MinGW pkgconf selected above splits on ';' and reads drive-letter paths
+# directly, then emits Windows -I/-L flags the MSVC toolchain understands. (This
+# is exactly what makefile.windows does — no cygpath gymnastics needed.)
 define build_extractors
-	MSYS2_ENV_CONV_EXCL='PKG_CONFIG_PATH' \
 	PATH='$(1)/bin':$$PATH \
-	PKG_CONFIG_PATH="$$(cygpath -u '$(1)/lib/pkgconfig')" \
+	PKG_CONFIG_PATH='$(1)/lib/pkgconfig' \
 	LIB="$$(cygpath -w '$(1)/lib');$$(cygpath -w '$(1)/bin');$$LIB" \
 	CARGO_TARGET_DIR='$(2)' \
 	cargo build --release --target $(RUST_TARGET) -p mv-extract $(3)
@@ -287,6 +296,9 @@ benchmark:
 # compiles the workspace and runs zero tests today — a placeholder for the
 # future suite, kept in step with makefile / makefile.windows.
 test: check-env
+	PKG_CONFIG_PATH='$(REGULAR_PREFIX)/lib/pkgconfig' \
+	PATH='$(REGULAR_PREFIX)/bin':$$PATH \
+	LIB="$$(cygpath -w '$(REGULAR_PREFIX)/lib');$$(cygpath -w '$(REGULAR_PREFIX)/bin');$$LIB" \
 	cargo test --workspace --target $(RUST_TARGET)
 
 # Decode a single video through the custom FFmpeg CLI. PATH carries the DLLs.

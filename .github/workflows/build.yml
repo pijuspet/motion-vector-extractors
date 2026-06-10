@@ -179,8 +179,12 @@ jobs:
         with:
           arch: x64
 
-      # path-type: inherit carries the MSVC env into MSYS2 bash. We pull in only
-      # bash/make/nasm/pkgconf — no MinGW gcc. Rust + cl come from the runner.
+      # path-type: inherit carries the MSVC env into MSYS2 bash. We pull in
+      # bash/make/nasm plus the *MinGW* pkgconf (mingw-w64-x86_64-pkgconf) — but
+      # no MinGW gcc. The MinGW pkgconf is a native-Windows build that emits
+      # Windows -I/-L paths cl.exe/link.exe can read; the MSYS cygwin pkgconf
+      # emits POSIX /d/a/... paths the MSVC toolchain can't use (see makefile.msvc
+      # PKG_CONFIG note). Rust + cl come from the runner.
       # VERIFY: path-type inherit can mangle Windows-style INCLUDE/LIB inside
       # MSYS2; this is the most likely thing to need adjustment.
       - uses: msys2/setup-msys2@v2
@@ -189,7 +193,7 @@ jobs:
           update: true
           path-type: inherit
           install: >-
-            make git patch diffutils nasm pkgconf
+            make git patch diffutils nasm pkgconf mingw-w64-x86_64-pkgconf
 
       - name: Ensure Rust MSVC target
         shell: pwsh
