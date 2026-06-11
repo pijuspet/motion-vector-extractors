@@ -213,16 +213,18 @@ setup_ffmpeg: check-env
 # `--workspace` fails in opencv's build script:
 #     Failed to find installed OpenCV package using probes:
 #     environment, pkg_config, vcpkg_cmake, vcpkg, cmake
-# The core deliverable (mv-extract, built by `build`) plus mv-types and
-# mv-publish need no OpenCV, so build all of those and leave the benchmark crate
-# out. To include it, install OpenCV (e.g. `vcpkg install opencv4:x64-windows`)
-# and expose it to the opencv crate — either put opencv4.pc on PKG_CONFIG_PATH or
-# set OPENCV_INCLUDE_PATHS / OPENCV_LINK_PATHS / OPENCV_LINK_LIBS (or OpenCV_DIR
-# for the cmake probe) — then drop `--exclude mv-bench`.
+# Only mv-video pulls in the heavyweight `opencv` crate (MV-visualization video),
+# which needs an MSVC-ABI OpenCV install the runner doesn't have — and a vcpkg
+# build of it would add ~30-60 min to CI. It's not part of the extractor
+# deliverable, so exclude just that crate; everything else (mv-types, mv-extract,
+# mv-bench, mv-publish) still builds. To include it, install OpenCV (e.g.
+# `vcpkg install opencv4:x64-windows`) and expose it to the opencv crate — put
+# opencv4.pc on PKG_CONFIG_PATH or set OPENCV_INCLUDE_PATHS / OPENCV_LINK_PATHS /
+# OPENCV_LINK_LIBS (or OpenCV_DIR for the cmake probe) — then drop the exclude.
 build_tools: check-env
 	PKG_CONFIG_PATH='$(REGULAR_PREFIX)/lib/pkgconfig' \
 	LIB="$$(cygpath -w '$(REGULAR_PREFIX)/lib');$$(cygpath -w '$(REGULAR_PREFIX)/bin');$$LIB" \
-	cargo build --workspace --exclude mv-bench --release --target $(RUST_TARGET)
+	cargo build --workspace --exclude mv-video --release --target $(RUST_TARGET)
 
 TARGET_SYS  := $(CARGO_BASE)/extractor-sys
 TARGET_CUST := $(CARGO_BASE)/extractor-cust
@@ -316,14 +318,14 @@ benchmark:
 
 # Run the workspace test suite (cargo test). No tests exist yet, so this just
 # compiles the workspace and runs zero tests today — a placeholder for the
-# future suite, kept in step with makefile / makefile.windows. mv-bench is
-# excluded for the same reason as build_tools: its `opencv` dependency needs a
-# system OpenCV install the MSVC toolchain doesn't provide.
+# future suite, kept in step with makefile / makefile.windows. mv-video is
+# excluded for the same reason as build_tools: its `opencv` dependency needs an
+# MSVC-ABI OpenCV install the runner doesn't provide.
 test: check-env
 	PKG_CONFIG_PATH='$(REGULAR_PREFIX)/lib/pkgconfig' \
 	PATH='$(REGULAR_PREFIX)/bin':$$PATH \
 	LIB="$$(cygpath -w '$(REGULAR_PREFIX)/lib');$$(cygpath -w '$(REGULAR_PREFIX)/bin');$$LIB" \
-	cargo test --workspace --exclude mv-bench --target $(RUST_TARGET)
+	cargo test --workspace --exclude mv-video --target $(RUST_TARGET)
 
 # Decode a single video through the custom FFmpeg CLI. PATH carries the DLLs.
 decode_ffmpeg:
@@ -346,8 +348,8 @@ help:
 	@echo "    make -f makefile.msvc check-env       # verify cl/link/nasm/cargo on PATH"
 	@echo "    make -f makefile.msvc setup_ffmpeg    # build both FFmpeg variants (--toolchain=msvc)"
 	@echo "    make -f makefile.msvc build           # build all extractors (sys + custom)"
-	@echo "    make -f makefile.msvc build_tools     # cargo build --workspace (excludes mv-bench / opencv)"
-	@echo "    make -f makefile.msvc test            # cargo test --workspace (excludes mv-bench / opencv)"
+	@echo "    make -f makefile.msvc build_tools     # cargo build --workspace (excludes mv-video / opencv)"
+	@echo "    make -f makefile.msvc test            # cargo test --workspace (excludes mv-video / opencv)"
 	@echo "    make -f makefile.msvc benchmark       # single-video benchmark (needs system OpenCV)"
 	@echo "    make -f makefile.msvc benchmark_all   # iterate over VIDEO_TYPES (needs system OpenCV)"
 	@echo ""
