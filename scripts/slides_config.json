@@ -46,6 +46,13 @@
             "ylabel": "Frames per Second (Higher = Better)"
         },
         {
+            "metric": "fps_per_stream",
+            "title": "Per-Stream Efficiency Scaling",
+            "subtitle": "High Profile Methods: FPS per Stream vs Streams — flat = perfect scaling, drop = contention",
+            "filename": "scaling_fps_per_stream.png",
+            "ylabel": "FPS per Stream (Higher = Better)"
+        },
+        {
             "metric": "time_per_frame",
             "title": "Latency Scaling",
             "subtitle": "High Profile Methods: Time per Frame vs Streams",
@@ -84,6 +91,14 @@
             "ylabel": "Frames per Second (Higher = Better)"
         },
         {
+            "metric": "fps_per_stream",
+            "chart_title": "Per-Stream Efficiency (FPS/Stream) vs Streams — Grouped Bar",
+            "filename": "grouped_barchart_fps_per_stream.png",
+            "slide_title": "Grouped FPS/Stream Comparison (All Streams)",
+            "slide_subtitle": "All High Profile Methods: FPS per Stream, Grouped Bar Chart",
+            "ylabel": "FPS per Stream (Higher = Better)"
+        },
+        {
             "metric": "time_per_frame",
             "chart_title": "Algorithm Latency (ms/frame) vs Streams — Grouped Bar",
             "filename": "grouped_barchart_timeperframe.png",
@@ -116,6 +131,14 @@
             "slide_title": "Algorithm FPS Comparison ({streams} Streams)",
             "slide_subtitle": "Throughput (FPS) by High Profile Method at {streams} Streams",
             "ylabel": "Frames per Second (Higher = Better)"
+        },
+        {
+            "metric": "fps_per_stream",
+            "chart_title": "Algorithm Comparison: FPS/Stream @ {streams} Streams",
+            "filename": "barchart_fps_per_stream_{streams}streams.png",
+            "slide_title": "Algorithm FPS/Stream Comparison ({streams} Streams)",
+            "slide_subtitle": "Per-Stream Efficiency by High Profile Method at {streams} Streams",
+            "ylabel": "FPS per Stream (Higher = Better)"
         },
         {
             "metric": "time_per_frame",

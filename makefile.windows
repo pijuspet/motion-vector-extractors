@@ -15,8 +15,24 @@ SHELL := /bin/bash
 
 STREAMS = 1
 NRUNS = 3
+# Set KEYFRAMES_ONLY=1 to have every extractor decode I-frames only.
+KEYFRAMES_ONLY ?= 0
+# Set THREAD_COUNT=N to pin every extractor to N threads (0 = FFmpeg auto).
+THREAD_COUNT ?= 0
+# Set WRITE_CSV=0 to skip writing per-extractor MV output CSV files.
+WRITE_CSV ?= 1
 
 VIDEO_NAME ?= bigbunny_walking.mp4
+
+# All video names iterated by benchmark_keyframes and benchmark_threads.
+# Files that don't exist for a given type are silently skipped.
+VIDEO_NAMES ?= bigbunny_walking.mp4 \
+               bigbunny.mp4 \
+               stickman.mp4 \
+               dashcam.mp4 \
+               2018-03-05.09-50-15.09-55-01.school.G423.r13.mp4 \
+               2018-03-15.15-55-00.16-00-00.bus.G475.r13.mp4 \
+               MCTTR0102b.mp4
 
 VIDEO_TYPES := h264_cabac h264_cavlc h264_avi h265
 VIDEO_TYPE ?= h264_cabac
@@ -224,9 +240,9 @@ benchmark_all:
 			echo ""; \
 			echo "========== $$vtype / $$filepath =========="; \
 			if [ -z "$(TYPE)" ]; then \
-				cargo run --bin full_benchmark "$$filepath" $(STREAMS) $$vtype cust $(NRUNS) 0; \
+				cargo run --bin full_benchmark "$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) 0; \
 			else \
-				cargo run --bin full_benchmark "$$filepath" $(STREAMS) $$vtype $(TYPE) $(NRUNS) 0; \
+				cargo run --bin full_benchmark "$$filepath" $(STREAMS) $$vtype $(TYPE) $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) 0; \
 			fi; \
 		else \
 			echo "SKIP: $$filepath not found"; \
@@ -238,10 +254,58 @@ benchmark_all:
 # winpty-wrapped interactive prompt.
 benchmark:
 ifeq ($(strip $(STEPS)),)
-	winpty cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS)
+	winpty cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV)
 else
-	cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(STEPS)
+	cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(STEPS)
 endif
+
+# Run the benchmark with keyframe-only decoding across every video in
+# VIDEO_NAMES × VIDEO_TYPES. KEYFRAMES_ONLY=1 is inherited by every extractor
+# child process via the spawned process environment.
+benchmark_keyframes:
+	@for vname in $(VIDEO_NAMES); do \
+		for vtype in $(VIDEO_TYPES); do \
+			if [ "$$vtype" = "h264_avi" ]; then \
+				filepath=$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi; \
+			else \
+				filepath=$(CURRENT_DIR)/videos/$$vtype/$$vname; \
+			fi; \
+			if [ -f "$$filepath" ]; then \
+				echo ""; \
+				echo "========== $$vname / $$vtype (keyframes only) =========="; \
+				cargo run --bin full_benchmark \
+					"$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) 1 $(WRITE_CSV) 0; \
+			fi; \
+		done; \
+	done
+
+# Sweep thread counts 1→2→4→…→MAX_THREADS across every video in
+# VIDEO_NAMES × VIDEO_TYPES. Useful for understanding multi-thread scaling.
+# Override: make -f makefile.windows benchmark_threads MAX_THREADS=16
+MAX_THREADS ?= $(shell nproc)
+benchmark_threads:
+	@t=1; while [ $$t -le $(MAX_THREADS) ]; do \
+		echo ""; \
+		echo "========================================"; \
+		echo "  THREAD COUNT = $$t"; \
+		echo "========================================"; \
+		for vname in $(VIDEO_NAMES); do \
+			for vtype in $(VIDEO_TYPES); do \
+				if [ "$$vtype" = "h264_avi" ]; then \
+					filepath=$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi; \
+				else \
+					filepath=$(CURRENT_DIR)/videos/$$vtype/$$vname; \
+				fi; \
+				if [ -f "$$filepath" ]; then \
+					echo ""; \
+					echo "--- $$vname / $$vtype ---"; \
+					cargo run --bin full_benchmark \
+						"$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $$t $(KEYFRAMES_ONLY) $(WRITE_CSV) 0; \
+				fi; \
+			done; \
+		done; \
+		t=$$((t * 2)); \
+	done
 
 # =============================================================================
 # DEVELOPMENT & TESTING TOOLS
@@ -255,7 +319,7 @@ test: check-shell
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) 1 2 5
+	cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) 1 2 5
 
 # Decode a single video through the custom FFmpeg. PATH carries the DLLs.
 decode_ffmpeg:
@@ -348,15 +412,17 @@ help:
 	@echo "    make -f makefile.windows build_sys            # build extractors against system FFmpeg only"
 	@echo "    make -f makefile.windows build_tools          # cargo build --workspace --release"
 	@echo "    make -f makefile.windows test                 # cargo test --workspace"
-	@echo "    make -f makefile.windows benchmark            # single-video benchmark"
-	@echo "    make -f makefile.windows benchmark_all        # iterate over VIDEO_TYPES"
-	@echo "    make -f makefile.windows all                  # benchmark_all for sys + cust"
+	@echo "    make -f makefile.windows benchmark                    # single-video benchmark"
+	@echo "    make -f makefile.windows benchmark_all               # iterate over VIDEO_TYPES"
+	@echo "    make -f makefile.windows all                         # benchmark_all for sys + cust"
+	@echo "    make -f makefile.windows benchmark_keyframes         # all videos, keyframes-only mode"
+	@echo "    make -f makefile.windows benchmark_threads           # all videos, sweep thread counts"
 	@echo "    make -f makefile.windows decode_ffmpeg        # decode VIDEO_FILE via custom FFmpeg"
 	@echo "    make -f makefile.windows publish              # publish report"
 	@echo "    make -f makefile.windows generate_video       # render MV overlay video"
 	@echo "    make -f makefile.windows installer_diff       # regenerate custom_ffmpeg.diff"
 	@echo ""
-	@echo "  Vars: VIDEO_NAME=$(VIDEO_NAME)  VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)"
+	@echo "  Vars: VIDEO_NAME=$(VIDEO_NAME)  VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)  KEYFRAMES_ONLY=$(KEYFRAMES_ONLY)  THREAD_COUNT=$(THREAD_COUNT)  WRITE_CSV=$(WRITE_CSV)"
 	@echo ""
 	@echo "  Notes:"
 	@echo "    - VTune (profiler) and perf (flamegraph) are Linux-only and skipped on Windows."

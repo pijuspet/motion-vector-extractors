@@ -99,7 +99,7 @@ def pretty_table(df, filename, plots_folder, col_width=2.8, row_height=0.8):
 
 
 def plot_grouped_bar(
-    df, metric, title, ylabel, filename, plots_folder, palette="tab20"
+    df, metric, title, ylabel, filename, plots_folder, palette="tab20", run_info=""
 ):
     plt.figure(figsize=(16, 9))
     sns.barplot(
@@ -110,13 +110,15 @@ def plot_grouped_bar(
     plt.ylabel(ylabel, fontsize=14)
     plt.legend(title="Method", loc="best", fontsize=12)
     plt.tight_layout()
+    if run_info:
+        plt.figtext(0.01, 0.01, run_info, fontsize=10, color="gray", style="italic", ha="left", va="bottom")
     save_path = os.path.join(plots_folder, filename)
     plt.savefig(save_path)
     plt.close()
     print(f"Saved grouped bar chart: {save_path}")
 
 
-def plot_metric(df, metric, title, ylabel, filename, plots_folder):
+def plot_metric(df, metric, title, ylabel, filename, plots_folder, run_info=""):
     plt.figure(figsize=(16, 9))
     sns.barplot(
         data=df, x="method", y=metric, hue="method", palette="viridis", legend=False
@@ -127,13 +129,15 @@ def plot_metric(df, metric, title, ylabel, filename, plots_folder):
     plt.xticks(rotation=30, ha="right", fontsize=12)
     plt.yticks(fontsize=12)
     plt.tight_layout()
+    if run_info:
+        plt.figtext(0.01, 0.01, run_info, fontsize=10, color="gray", style="italic", ha="left", va="bottom")
     save_path = os.path.join(plots_folder, filename)
     plt.savefig(save_path)
     plt.close()
     print(f"Saved plot: {save_path}")
 
 
-def plot_scaling(df, metric, title, ylabel, filename, plots_folder, legend_loc="best"):
+def plot_scaling(df, metric, title, ylabel, filename, plots_folder, legend_loc="best", run_info=""):
     plt.figure(figsize=(16, 9))
     sns.lineplot(data=df, x="streams", y=metric, hue="method", marker="o")
     plt.title(title, fontsize=20, loc="left")
@@ -141,6 +145,8 @@ def plot_scaling(df, metric, title, ylabel, filename, plots_folder, legend_loc="
     plt.ylabel(ylabel, fontsize=14)
     plt.legend(title="Method", loc=legend_loc, fontsize=12)
     plt.tight_layout()
+    if run_info:
+        plt.figtext(0.01, 0.01, run_info, fontsize=10, color="gray", style="italic", ha="left", va="bottom")
     save_path = os.path.join(plots_folder, filename)
     plt.savefig(save_path)
     plt.close()

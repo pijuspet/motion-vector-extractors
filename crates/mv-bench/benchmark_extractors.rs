@@ -119,7 +119,8 @@ fn spawn_processes(
     output_dir: &str,
     exe_dir: &str,
     is_verbose: bool,
-    single_threaded: bool,
+    keyframes_only: bool,
+    thread_count: i32,
 ) -> Vec<ChildProcess> {
     let mut processes = Vec::with_capacity(stream_count as usize);
 
@@ -156,14 +157,16 @@ fn spawn_processes(
                     "0"
                 }
             };
-            let single_thr_str = if single_threaded { "1" } else { "0" };
+            let tc_str = thread_count.to_string();
+            let kf_str = if keyframes_only { "1" } else { "0" };
 
             let c_exe = CString::new(exe_path.as_str()).unwrap();
             let c_video = CString::new(video_file).unwrap();
             let c_print = CString::new(print_str).unwrap();
             let c_csv = CString::new(csv_path.as_str()).unwrap();
             let c_verbose = CString::new(verbose_str).unwrap();
-            let c_single = CString::new(single_thr_str).unwrap();
+            let c_tc = CString::new(tc_str.as_str()).unwrap();
+            let c_kf = CString::new(kf_str).unwrap();
 
             unsafe {
                 libc::execl(
@@ -173,7 +176,8 @@ fn spawn_processes(
                     c_print.as_ptr(),
                     c_csv.as_ptr(),
                     c_verbose.as_ptr(),
-                    c_single.as_ptr(),
+                    c_tc.as_ptr(),
+                    c_kf.as_ptr(),
                     std::ptr::null::<libc::c_char>(),
                 );
                 // execl only returns on error
@@ -326,7 +330,8 @@ fn spawn_processes(
     output_dir: &str,
     exe_dir: &str,
     is_verbose: bool,
-    single_threaded: bool,
+    keyframes_only: bool,
+    thread_count: i32,
 ) -> Vec<ChildProcess> {
     use std::process::{Command, Stdio};
     let mut processes = Vec::with_capacity(stream_count as usize);
@@ -336,10 +341,11 @@ fn spawn_processes(
         let csv_path = format!("{}/{}_{}.csv", output_dir, method.output_csv_prefix(), i);
         let print_str = if print_csv { "1" } else { "0" };
         let verbose_str = if i > 0 || !is_verbose { "0" } else { "1" };
-        let single_thr_str = if single_threaded { "1" } else { "0" };
+        let tc_str = thread_count.to_string();
+        let kf_str = if keyframes_only { "1" } else { "0" };
 
         let child = Command::new(&exe_path)
-            .args([video_file, print_str, &csv_path, verbose_str, single_thr_str])
+            .args([video_file, print_str, &csv_path, verbose_str, &tc_str, kf_str])
             .stdout(Stdio::piped())
             .spawn()
             .unwrap_or_else(|e| {
@@ -428,7 +434,8 @@ fn run_benchmark(
     output_dir: &str,
     exe_dir: &str,
     is_verbose: bool,
-    single_threaded: bool,
+    keyframes_only: bool,
+    thread_count: i32,
 ) -> BenchmarkResult {
     let mut result = BenchmarkResult::default();
     result.name = method.name.to_string();
@@ -449,7 +456,8 @@ fn run_benchmark(
         output_dir,
         exe_dir,
         is_verbose,
-        single_threaded,
+        keyframes_only,
+        thread_count,
     );
 
     let (total_frames, _total_mvs) = collect_process_results(
@@ -596,9 +604,10 @@ pub fn run_benchmark_extractors(
     stream_count: i32,
     output_dir: &str,
     exe_dir: &str,
-    single_threaded: bool,
     is_verbose: bool,
     print_csv: bool,
+    keyframes_only: bool,
+    thread_count: i32,
 ) -> Option<Vec<SharedBenchmarkResult>> {
     if stream_count < 1 || stream_count > MAX_STREAMS {
         eprintln!("Streams must be between 1 and {}", MAX_STREAMS);
@@ -609,8 +618,12 @@ pub fn run_benchmark_extractors(
         println!("Video file       : {}", video_file);
         println!("Streams / method : {}", stream_count);
         println!(
-            "Single-threaded  : {}",
-            if single_threaded { "yes" } else { "no" }
+            "Threads          : {}",
+            if thread_count == 0 { "auto".to_string() } else { thread_count.to_string() }
+        );
+        println!(
+            "Keyframes only   : {}",
+            if keyframes_only { "yes" } else { "no" }
         );
         println!(
             "Print CSV        : {}\n",
@@ -631,7 +644,8 @@ pub fn run_benchmark_extractors(
             output_dir,
             exe_dir,
             is_verbose,
-            single_threaded,
+            keyframes_only,
+            thread_count,
         );
         if is_verbose {
             println!(

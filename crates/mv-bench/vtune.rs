@@ -161,7 +161,6 @@ impl BenchmarkRunner {
 
         let do_print = 1;
         let is_verbose = 1;
-        let is_single_threaded = 1;
 
         let extractor_exec = self
             .extractor_executables
@@ -195,14 +194,13 @@ impl BenchmarkRunner {
         }
 
         let vtune_collect_cmd = format!(
-            "vtune -collect hotspots -knob sampling-mode=sw -result-dir {} -- {} {} {} {} {} {}",
+            "vtune -collect hotspots -knob sampling-mode=sw -result-dir {} -- {} {} {} {} {}",
             self.vtune_dir.display(),
             extractor_exec.display(),
             self.video_file,
             do_print,
             output_csv.display(),
             is_verbose,
-            is_single_threaded
         );
 
         if !self.run_shell_command(

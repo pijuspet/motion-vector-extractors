@@ -40,9 +40,10 @@ pub fn run_benchmark(
     streams: i32,
     project_absolute_path: &str,
     results_absolute_path: &str,
-    is_single_threaded: i32,
     is_verbose: i32,
     write_to_csv: i32,
+    keyframes_only: bool,
+    thread_count: i32,
 ) -> Vec<BenchmarkResult> {
     println!("Running benchmark with {} streams...", streams);
 
@@ -51,9 +52,10 @@ pub fn run_benchmark(
         streams,
         results_absolute_path,
         project_absolute_path,
-        is_single_threaded != 0,
         is_verbose != 0,
         write_to_csv != 0,
+        keyframes_only,
+        thread_count,
     )
     .unwrap_or_default()
 }
@@ -65,10 +67,11 @@ pub fn run_benchmark_averaged(
     streams: i32,
     project_absolute_path: &str,
     results_absolute_path: &str,
-    is_single_threaded: i32,
     is_verbose: i32,
     write_to_csv: i32,
     n_runs: usize,
+    keyframes_only: bool,
+    thread_count: i32,
 ) -> Vec<BenchmarkResult> {
     let mut all_runs: Vec<Vec<BenchmarkResult>> = Vec::new();
 
@@ -79,9 +82,10 @@ pub fn run_benchmark_averaged(
             streams,
             project_absolute_path,
             results_absolute_path,
-            is_single_threaded,
             is_verbose,
             write_to_csv,
+            keyframes_only,
+            thread_count,
         );
         if !results.is_empty() {
             all_runs.push(results);
@@ -164,11 +168,12 @@ pub fn benchmark(
     results_absolute_path: &str,
     slides_config: &str,
     plots_folder: &str,
-    is_single_threaded: i32,
     is_verbose: i32,
     write_to_csv: i32,
     video_type: &str,
     n_runs: usize,
+    keyframes_only: bool,
+    thread_count: i32,
 ) {
     let stream_steps = generate_stream_runs(streams);
     println!("Stream ranges to test: {:?}", stream_steps);
@@ -185,10 +190,11 @@ pub fn benchmark(
             s,
             project_absolute_path,
             results_absolute_path,
-            is_single_threaded,
             is_verbose,
             write_to_csv,
             n_runs,
+            keyframes_only,
+            thread_count,
         );
         if results.is_empty() {
             println!("Warning: No data returned for streams={}", s);
@@ -210,6 +216,14 @@ pub fn benchmark(
 
     // ── Python slide generation via scripts/slides.py ──
     println!("Running Python slide generation...");
+
+    let threads_str = if thread_count == 0 { "auto".to_string() } else { thread_count.to_string() };
+    let run_info = format!(
+        "Keyframes only: {} | Threads: {}",
+        if keyframes_only { "yes" } else { "no" },
+        threads_str,
+    );
+
     #[cfg(windows)]
     let venv_python = format!("{}/venv-motion-vectors/bin/python.exe", project_absolute_path);
     #[cfg(not(windows))]
@@ -226,12 +240,13 @@ pub fn benchmark(
          import pandas as pd; \
          import slides as s; \
          df = pd.read_csv('{csv}'); \
-         s.produce_slides(df, '{cfg}', 'benchmark_comparison_slides.pptx', '{plots}', '{vtype}')",
+         s.produce_slides(df, '{cfg}', 'benchmark_comparison_slides.pptx', '{plots}', '{vtype}', '{rinfo}')",
         scripts = scripts_dir,
         csv = csv_path_fwd,
         cfg = cfg_fwd,
         plots = plots_fwd,
         vtype = video_type,
+        rinfo = run_info,
     );
 
     // On Windows the Python child inherits the Windows system PATH, not

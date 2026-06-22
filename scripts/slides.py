@@ -121,7 +121,7 @@ def add_fastest_methods_slide(slides, df_hp, streams_order, plots_folder, config
     )
 
 
-def add_scaling_charts(slides, df_hp, plots_folder, config_list):
+def add_scaling_charts(slides, df_hp, plots_folder, config_list, run_info=""):
     for cfg in config_list:
         plts.plot_scaling(
             df_hp,
@@ -130,6 +130,7 @@ def add_scaling_charts(slides, df_hp, plots_folder, config_list):
             cfg["ylabel"],
             cfg["filename"],
             plots_folder,
+            run_info=run_info,
         )
         slides.append(
             {
@@ -140,7 +141,7 @@ def add_scaling_charts(slides, df_hp, plots_folder, config_list):
         )
 
 
-def add_grouped_bar_charts(slides, df_hp, plots_folder, config_list):
+def add_grouped_bar_charts(slides, df_hp, plots_folder, config_list, run_info=""):
     for cfg in config_list:
         plts.plot_grouped_bar(
             df_hp,
@@ -149,6 +150,7 @@ def add_grouped_bar_charts(slides, df_hp, plots_folder, config_list):
             cfg["ylabel"],
             cfg["filename"],
             plots_folder,
+            run_info=run_info,
         )
         slides.append(
             {
@@ -174,6 +176,7 @@ def create_detailed_table(df_sub):
         "method":           "Method",
         "time_per_frame":   "Time/Frame (ms)",
         "fps":              "FPS (aggregate)",
+        "fps_per_stream":   "FPS/Stream",
         "cpu_ms_per_frame": "CPU ms/frame",
         "memory":           "Mem Total KB",
         "mem_per_stream":   "Mem/Strm KB",
@@ -221,7 +224,7 @@ def add_detailed_tables(slides, df_hp, streams_order, plots_folder, config_list)
 
 
 def add_per_stream_metric_charts(
-    slides, df_hp, streams_order, plots_folder, config_list
+    slides, df_hp, streams_order, plots_folder, config_list, run_info=""
 ):
     for streams in streams_order:
         df_sub = df_hp[df_hp["streams"] == streams]
@@ -244,6 +247,7 @@ def add_per_stream_metric_charts(
                 cfg["ylabel"],
                 filename,
                 plots_folder,
+                run_info=run_info,
             )
 
             slides.append(
@@ -255,7 +259,7 @@ def add_per_stream_metric_charts(
             )
 
 
-def produce_slides(df_hp, slides_config_path, file_name, plots_folder, video_type):
+def produce_slides(df_hp, slides_config_path, file_name, plots_folder, video_type, run_info=""):
     config = load_benchmark_config(slides_config_path)
     if not config:
         print("Aborting slide generation due to missing or invalid config.")
@@ -270,6 +274,9 @@ def produce_slides(df_hp, slides_config_path, file_name, plots_folder, video_typ
         print(f"  Available columns: {list(df_hp.columns)}")
         print("  Slides may be incomplete. Check parse_output() and C++ output format.")
 
+    df_hp = df_hp.copy()
+    df_hp["fps_per_stream"] = df_hp["fps"] / df_hp["streams"].replace(0, float("nan"))
+
     slides = []
     streams_order = sorted(df_hp["streams"].unique())
 
@@ -282,15 +289,15 @@ def produce_slides(df_hp, slides_config_path, file_name, plots_folder, video_typ
     add_section_header(slides, "Speedup Analysis",
                         "All metrics normalised so >1.0 = improvement over baseline")
     speedup.add_speedup_slides(
-        slides, df_hp, plots_folder, video_type, config.get("speedup_metrics", {})
+        slides, df_hp, plots_folder, video_type, config.get("speedup_metrics", {}), run_info=run_info
     )
 
     # 2. Scaling line charts
-    add_scaling_charts(slides, df_hp, plots_folder, config.get("scaling_metrics", []))
+    add_scaling_charts(slides, df_hp, plots_folder, config.get("scaling_metrics", []), run_info=run_info)
 
     # 3. Grouped bar charts
     add_grouped_bar_charts(
-        slides, df_hp, plots_folder, config.get("grouped_bar_metrics", [])
+        slides, df_hp, plots_folder, config.get("grouped_bar_metrics", []), run_info=run_info
     )
 
     # 4. Section header for detailed tables
@@ -303,7 +310,7 @@ def produce_slides(df_hp, slides_config_path, file_name, plots_folder, video_typ
 
     # 6. Individual bar charts per stream and metric
     add_per_stream_metric_charts(
-        slides, df_hp, streams_order, plots_folder, config.get("per_stream_metrics", [])
+        slides, df_hp, streams_order, plots_folder, config.get("per_stream_metrics", []), run_info=run_info
     )
 
     save_to_ppt(slides, file_name, plots_folder)

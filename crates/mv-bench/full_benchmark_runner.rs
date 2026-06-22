@@ -42,7 +42,11 @@ fn main() {
         process::exit(1);
     }
 
-    let runner = BenchmarkRunner::new(video_file, video_type, build_type, streams, n_runs);
+    let thread_count: i32 = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let keyframes_only = args.get(7).map(|s| s == "1").unwrap_or(false);
+    let write_csv = args.get(8).map(|s| s == "1").unwrap_or(false);
+
+    let runner = BenchmarkRunner::new(video_file, video_type, build_type, streams, n_runs, thread_count, keyframes_only, write_csv);
 
     println!();
     println!("Select steps to run (enter one or more numbers separated by space):");
@@ -55,8 +59,8 @@ fn main() {
     println!("  0: Run ALL steps");
     println!();
 
-    let choices: Vec<String> = if args.len() > 6 {
-        args[6..].to_vec()
+    let choices: Vec<String> = if args.len() > 9 {
+        args[9..].to_vec()
     } else {
         print!("Choice(s): ");
         io::stdout().flush().ok();

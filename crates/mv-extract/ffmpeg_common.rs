@@ -24,22 +24,29 @@ use mv_types::motion_vector::MvCompact;
 
 /// CLI arguments shared by every extractor binary.
 ///
-/// Layout: `<input file> <print mv> <output file> <is verbose> <is single threaded>`
+/// Layout: `<input file> <print mv> <output file> <is verbose> <thread_count> <keyframes_only>`
+///
+/// `thread_count` maps directly to `AVCodecContext.thread_count`: 0 = FFmpeg
+/// picks automatically, 1 = single-threaded, N = N threads.
+/// `keyframes_only` = 1 enables I-frame-only decoding (stream discard + skip_frame).
 pub struct ExtractorArgs {
     pub video_file: String,
     pub do_print: bool,
     pub output_file: String,
     pub is_verbose: bool,
-    pub is_single_threaded: bool,
+    /// 0 = auto (FFmpeg default), 1 = single-threaded, N = N threads.
+    pub thread_count: i32,
+    /// Decode only I-frames; set via env var `KEYFRAMES_ONLY=1`.
+    pub keyframes_only: bool,
 }
 
 impl ExtractorArgs {
     pub fn from_env() -> Option<Self> {
         let argv: Vec<String> = std::env::args().collect();
-        if argv.len() < 6 {
+        if argv.len() < 7 {
             let exe = argv.first().cloned().unwrap_or_else(|| "extractor".to_string());
             eprintln!(
-                "Usage: {} <input file> <print mv> <output file> <is verbose> <is single threaded>",
+                "Usage: {} <input file> <print mv> <output file> <is verbose> <thread_count> <keyframes_only>",
                 exe
             );
             return None;
@@ -49,7 +56,8 @@ impl ExtractorArgs {
             do_print: argv[2].parse::<i32>().unwrap_or(0) != 0,
             output_file: argv[3].clone(),
             is_verbose: argv[4].parse::<i32>().unwrap_or(0) != 0,
-            is_single_threaded: argv[5].parse::<i32>().unwrap_or(0) != 0,
+            thread_count: argv[5].parse::<i32>().unwrap_or(0),
+            keyframes_only: argv[6] == "1",
         })
     }
 }

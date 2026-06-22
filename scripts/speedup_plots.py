@@ -21,19 +21,19 @@ _SPEEDUP_Y_MAX = {
     ("h264_cavlc",        "cpu_ms_per_frame"): 5.1,
     ("h264_cavlc",        "memory"):           1.7,
 
-    ("h264_cabac",        "fps"):              2.0,
-    ("h264_cabac",        "time_per_frame"):   2.0,
-    ("h264_cabac",        "cpu_ms_per_frame"): 2.0,
+    ("h264_cabac",        "fps"):              4.7,
+    ("h264_cabac",        "time_per_frame"):   4.7,
+    ("h264_cabac",        "cpu_ms_per_frame"): 4.7,
     ("h264_cabac",        "memory"):           2.7,
 
-    ("h264_avi",          "fps"):              3,
-    ("h264_avi",          "time_per_frame"):   3,
-    ("h264_avi",          "cpu_ms_per_frame"): 3,
+    ("h264_avi",          "fps"):              4.7,
+    ("h264_avi",          "time_per_frame"):   4.7,
+    ("h264_avi",          "cpu_ms_per_frame"): 4.7,
     ("h264_avi",          "memory"):           2,
 
-    ("h265",         "fps"):              3.7,
-    ("h265",         "time_per_frame"):   3.7,
-    ("h265",         "cpu_ms_per_frame"): 3.7,
+    ("h265",         "fps"):              4.7,
+    ("h265",         "time_per_frame"):   4.7,
+    ("h265",         "cpu_ms_per_frame"): 4.7,
     ("h265",         "memory"):           1.05,
 }
 
@@ -131,6 +131,7 @@ def plot_speedup_line(
     filename: str,
     plots_folder: str,
     video_type: str = "",
+    run_info: str = "",
 ):
     sub = speedup_df[speedup_df["metric"] == metric].copy()
     if sub.empty:
@@ -197,13 +198,15 @@ def plot_speedup_line(
     ax.grid(axis="y", alpha=0.3)
 
     fig.tight_layout()
+    if run_info:
+        fig.text(0.01, 0.01, run_info, fontsize=10, color="gray", style="italic", ha="left", va="bottom")
     save_path = os.path.join(plots_folder, filename)
     fig.savefig(save_path, dpi=150)
     plt.close(fig)
     print(f"[speedup] Saved: {save_path}")
 
 
-def _render_heatmap(pivot: pd.DataFrame, title: str, filename: str, plots_folder: str):
+def _render_heatmap(pivot: pd.DataFrame, title: str, filename: str, plots_folder: str, run_info: str = ""):
     col_order = [c for c in _METRICS if c in pivot.columns]
     pivot = pivot[col_order]
     pivot.columns = [_label(c) for c in pivot.columns]
@@ -235,13 +238,15 @@ def _render_heatmap(pivot: pd.DataFrame, title: str, filename: str, plots_folder
     ax.tick_params(axis="x", rotation=20, labelsize=12)
     ax.tick_params(axis="y", rotation=0, labelsize=12)
     fig.tight_layout()
+    if run_info:
+        fig.text(0.01, 0.01, run_info, fontsize=10, color="gray", style="italic", ha="left", va="bottom")
     save_path = os.path.join(plots_folder, filename)
     fig.savefig(save_path, dpi=150)
     plt.close(fig)
     print(f"[speedup] Saved heatmap: {save_path}")
 
 
-def plot_speedup_heatmap(speedup_df, baseline_method, filename, plots_folder):
+def plot_speedup_heatmap(speedup_df, baseline_method, filename, plots_folder, run_info=""):
     pivot = speedup_df.pivot_table(
         index="method", columns="metric", values="speedup", aggfunc="mean"
     )
@@ -250,11 +255,12 @@ def plot_speedup_heatmap(speedup_df, baseline_method, filename, plots_folder):
         f"Average Speedup vs Baseline ({baseline_method})",
         filename,
         plots_folder,
+        run_info=run_info,
     )
 
 
 def plot_speedup_heatmap_per_stream(
-    speedup_df, baseline_method, streams_val, filename, plots_folder
+    speedup_df, baseline_method, streams_val, filename, plots_folder, run_info=""
 ):
     sub = speedup_df[speedup_df["streams"] == streams_val]
     if sub.empty:
@@ -268,11 +274,12 @@ def plot_speedup_heatmap_per_stream(
         f"Speedup at {streams_val} Streams vs Baseline ({baseline_method})",
         filename,
         plots_folder,
+        run_info=run_info,
     )
 
 
 def add_speedup_slides(
-    slides: list, df_hp: pd.DataFrame, plots_folder: str, video_type: str, config: dict
+    slides: list, df_hp: pd.DataFrame, plots_folder: str, video_type: str, config: dict, run_info: str = ""
 ):
     if not config:
         return
@@ -290,6 +297,7 @@ def add_speedup_slides(
         baseline_method,
         heatmap_cfg["filename"],
         plots_folder,
+        run_info=run_info,
     )
     slides.append(
         {
@@ -308,6 +316,7 @@ def add_speedup_slides(
             streams_val,
             filename,
             plots_folder,
+            run_info=run_info,
         )
         slides.append(
             {
@@ -333,6 +342,7 @@ def add_speedup_slides(
             filename,
             plots_folder,
             video_type,
+            run_info=run_info,
         )
         slides.append(
             {

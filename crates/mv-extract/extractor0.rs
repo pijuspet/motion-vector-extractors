@@ -48,6 +48,9 @@ fn main() {
         }
 
         let video_stream = *(*fmt_ctx).streams.add(vsi as usize);
+        if args.keyframes_only {
+            (*video_stream).discard = ff::AVDiscard::AVDISCARD_NONKEY;
+        }
         //endregion
 
         let dec_ctx = ff::avcodec_alloc_context3(ptr::null());
@@ -62,11 +65,14 @@ fn main() {
 
         //region flag setting
         let mut opts: *mut ff::AVDictionary = ptr::null_mut();
-        (*dec_ctx).thread_count = if args.is_single_threaded { 1 } else { 0 };
-        (*dec_ctx).thread_type = ff::FF_THREAD_SLICE as i32;
+        (*dec_ctx).thread_count = args.thread_count;
+        // (*dec_ctx).thread_type = ff::FF_THREAD_SLICE as i32;
         let key = CString::new("flags2").unwrap();
         let val = CString::new("+export_mvs").unwrap();
         ff::av_dict_set(&mut opts, key.as_ptr(), val.as_ptr(), 0);
+        if args.keyframes_only {
+            (*dec_ctx).skip_frame = ff::AVDiscard::AVDISCARD_NONKEY;
+        }
         //endregion
 
         //region codec

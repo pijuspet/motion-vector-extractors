@@ -2,16 +2,31 @@
 # CONFIGURATION & GLOBAL VARIABLES
 # =============================================================================
 
-STREAMS = 1
+STREAMS = 15
 NRUNS = 3
+# Set KEYFRAMES_ONLY=1 to have every extractor decode I-frames only.
+KEYFRAMES_ONLY ?= 0
+# Set THREAD_COUNT=N to pin every extractor to N threads (0 = FFmpeg auto).
+THREAD_COUNT ?= 28
+# Set WRITE_CSV=0 to skip writing per-extractor MV output CSV files.
+WRITE_CSV ?= 0
 
-VIDEO_NAME ?= bigbunny_walking.mp4
 # VIDEO_NAME ?= bigbunny.mp4
 # VIDEO_NAME ?= stickman.mp4
 # VIDEO_NAME ?= dashcam.mp4
 # VIDEO_NAME ?= 2018-03-05.09-50-15.09-55-01.school.G423.r13.mp4
 # VIDEO_NAME ?= 2018-03-15.15-55-00.16-00-00.bus.G475.r13.mp4
 # VIDEO_NAME ?= MCTTR0102b.mp4
+VIDEO_NAME ?= bigbunny_walking.mp4
+
+# All video names iterated by benchmark_keyframes and benchmark_threads.
+# Files that don't exist for a given type are silently skipped.
+# 2018-03-05.09-50-15.09-55-01.school.G423.r13.mp4 
+VIDEO_NAMES ?= 2018-03-15.15-55-00.16-00-00.bus.G475.r13.mp4 \
+               MCTTR0102b.mp4 
+			#    bigbunny_walking.mp4 \
+            #    stickman.mp4 \
+            #    dashcam.mp4 
 
 VIDEO_TYPES := h264_cabac h264_cavlc h264_avi h265
 VIDEO_TYPE = h264_cabac
@@ -216,9 +231,9 @@ benchmark_all:
 		if [ -f "$$filepath" ]; then \
 			echo "\n========== $$vtype / $$filepath =========="; \
 			if [ -z "$(TYPE)" ]; then \
-				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype cust $(NRUNS) 0; \
+				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) 0; \
 			else \
-				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) $(NRUNS) 0; \
+				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) 0; \
 			fi; \
 		else \
 			echo "SKIP: $$filepath not found"; \
@@ -228,7 +243,52 @@ benchmark_all:
 # STEPS (optional) selects benchmark steps non-interactively (e.g. STEPS=2 to
 # run only the extraction pass). Left empty, full_benchmark prompts on stdin.
 benchmark:
-	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(STEPS)
+	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(STEPS)
+
+# Run the benchmark with keyframe-only decoding across every video in
+# VIDEO_NAMES × VIDEO_TYPES. KEYFRAMES_ONLY=1 is inherited by every extractor
+# child process via fork+exec environment inheritance.
+benchmark_keyframes:
+	@for vname in $(VIDEO_NAMES); do \
+		for vtype in $(VIDEO_TYPES); do \
+			if [ "$$vtype" = "h264_avi" ]; then \
+				filepath=$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi; \
+			else \
+				filepath=$(CURRENT_DIR)/videos/$$vtype/$$vname; \
+			fi; \
+			if [ -f "$$filepath" ]; then \
+				echo "\n========== $$vname / $$vtype (keyframes only) =========="; \
+				cargo run --bin full_benchmark \
+					$$filepath $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) 1 $(WRITE_CSV) 4; \
+			fi; \
+		done; \
+	done
+
+# Sweep thread counts 1→2→4→…→MAX_THREADS across every video in
+# VIDEO_NAMES × VIDEO_TYPES. Useful for understanding multi-thread scaling.
+# Override: make benchmark_threads MAX_THREADS=16
+MAX_THREADS ?= $(shell nproc)
+benchmark_threads:
+	@t=1; while [ $$t -le $(MAX_THREADS) ]; do \
+		echo "\n========================================"; \
+		echo "  THREAD COUNT = $$t"; \
+		echo "========================================"; \
+		for vname in $(VIDEO_NAMES); do \
+			for vtype in $(VIDEO_TYPES); do \
+				if [ "$$vtype" = "h264_avi" ]; then \
+					filepath=$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi; \
+				else \
+					filepath=$(CURRENT_DIR)/videos/$$vtype/$$vname; \
+				fi; \
+				if [ -f "$$filepath" ]; then \
+					echo "\n--- $$vname / $$vtype ---"; \
+					cargo run --bin full_benchmark \
+						$$filepath $(STREAMS) $$vtype cust $(NRUNS) $$t $(KEYFRAMES_ONLY) $(WRITE_CSV) 4; \
+				fi; \
+			done; \
+		done; \
+		t=$$((t * 2)); \
+	done
 
 # =============================================================================
 # DEVELOPMENT & TESTING TOOLS
@@ -245,7 +305,7 @@ test:
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) 1 2 5
+	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) 1 2 5
 #   chromium --no-sandbox $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)/vtune_results/call_tree.html
 
 decode_ffmpeg:

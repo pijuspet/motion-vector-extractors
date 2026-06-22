@@ -102,7 +102,10 @@ impl BenchmarkPublisher {
             "h264_cabac",
             "cust",
             self.streams,
-            3
+            3,
+            0,
+            false,
+            false,
         );
 
         benchmark_runner.run_all();

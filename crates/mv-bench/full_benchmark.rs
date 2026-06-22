@@ -13,6 +13,9 @@ pub struct BenchmarkRunner {
     pub video_type: String,
     pub streams: i32,
     pub n_runs: usize,
+    pub keyframes_only: bool,
+    pub thread_count: i32,
+    pub write_csv: bool,
     pub current_dir: PathBuf,
     pub results_dir: PathBuf,
     pub pkg_config_path: PathBuf,
@@ -32,6 +35,9 @@ impl BenchmarkRunner {
         build_type: &str,
         streams: i32,
         n_runs: usize,
+        thread_count: i32,
+        keyframes_only: bool,
+        write_csv: bool,
     ) -> Self {
         let current_dir = env::current_dir().expect("Failed to get current directory");
 
@@ -42,7 +48,18 @@ impl BenchmarkRunner {
         fs::create_dir_all(&results_type).ok();
 
         let run_timestamp = Local::now().format("%Y%m%d_%H%M").to_string();
-        let results_dir = results_type.join(&run_timestamp);
+
+        let video_stem = std::path::Path::new(video_file)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("video")
+            .to_string();
+
+        let mut folder_name = format!("{}_{}_t{}", run_timestamp, video_stem, thread_count);
+        if keyframes_only { folder_name.push_str("_kf"); }
+        if write_csv      { folder_name.push_str("_csv"); }
+
+        let results_dir = results_type.join(&folder_name);
         fs::create_dir_all(&results_dir).ok();
 
         let pkg_config_path = current_dir.join("ffmpeg").join("FFmpeg-8.0").join("lib").join("pkgconfig");
@@ -67,6 +84,9 @@ impl BenchmarkRunner {
             video_type: video_type.to_string(),
             streams,
             n_runs,
+            keyframes_only,
+            thread_count,
+            write_csv,
             current_dir,
             results_dir,
             pkg_config_path,
@@ -187,18 +207,15 @@ impl BenchmarkRunner {
 
         println!("Running 9-method benchmark suite...");
 
-        let is_single_threaded = false; // true
-        let is_verbose = true;
-        let write_to_csv = true;
-
         let results = match run_benchmark_extractors(
             &self.video_file,
             self.streams,
             &self.results_dir.to_string_lossy(),
             &self.current_dir.to_string_lossy(),
-            is_single_threaded,
-            is_verbose,
-            write_to_csv,
+            true,
+            self.write_csv,
+            self.keyframes_only,
+            self.thread_count,
         ) {
             Some(results) => results,
             None => return,
@@ -209,81 +226,82 @@ impl BenchmarkRunner {
         self.report_speedup(&results);
     }
 
-    /// Compare the custom-FFmpeg methods against the original-FFmpeg methods
-    /// and print whether the expected speedup actually showed up. This runs
-    /// right after the extract pass (`make benchmark STEPS=2`) so the
-    /// custom-vs-original verdict is visible without needing the plot step.
+    /// Compare "Original FFmpeg MV only" (extractor0) against "Custom FFmpeg"
+    /// (extractor5) and print whether the expected speedup showed up.
     ///
-    /// Report-only by design: it never changes the exit code, so a missing or
-    /// shrunk speedup is surfaced loudly but does not fail the build/CI.
-    ///
-    /// "Speedup confirmed" requires the mean custom throughput to beat the mean
-    /// original throughput by at least `SPEEDUP_MIN_RATIO`. The small margin
-    /// keeps the tiny CI smoke run (few streams, NRUNS=1) from flipping the
-    /// verdict on timing noise, while the historical gap (~2x) clears it easily.
+    /// Report-only by design: never changes exit code.
     pub fn report_speedup(&self, results: &[crate::benchmark::BenchmarkResult]) {
         const SPEEDUP_MIN_RATIO: f64 = 1.2;
+        const ORIG_METHOD: &str = "Original FFmpeg MV only";
+        const CUST_METHOD: &str = "Custom FFmpeg";
 
         let original: Vec<&crate::benchmark::BenchmarkResult> =
-            results.iter().filter(|r| r.method.starts_with("Original")).collect();
+            results.iter().filter(|r| r.method == ORIG_METHOD).collect();
         let custom: Vec<&crate::benchmark::BenchmarkResult> =
-            results.iter().filter(|r| r.method.starts_with("Custom")).collect();
+            results.iter().filter(|r| r.method == CUST_METHOD).collect();
 
         println!();
         println!("============================================================");
-        println!("  SPEEDUP CHECK  (custom FFmpeg vs original FFmpeg)");
+        println!("  SPEEDUP CHECK  ({ORIG_METHOD}  vs  {CUST_METHOD})");
         println!("============================================================");
 
         if original.is_empty() || custom.is_empty() {
             println!(
-                "  Skipped: need both groups (got {} original, {} custom).",
-                original.len(),
-                custom.len()
+                "  Skipped: need both methods (got {} original rows, {} custom rows).",
+                original.len(), custom.len()
             );
             println!("============================================================");
             return;
         }
 
-        let mean_fps = |group: &[&crate::benchmark::BenchmarkResult]| -> f64 {
-            group.iter().map(|r| r.fps).sum::<f64>() / group.len() as f64
-        };
-        let mean_ms = |group: &[&crate::benchmark::BenchmarkResult]| -> f64 {
-            group.iter().map(|r| r.time_per_frame).sum::<f64>() / group.len() as f64
-        };
+        println!("  {:>7}  {:>10}  {:>10}  {:>10}  {:>10}  {:>8}",
+            "Streams", "Orig FPS", "Orig ms", "Cust FPS", "Cust ms", "Speedup");
+        println!("  {}", "-".repeat(63));
 
-        let orig_fps = mean_fps(&original);
-        let cust_fps = mean_fps(&custom);
-        let orig_ms = mean_ms(&original);
-        let cust_ms = mean_ms(&custom);
-        let ratio = if orig_fps > 0.0 { cust_fps / orig_fps } else { 0.0 };
-        let on = original.len();
-        let cn = custom.len();
+        let mut csv_rows: Vec<(i32, f64, f64, f64, f64, f64)> = Vec::new();
+        let mut stream_counts: Vec<i32> = original.iter().map(|r| r.streams).collect();
+        stream_counts.sort();
+        stream_counts.dedup();
 
-        println!(
-            "  Original mean : {:>8.1} FPS   ({:>7.2} ms/frame, {} methods)",
-            orig_fps, orig_ms, on
-        );
-        println!(
-            "  Custom   mean : {:>8.1} FPS   ({:>7.2} ms/frame, {} methods)",
-            cust_fps, cust_ms, cn
-        );
-        println!(
-            "  Speedup       : {:>8.2}x  (threshold >= {:.2}x)",
-            ratio, SPEEDUP_MIN_RATIO
-        );
+        for &streams in &stream_counts {
+            let orig = original.iter().find(|r| r.streams == streams);
+            let cust = custom.iter().find(|r| r.streams == streams);
+            if let (Some(o), Some(c)) = (orig, cust) {
+                let speedup = if o.fps > 0.0 { c.fps / o.fps } else { 0.0 };
+                println!("  {:>7}  {:>10.1}  {:>10.2}  {:>10.1}  {:>10.2}  {:>7.2}×",
+                    streams, o.fps, o.time_per_frame, c.fps, c.time_per_frame, speedup);
+                csv_rows.push((streams, o.fps, o.time_per_frame, c.fps, c.time_per_frame, speedup));
+            }
+        }
 
-        let (verdict, emoji) = if ratio >= SPEEDUP_MIN_RATIO {
-            ("SPEEDUP CONFIRMED", "⚡")
+        if csv_rows.is_empty() {
+            println!("  No matching stream counts between the two methods.");
+            println!("============================================================");
+            return;
+        }
+
+        let n = csv_rows.len() as f64;
+        let ratio    = csv_rows.iter().map(|r| r.5).sum::<f64>() / n;
+        let orig_fps = csv_rows.iter().map(|r| r.1).sum::<f64>() / n;
+        let orig_ms  = csv_rows.iter().map(|r| r.2).sum::<f64>() / n;
+        let cust_fps = csv_rows.iter().map(|r| r.3).sum::<f64>() / n;
+        let cust_ms  = csv_rows.iter().map(|r| r.4).sum::<f64>() / n;
+
+        println!("  {}", "-".repeat(63));
+        println!("  Mean speedup  : {:>8.2}×  (threshold >= {:.2}×)", ratio, SPEEDUP_MIN_RATIO);
+
+        let verdict = if ratio >= SPEEDUP_MIN_RATIO {
+            "SPEEDUP CONFIRMED"
         } else if ratio >= 1.0 {
-            ("WARNING: custom faster, but below the speedup threshold", "⚠️")
+            "WARNING: custom faster, but below the speedup threshold"
         } else {
-            ("REGRESSION: custom is SLOWER than original", "🛑")
+            "REGRESSION: custom is SLOWER than original"
         };
         println!("  Verdict       : {}", verdict);
         println!("============================================================");
 
-        self.publish_github_report(emoji, verdict, ratio, SPEEDUP_MIN_RATIO,
-            orig_fps, orig_ms, on, cust_fps, cust_ms, cn);
+        self.publish_github_report(verdict, ratio, SPEEDUP_MIN_RATIO,
+            orig_fps, orig_ms, original.len(), cust_fps, cust_ms, custom.len());
     }
 
     /// Mirror the speedup verdict into GitHub Actions' reporting surfaces so it
@@ -296,7 +314,6 @@ impl BenchmarkRunner {
     #[allow(clippy::too_many_arguments)]
     fn publish_github_report(
         &self,
-        emoji: &str,
         verdict: &str,
         ratio: f64,
         threshold: f64,
@@ -314,7 +331,7 @@ impl BenchmarkRunner {
 
         if let Ok(summary_path) = env::var("GITHUB_STEP_SUMMARY") {
             let md = format!(
-                "## {emoji} Speedup check — {vtype}\n\n\
+                "## Speedup check — {vtype}\n\n\
                  **{verdict}** — custom is **{ratio:.2}×** vs original (threshold ≥ {threshold:.2}×)\n\n\
                  | Build | Mean throughput | Mean ms/frame | Methods |\n\
                  | --- | ---: | ---: | ---: |\n\
@@ -350,7 +367,6 @@ impl BenchmarkRunner {
 
         fs::create_dir_all(&self.plots_dir).ok();
 
-        let is_single_threaded = 1;
         let is_verbose = 0;
         let write_to_csv = 0;
 
@@ -362,11 +378,12 @@ impl BenchmarkRunner {
             &self.results_dir.to_string_lossy(),
             &self.slides_config.to_string_lossy(),
             &self.plots_dir.to_string_lossy(),
-            is_single_threaded,
             is_verbose,
             write_to_csv,
             &self.video_type,
             self.n_runs,
+            self.keyframes_only,
+            self.thread_count,
         );
 
         println!("Plotting complete. Plots and PPTX in {}.", self.plots_dir.display());
