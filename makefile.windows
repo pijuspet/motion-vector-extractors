@@ -268,9 +268,9 @@ benchmark_keyframes:
 	@for vname in $(VIDEO_NAMES); do \
 		for vtype in $(VIDEO_TYPES); do \
 			if [ "$$vtype" = "h264_avi" ]; then \
-				filepath=$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi; \
+				filepath="$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi"; \
 			else \
-				filepath=$(CURRENT_DIR)/videos/$$vtype/$$vname; \
+				filepath="$(CURRENT_DIR)/videos/$$vtype/$$vname"; \
 			fi; \
 			if [ -f "$$filepath" ]; then \
 				echo ""; \
@@ -294,15 +294,15 @@ benchmark_threads:
 		for vname in $(VIDEO_NAMES); do \
 			for vtype in $(VIDEO_TYPES); do \
 				if [ "$$vtype" = "h264_avi" ]; then \
-					filepath=$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi; \
+					filepath="$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi"; \
 				else \
-					filepath=$(CURRENT_DIR)/videos/$$vtype/$$vname; \
+					filepath="$(CURRENT_DIR)/videos/$$vtype/$$vname"; \
 				fi; \
 				if [ -f "$$filepath" ]; then \
 					echo ""; \
 					echo "--- $$vname / $$vtype ---"; \
 					cargo run --bin full_benchmark \
-						"$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $$t $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
+						"$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $$t $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 4 6; \
 				fi; \
 			done; \
 		done; \

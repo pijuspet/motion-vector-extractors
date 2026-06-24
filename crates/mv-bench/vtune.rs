@@ -4,6 +4,8 @@ use std::env;
 #[cfg(unix)]
 use std::fs;
 use crate::full_benchmark::BenchmarkRunner;
+#[cfg(windows)]
+use crate::flamegraph::win_short_path;
 
 impl BenchmarkRunner {
     #[cfg(unix)]
@@ -99,7 +101,11 @@ impl BenchmarkRunner {
 
         std::fs::create_dir_all(&self.vtune_dir).ok();
 
-        let extractor_exec = self.extractor_executables.join("cust").join(format!("{}.exe", extractor_name));
+        let subdir = if self.profiler_extractor <= 2 { "sys" } else { "cust" };
+        let extractor_exec = self.extractor_executables.join(subdir).join(format!("{}.exe", extractor_name));
+        // VTune cannot launch applications whose path contains spaces; use the
+        // 8.3 short form to avoid that limitation.
+        let extractor_exec = win_short_path(&extractor_exec);
         let output_csv    = self.results_dir.join(format!("method{}_output_vtune.csv", self.profiler_extractor));
 
         let tc_str = self.thread_count.to_string();

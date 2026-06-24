@@ -10,7 +10,36 @@ use std::process::Command;
 
 use crate::full_benchmark::BenchmarkRunner;
 
+/// Convert a path to its Windows 8.3 short form so that tools like VTune,
+/// which cannot handle spaces in application paths, can find the file.
+/// Falls back to the original path if the conversion fails or if 8.3 names
+/// are disabled on the volume.
+#[cfg(windows)]
+pub fn win_short_path(path: &std::path::Path) -> std::path::PathBuf {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
+    extern "system" {
+        fn GetShortPathNameW(
+            lpszLongPath: *const u16,
+            lpszShortPath: *mut u16,
+            cchBuffer: u32,
+        ) -> u32;
+    }
+
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0u16)).collect();
+    let needed = unsafe { GetShortPathNameW(wide.as_ptr(), std::ptr::null_mut(), 0) };
+    if needed == 0 {
+        return path.to_path_buf();
+    }
+    let mut buf = vec![0u16; needed as usize];
+    let len = unsafe { GetShortPathNameW(wide.as_ptr(), buf.as_mut_ptr(), needed) };
+    if len == 0 || len >= needed {
+        return path.to_path_buf();
+    }
+    buf.truncate(len as usize);
+    std::path::PathBuf::from(OsString::from_wide(&buf))
+}
 
 pub fn find_perf() -> Option<String> {
     if Command::new("perf")
@@ -157,7 +186,11 @@ impl BenchmarkRunner {
         let topdown_csv = vtune_dir.join("topdown.csv");
         let output_csv  = flamegraph_dir.join(format!("method{}_output_flamegraph.csv", self.profiler_extractor));
         let output_html = flamegraph_dir.join(format!("{}_flamegraph.html", extractor_name));
-        let extractor   = self.extractor_executables.join("cust").join(format!("{}.exe", extractor_name));
+        let subdir = if self.profiler_extractor <= 2 { "sys" } else { "cust" };
+        let extractor   = self.extractor_executables.join(subdir).join(format!("{}.exe", extractor_name));
+        // VTune cannot launch applications whose path contains spaces; use the
+        // 8.3 short form to avoid that limitation.
+        let extractor   = win_short_path(&extractor);
 
         fs::create_dir_all(&vtune_dir).ok();
 
