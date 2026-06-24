@@ -70,6 +70,7 @@ struct BenchmarkResult {
     memory_per_stream_kb: i64,
     cpu_ms_per_frame: f64,
     frame_count: i32,
+    mv_extract_time_ms: f64,
 }
 
 // Platform-agnostic child descriptor. Unix-specific fields (pid, pipe_fd,
@@ -81,6 +82,7 @@ struct ChildProcess {
     cpu_user_ms: f64,
     cpu_sys_ms: f64,
     peak_rss_kb: i64,
+    mv_extract_time_ms: f64,
 
     #[cfg(unix)]
     pid: libc::pid_t,
@@ -197,6 +199,7 @@ fn spawn_processes(
             cpu_user_ms: 0.0,
             cpu_sys_ms: 0.0,
             peak_rss_kb: 0,
+            mv_extract_time_ms: 0.0,
         });
         if is_verbose {
             println!("Forked child {} with pid {}", i, pid);
@@ -265,6 +268,11 @@ fn collect_process_results(
                             if parts.len() >= 3 {
                                 if let Ok(rss) = parts[2].parse::<i64>() {
                                     proc.self_rss_kb = rss;
+                                }
+                            }
+                            if parts.len() >= 4 {
+                                if let Ok(ms) = parts[3].parse::<f64>() {
+                                    proc.mv_extract_time_ms = ms;
                                 }
                             }
                         }
@@ -362,6 +370,7 @@ fn spawn_processes(
             cpu_user_ms: 0.0,
             cpu_sys_ms: 0.0,
             peak_rss_kb: 0,
+            mv_extract_time_ms: 0.0,
         });
     }
 
@@ -408,6 +417,11 @@ fn collect_process_results(
                                 if parts.len() >= 3 {
                                     if let Ok(rss) = parts[2].parse::<i64>() {
                                         proc.self_rss_kb = rss;
+                                    }
+                                }
+                                if parts.len() >= 4 {
+                                    if let Ok(ms) = parts[3].parse::<f64>() {
+                                        proc.mv_extract_time_ms = ms;
                                     }
                                 }
                             }
@@ -535,6 +549,14 @@ fn run_benchmark(
 
     result.memory_total_kb = total_memory;
     result.memory_per_stream_kb = peak_memory;
+
+    let total_mv_extract_ms: f64 = processes.iter().map(|p| p.mv_extract_time_ms).sum();
+    result.mv_extract_time_ms = if frames_per_stream > 0 {
+        total_mv_extract_ms / stream_count as f64 / frames_per_stream as f64
+    } else {
+        0.0
+    };
+
     result
 }
 
@@ -556,26 +578,28 @@ fn print_results(results: &[BenchmarkResult], stream_count: i32) {
     println!("{}\n", sep);
 
     println!(
-        "{:<32} | {:>13} | {:>10} | {:>16} | {:>12} | {:>12} | {:>11} | {:>11} | {:>8}",
+        "{:<32} | {:>13} | {:>10} | {:>16} | {:>14} | {:>12} | {:>12} | {:>11} | {:>11} | {:>8}",
         "Method",
         "ms/frame(strm)",
         "Total FPS",
         "CPU ms/frame",
+        "MV extract ms",
         "CPU %/stream",
         "CPU % total",
         "Mem Total KB",
         "Mem/Strm KB",
         "Frames"
     );
-    println!("{}", dash);
+    println!("{}", "-".repeat(line + 20));
 
     for r in results {
         println!(
-            "{:<32} | {:>9.2} ms | {:>8.1}   | {:>11.3} ms | {:>10.1} %  | {:>10.1} %  | {:>11} | {:>11} | {:>8}",
+            "{:<32} | {:>9.2} ms | {:>8.1}   | {:>11.3} ms | {:>10.3} ms | {:>10.1} %  | {:>10.1} %  | {:>11} | {:>11} | {:>8}",
             r.name,
             r.avg_time_per_frame_ms,
             r.throughput_fps,
             r.cpu_ms_per_frame,
+            r.mv_extract_time_ms,
             r.cpu_usage_percent,
             r.cpu_total_percent,
             r.memory_total_kb,
@@ -586,12 +610,13 @@ fn print_results(results: &[BenchmarkResult], stream_count: i32) {
 
     println!();
     println!(
-        "  ms/frame(strm)  = wall time / (total frames / streams)      — per-stream decode latency"
+        "  ms/frame(strm)  = wall time / (total frames / streams)      — per-stream decode latency (includes FFmpeg init)"
     );
     println!("  Total FPS       = (1000 / ms_per_frame) * streams            — aggregate system throughput");
     println!("  CPU ms/frame    = avg(user+sys CPU time per process) / frames_per_stream");
     println!("                    — actual CPU work burned per frame; lower = more efficient");
     println!("                    — comparable across stream counts, unlike CPU%");
+    println!("  MV extract ms   = decode-loop wall time / frames_per_stream   — pure extraction latency (excludes FFmpeg init)");
     println!("  CPU %/stream    = avg CPU time per stream / wall time * 100  — single-stream CPU utilisation");
     println!(
         "  CPU % total     = total CPU time / wall time / cores * 100   — system-wide CPU load"
@@ -669,6 +694,7 @@ pub fn run_benchmark_extractors(
             time_per_frame: r.avg_time_per_frame_ms,
             fps: r.throughput_fps,
             cpu_ms_per_frame: r.cpu_ms_per_frame,
+            mv_extract_ms_per_frame: r.mv_extract_time_ms,
             memory: r.memory_total_kb as f64,
             mem_per_stream: r.memory_per_stream_kb as f64,
             frames: r.frame_count,

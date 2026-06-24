@@ -123,9 +123,13 @@ def add_fastest_methods_slide(slides, df_hp, streams_order, plots_folder, config
 
 def add_scaling_charts(slides, df_hp, plots_folder, config_list, run_info=""):
     for cfg in config_list:
+        metric = cfg["metric"]
+        if metric not in df_hp.columns:
+            print(f"Warning: metric '{metric}' not found in DataFrame, skipping scaling chart.")
+            continue
         plts.plot_scaling(
             df_hp,
-            cfg["metric"],
+            metric,
             cfg["title"],
             cfg["ylabel"],
             cfg["filename"],
@@ -143,9 +147,13 @@ def add_scaling_charts(slides, df_hp, plots_folder, config_list, run_info=""):
 
 def add_grouped_bar_charts(slides, df_hp, plots_folder, config_list, run_info=""):
     for cfg in config_list:
+        metric = cfg["metric"]
+        if metric not in df_hp.columns:
+            print(f"Warning: metric '{metric}' not found in DataFrame, skipping grouped bar chart.")
+            continue
         plts.plot_grouped_bar(
             df_hp,
-            cfg["metric"],
+            metric,
             cfg["chart_title"],
             cfg["ylabel"],
             cfg["filename"],

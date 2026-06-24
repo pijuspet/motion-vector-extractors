@@ -4,10 +4,11 @@ import pandas as pd
 import seaborn as sns
 
 _METRIC_INFO = {
-    "fps":              ("Throughput (FPS)",           "higher raw value = better"),
-    "time_per_frame":   ("Latency (ms/frame)",        "lower raw value = better"),
-    "cpu_ms_per_frame": ("CPU Efficiency (ms/frame)", "lower raw value = better"),
-    "memory":           ("Memory Usage (kB)",          "lower raw value = better"),
+    "fps":                      ("Throughput (FPS)",           "higher raw value = better"),
+    "time_per_frame":           ("Latency (ms/frame)",        "lower raw value = better"),
+    "cpu_ms_per_frame":         ("CPU Efficiency (ms/frame)", "lower raw value = better"),
+    "mv_extract_ms_per_frame":  ("MV Extract (ms/frame)",    "lower raw value = better"),
+    "memory":                   ("Memory Usage (kB)",          "lower raw value = better"),
 }
 
 _HIGHER_IS_BETTER = {k for k, (_, d) in _METRIC_INFO.items() if "higher" in d}

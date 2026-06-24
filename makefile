@@ -10,6 +10,8 @@ KEYFRAMES_ONLY ?= 0
 THREAD_COUNT ?= 28
 # Set WRITE_CSV=0 to skip writing per-extractor MV output CSV files.
 WRITE_CSV ?= 0
+# Extractor number to profile with perf/VTune (step 5/6).
+PROFILER_EXTRACTOR ?= 4
 
 # VIDEO_NAME ?= bigbunny.mp4
 # VIDEO_NAME ?= stickman.mp4
@@ -231,9 +233,9 @@ benchmark_all:
 		if [ -f "$$filepath" ]; then \
 			echo "\n========== $$vtype / $$filepath =========="; \
 			if [ -z "$(TYPE)" ]; then \
-				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) 0; \
+				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 			else \
-				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) 0; \
+				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 			fi; \
 		else \
 			echo "SKIP: $$filepath not found"; \
@@ -243,7 +245,7 @@ benchmark_all:
 # STEPS (optional) selects benchmark steps non-interactively (e.g. STEPS=2 to
 # run only the extraction pass). Left empty, full_benchmark prompts on stdin.
 benchmark:
-	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(STEPS)
+	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) $(STEPS)
 
 # Run the benchmark with keyframe-only decoding across every video in
 # VIDEO_NAMES × VIDEO_TYPES. KEYFRAMES_ONLY=1 is inherited by every extractor
@@ -259,7 +261,7 @@ benchmark_keyframes:
 			if [ -f "$$filepath" ]; then \
 				echo "\n========== $$vname / $$vtype (keyframes only) =========="; \
 				cargo run --bin full_benchmark \
-					$$filepath $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) 1 $(WRITE_CSV) 4; \
+					$$filepath $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) 1 $(WRITE_CSV) $(PROFILER_EXTRACTOR) 4; \
 			fi; \
 		done; \
 	done
@@ -283,7 +285,7 @@ benchmark_threads:
 				if [ -f "$$filepath" ]; then \
 					echo "\n--- $$vname / $$vtype ---"; \
 					cargo run --bin full_benchmark \
-						$$filepath $(STREAMS) $$vtype cust $(NRUNS) $$t $(KEYFRAMES_ONLY) $(WRITE_CSV) 4; \
+						$$filepath $(STREAMS) $$vtype cust $(NRUNS) $$t $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 4 6; \
 				fi; \
 			done; \
 		done; \
@@ -305,7 +307,7 @@ test:
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) 1 2 5
+	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 1 2 5
 #   chromium --no-sandbox $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)/vtune_results/call_tree.html
 
 decode_ffmpeg:

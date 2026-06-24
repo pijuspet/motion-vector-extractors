@@ -1,5 +1,6 @@
 use std::ffi::CString;
 use std::ptr;
+use std::time::Instant;
 
 use ffmpeg_sys_next as ff;
 
@@ -86,6 +87,7 @@ fn main() {
             std::process::exit(255);
         }
 
+        let decode_start = Instant::now();
         let mut frame_num: i32 = 0;
         while ff::av_read_frame(fmt_ctx, pkt) >= 0 {
             if (*pkt).stream_index == vsi {
@@ -109,6 +111,7 @@ fn main() {
             ff::av_packet_unref(pkt);
         }
 
+        let decode_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
         let rss_kb = get_current_rss_kb();
 
         let mut dec_ctx_ptr = dec_ctx;
@@ -119,6 +122,6 @@ fn main() {
         let mut pkt_ptr = pkt;
         ff::av_packet_free(&mut pkt_ptr);
 
-        println!("{} {} {}", frame_num, 0, rss_kb);
+        println!("{} {} {} {:.3}", frame_num, 0, rss_kb, decode_ms);
     }
 }

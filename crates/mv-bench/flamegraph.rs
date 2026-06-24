@@ -11,7 +11,6 @@ use std::process::Command;
 use crate::full_benchmark::BenchmarkRunner;
 
 
-const PERF_SAMPLE_HZ: f64 = 99.0;
 
 pub fn find_perf() -> Option<String> {
     if Command::new("perf")
@@ -48,6 +47,7 @@ pub fn flamegraph_from_perf(
     perf_data: &str,
     output_html: &str,
     title: &str,
+    total_duration_ms: f64,
 ) -> Result<(), String> {
     let output = Command::new(perf_bin)
         .args(["script", "-i", perf_data])
@@ -68,25 +68,20 @@ pub fn flamegraph_from_perf(
         .collapse(&output.stdout[..], &mut collapsed)
         .map_err(|e| format!("Stack collapse failed: {}", e))?;
 
-    let factor = 1000.0 / PERF_SAMPLE_HZ;
-    let sample_duration_ms = 1000.0 / PERF_SAMPLE_HZ;
-
-    write_outputs(&collapsed, output_html, title, "ms", factor, sample_duration_ms)
+    write_outputs(&collapsed, output_html, title, total_duration_ms)
 }
 
 fn write_outputs(
     collapsed: &[u8],
     output_html: &str,
     title: &str,
-    count_name: &str,
-    factor: f64,
-    sample_duration_ms: f64,
+    total_duration_ms: f64,
 ) -> Result<(), String> {
-    let svg_bytes = generate_svg(collapsed, title, count_name, factor)?;
+    let svg_bytes = generate_svg(collapsed, title)?;
 
     let svg_content = String::from_utf8(svg_bytes)
         .map_err(|e| format!("SVG is not valid UTF-8: {}", e))?;
-    write_html(&svg_content, output_html, title, sample_duration_ms)?;
+    write_html(&svg_content, output_html, title, total_duration_ms)?;
     println!("Interactive flamegraph saved to: {}", output_html);
 
     Ok(())
@@ -95,13 +90,9 @@ fn write_outputs(
 fn generate_svg(
     collapsed: &[u8],
     title: &str,
-    count_name: &str,
-    factor: f64,
 ) -> Result<Vec<u8>, String> {
     let mut opts = FlamegraphOptions::default();
     opts.title = title.to_string();
-    opts.count_name = count_name.to_string();
-    opts.factor = factor;
 
     let reader = BufReader::new(collapsed);
     let mut svg_bytes: Vec<u8> = Vec::new();
@@ -116,7 +107,7 @@ pub fn write_html(
     svg_content: &str,
     output_html: &str,
     title: &str,
-    sample_duration_ms: f64,
+    total_duration_ms: f64,
 ) -> Result<(), String> {
     let template_source = include_str!("templates/flamegraph.html.jinja");
 
@@ -132,7 +123,7 @@ pub fn write_html(
         .render(context! {
             title => title,
             svg_content => svg_content,
-            sample_duration_ms => sample_duration_ms,
+            total_duration_ms => total_duration_ms,
         })
         .map_err(|e| format!("Template render error: {}", e))?;
 
@@ -148,7 +139,8 @@ impl BenchmarkRunner {
         // Uses VTune software sampling (no ETW, no admin) to collect stacks,
         // then converts the top-down report to inferno folded format and renders
         // a self-contained HTML flamegraph — same pipeline as Linux/perf.
-        println!("Generating flamegraph for extractor4 (VTune sw-sampling, no admin required)...");
+        let extractor_name = format!("extractor{}", self.profiler_extractor);
+        println!("Generating flamegraph for {} (VTune sw-sampling, no admin required)...", extractor_name);
 
         let vtune = match Self::find_vtune() {
             Some(v) => v,
@@ -163,13 +155,17 @@ impl BenchmarkRunner {
 
         let vtune_dir   = flamegraph_dir.join("vtune_fg");
         let topdown_csv = vtune_dir.join("topdown.csv");
-        let output_csv  = flamegraph_dir.join("method4_output_flamegraph.csv");
-        let output_html = flamegraph_dir.join("extractor4_flamegraph.html");
-        let extractor   = self.extractor_executables.join("cust").join("extractor4.exe");
+        let output_csv  = flamegraph_dir.join(format!("method{}_output_flamegraph.csv", self.profiler_extractor));
+        let output_html = flamegraph_dir.join(format!("{}_flamegraph.html", extractor_name));
+        let extractor   = self.extractor_executables.join("cust").join(format!("{}.exe", extractor_name));
 
         fs::create_dir_all(&vtune_dir).ok();
 
+        let tc_str = self.thread_count.to_string();
+        let kf_str = if self.keyframes_only { "1" } else { "0" };
+
         // Collect hotspots with software sampling — no admin needed
+        let collect_start = std::time::Instant::now();
         let collect = Command::new(&vtune)
             .args([
                 "-collect", "hotspots",
@@ -179,10 +175,11 @@ impl BenchmarkRunner {
                 &extractor.to_string_lossy(),
                 &self.video_file, "1",
                 &output_csv.to_string_lossy(),
-                "1", "0",
+                "1", &tc_str, kf_str,
             ])
             .stdin(std::process::Stdio::null())
             .status();
+        let total_duration_ms = collect_start.elapsed().as_secs_f64() * 1000.0;
 
         match collect {
             Ok(s) if s.success() => {}
@@ -219,7 +216,7 @@ impl BenchmarkRunner {
         let mut svg: Vec<u8> = Vec::new();
         {
             let mut opts = FlamegraphOptions::default();
-            opts.title = "extractor4 Flamegraph (VTune sw-sampling)".to_string();
+            opts.title = format!("{} Flamegraph (VTune sw-sampling)", extractor_name);
             opts.count_name = "ms".to_string();
             if let Err(e) = flamegraph::from_reader(&mut opts, BufReader::new(folded.as_slice()), &mut svg) {
                 eprintln!("Flamegraph render failed: {}", e);
@@ -232,7 +229,7 @@ impl BenchmarkRunner {
             Err(e) => { eprintln!("SVG encoding error: {}", e); return; }
         };
 
-        match write_html(&svg_str, &output_html.to_string_lossy(), "extractor4 Flamegraph", 1.0) {
+        match write_html(&svg_str, &output_html.to_string_lossy(), &format!("{} Flamegraph", extractor_name), total_duration_ms) {
             Ok(()) => println!("Flamegraph saved to: {}", output_html.display()),
             Err(e) => eprintln!("Failed to write flamegraph HTML: {}", e),
         }
@@ -240,50 +237,55 @@ impl BenchmarkRunner {
 
     #[cfg(unix)]
     pub fn flamegraph(&self) {
-        println!("Generating flamegraph for extractor4...");
+        let extractor_name = format!("extractor{}", self.profiler_extractor);
+        println!("Generating flamegraph for {}...", extractor_name);
 
         let flamegraph_dir = self.results_dir.join("flamegraph");
         fs::create_dir_all(&flamegraph_dir).ok();
 
-        let output_html = flamegraph_dir.join("extractor4_flamegraph.html");
+        let output_html = flamegraph_dir.join(format!("{}_flamegraph.html", extractor_name));
 
         if let Some(perf_bin) = find_perf() {
             println!("Using perf binary: {}", perf_bin);
 
-            let ffmpeg_lib = self
-                .current_dir
-                .join("ffmpeg")
-                .join("FFmpeg-8.0-custom")
-                .join("lib");
+            let ffmpeg_variant = if self.profiler_extractor >= 3 { "FFmpeg-8.0-custom" } else { "FFmpeg-8.0" };
+            let ffmpeg_lib = self.current_dir.join("ffmpeg").join(ffmpeg_variant).join("lib");
 
             let perf_data = flamegraph_dir.join("perf.data");
-            let output_csv = self.results_dir.join("method4_output_flamegraph.csv");
-            let extractor_exec = self.extractor_executables.join("extractor4");
+            let output_csv = self.results_dir.join(format!("method{}_output_flamegraph.csv", self.profiler_extractor));
+            let extractor_exec = self.extractor_executables.join(&extractor_name);
 
             let existing_ld = env::var("LD_LIBRARY_PATH").unwrap_or_default();
             let ld_path = format!("{}:{}", ffmpeg_lib.display(), existing_ld);
 
+            let tc_str = self.thread_count.to_string();
+            let kf_str = if self.keyframes_only { "1" } else { "0" };
             let perf_cmd = format!(
-                "LD_LIBRARY_PATH={} {} record -g --call-graph dwarf -F 99 -o {} -- {} {} 1 {} 1 1",
+                "LD_LIBRARY_PATH={} {} record -g --call-graph dwarf -F 99 -o {} -- {} {} 1 {} 1 {} {}",
                 ld_path,
                 perf_bin,
                 perf_data.display(),
                 extractor_exec.display(),
                 self.video_file,
                 output_csv.display(),
+                tc_str,
+                kf_str,
             );
 
-            println!("Running: perf record on extractor4...");
+            println!("Running: perf record on {}...", extractor_name);
+            let perf_start = std::time::Instant::now();
             if !self.run_shell_command(&perf_cmd, Some(&self.extractor_executables), None) {
                 eprintln!("perf record failed.");
                 return;
             }
+            let total_duration_ms = perf_start.elapsed().as_secs_f64() * 1000.0;
 
             if let Err(e) = flamegraph_from_perf(
                 &perf_bin,
                 &perf_data.to_string_lossy(),
                 &output_html.to_string_lossy(),
-                "extractor4 Flamegraph (perf)",
+                &format!("{} Flamegraph (perf)", extractor_name),
+                total_duration_ms,
             ) {
                 eprintln!("Flamegraph generation failed: {}", e);
                 return;

@@ -30,6 +30,12 @@
                 "filename": "speedup_cpu.png"
             },
             {
+                "metric": "mv_extract_ms_per_frame",
+                "title": "MV Extraction Speedup vs Baseline ({baseline})",
+                "subtitle": "MV extract ms/frame ratio: baseline / method — values > 1.0 = faster extraction",
+                "filename": "speedup_mv_extract.png"
+            },
+            {
                 "metric": "memory",
                 "title": "Memory Usage Speedup vs Baseline ({baseline})",
                 "subtitle": "Memory ratio: baseline / method — values > 1.0 = less memory",
@@ -65,6 +71,13 @@
             "subtitle": "High Profile Methods: CPU ms/frame vs Streams",
             "filename": "scaling_cpu.png",
             "ylabel": "CPU Work per Frame (ms, Lower = Better)"
+        },
+        {
+            "metric": "mv_extract_ms_per_frame",
+            "title": "MV Extraction Time Scaling",
+            "subtitle": "High Profile Methods: decode-loop ms/frame vs Streams — excludes FFmpeg init overhead",
+            "filename": "scaling_mv_extract.png",
+            "ylabel": "MV Extraction ms/frame (Lower = Better)"
         },
         {
             "metric": "memory",
@@ -155,6 +168,14 @@
             "slide_title": "Algorithm CPU Efficiency Comparison ({streams} Streams)",
             "slide_subtitle": "CPU ms/frame by High Profile Method at {streams} Streams",
             "ylabel": "CPU Work per Frame (ms, Lower = Better)"
+        },
+        {
+            "metric": "mv_extract_ms_per_frame",
+            "chart_title": "Algorithm Comparison: MV Extract Time @ {streams} Streams",
+            "filename": "barchart_mv_extract_{streams}streams.png",
+            "slide_title": "MV Extraction Time ({streams} Streams)",
+            "slide_subtitle": "Decode-loop ms/frame by High Profile Method at {streams} Streams",
+            "ylabel": "MV Extraction ms/frame (Lower = Better)"
         },
         {
             "metric": "memory",

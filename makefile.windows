@@ -21,6 +21,8 @@ KEYFRAMES_ONLY ?= 0
 THREAD_COUNT ?= 0
 # Set WRITE_CSV=0 to skip writing per-extractor MV output CSV files.
 WRITE_CSV ?= 1
+# Extractor number to profile with perf/VTune (step 5/6).
+PROFILER_EXTRACTOR ?= 4
 
 VIDEO_NAME ?= bigbunny_walking.mp4
 
@@ -240,9 +242,9 @@ benchmark_all:
 			echo ""; \
 			echo "========== $$vtype / $$filepath =========="; \
 			if [ -z "$(TYPE)" ]; then \
-				cargo run --bin full_benchmark "$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) 0; \
+				cargo run --bin full_benchmark "$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 			else \
-				cargo run --bin full_benchmark "$$filepath" $(STREAMS) $$vtype $(TYPE) $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) 0; \
+				cargo run --bin full_benchmark "$$filepath" $(STREAMS) $$vtype $(TYPE) $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 			fi; \
 		else \
 			echo "SKIP: $$filepath not found"; \
@@ -254,9 +256,9 @@ benchmark_all:
 # winpty-wrapped interactive prompt.
 benchmark:
 ifeq ($(strip $(STEPS)),)
-	winpty cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV)
+	winpty cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR)
 else
-	cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(STEPS)
+	cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) $(STEPS)
 endif
 
 # Run the benchmark with keyframe-only decoding across every video in
@@ -274,7 +276,7 @@ benchmark_keyframes:
 				echo ""; \
 				echo "========== $$vname / $$vtype (keyframes only) =========="; \
 				cargo run --bin full_benchmark \
-					"$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) 1 $(WRITE_CSV) 0; \
+					"$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) 1 $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 			fi; \
 		done; \
 	done
@@ -300,7 +302,7 @@ benchmark_threads:
 					echo ""; \
 					echo "--- $$vname / $$vtype ---"; \
 					cargo run --bin full_benchmark \
-						"$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $$t $(KEYFRAMES_ONLY) $(WRITE_CSV) 0; \
+						"$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $$t $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 				fi; \
 			done; \
 		done; \
@@ -319,7 +321,7 @@ test: check-shell
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) 1 2 5
+	cargo run --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 1 2 5
 
 # Decode a single video through the custom FFmpeg. PATH carries the DLLs.
 decode_ffmpeg:

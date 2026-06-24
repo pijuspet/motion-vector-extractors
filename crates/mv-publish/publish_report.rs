@@ -106,6 +106,7 @@ impl BenchmarkPublisher {
             0,
             false,
             false,
+            4,
         );
 
         benchmark_runner.run_all();

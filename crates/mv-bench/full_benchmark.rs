@@ -16,6 +16,7 @@ pub struct BenchmarkRunner {
     pub keyframes_only: bool,
     pub thread_count: i32,
     pub write_csv: bool,
+    pub profiler_extractor: u32,
     pub current_dir: PathBuf,
     pub results_dir: PathBuf,
     pub pkg_config_path: PathBuf,
@@ -38,6 +39,7 @@ impl BenchmarkRunner {
         thread_count: i32,
         keyframes_only: bool,
         write_csv: bool,
+        profiler_extractor: u32,
     ) -> Self {
         let current_dir = env::current_dir().expect("Failed to get current directory");
 
@@ -87,6 +89,7 @@ impl BenchmarkRunner {
             keyframes_only,
             thread_count,
             write_csv,
+            profiler_extractor,
             current_dir,
             results_dir,
             pkg_config_path,

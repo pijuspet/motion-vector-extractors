@@ -1,5 +1,6 @@
 use std::ffi::{c_void, CString};
 use std::ptr;
+use std::time::Instant;
 
 use ffmpeg_sys_next as ff;
 
@@ -126,6 +127,7 @@ fn main() {
             print_ffmpeg_version();
         }
 
+        let decode_start = Instant::now();
         let mut frame_num: i32 = 0;
         while ff::av_read_frame(fmt_ctx, pkt) >= 0 {
             if (*pkt).stream_index == vsi {
@@ -165,6 +167,7 @@ fn main() {
             frame_num += 1;
         }
 
+        let decode_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
         let total_mvs = writer.as_ref().map(|w| w.total()).unwrap_or(0);
         if let Some(mut w) = writer {
             let _ = w.flush();
@@ -180,6 +183,6 @@ fn main() {
         let mut pkt_ptr = pkt;
         ff::av_packet_free(&mut pkt_ptr);
 
-        println!("{} {} {}", frame_num, total_mvs, rss_kb);
+        println!("{} {} {} {:.3}", frame_num, total_mvs, rss_kb, decode_ms);
     }
 }

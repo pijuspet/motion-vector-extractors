@@ -94,13 +94,16 @@ impl BenchmarkRunner {
             }
         };
 
-        println!("Running VTune profiler on extractor4 (Windows)...");
+        let extractor_name = format!("extractor{}", self.profiler_extractor);
+        println!("Running VTune profiler on {} (Windows)...", extractor_name);
 
         std::fs::create_dir_all(&self.vtune_dir).ok();
 
-        let extractor_exec = self.extractor_executables.join("cust").join("extractor4.exe");
-        let output_csv    = self.results_dir.join("method4_output_vtune.csv");
+        let extractor_exec = self.extractor_executables.join("cust").join(format!("{}.exe", extractor_name));
+        let output_csv    = self.results_dir.join(format!("method{}_output_vtune.csv", self.profiler_extractor));
 
+        let tc_str = self.thread_count.to_string();
+        let kf_str = if self.keyframes_only { "1" } else { "0" };
         let status = Command::new(&vtune)
             .args([
                 "-collect", "hotspots",
@@ -111,7 +114,7 @@ impl BenchmarkRunner {
                 &self.video_file,
                 "1",
                 &output_csv.to_string_lossy(),
-                "1", "1",
+                "1", &tc_str, kf_str,
             ])
             .stdin(std::process::Stdio::null())
             .status();
@@ -149,13 +152,11 @@ impl BenchmarkRunner {
 
     #[cfg(unix)]
     pub fn profiler(&self) {
-        println!("Running VTune profiler on extractor4 with motion_vectors_only=1...");
+        let extractor_name = format!("extractor{}", self.profiler_extractor);
+        println!("Running VTune profiler on {}...", extractor_name);
 
-        let ffmpeg_lib = self
-            .current_dir
-            .join("ffmpeg")
-            .join("ffmpeg-8.0-custom")
-            .join("lib");
+        let ffmpeg_variant = if self.profiler_extractor >= 3 { "FFmpeg-8.0-custom" } else { "FFmpeg-8.0" };
+        let ffmpeg_lib = self.current_dir.join("ffmpeg").join(ffmpeg_variant).join("lib");
 
         fs::create_dir_all(&self.vtune_dir).ok();
 
@@ -164,10 +165,10 @@ impl BenchmarkRunner {
 
         let extractor_exec = self
             .extractor_executables
-            .join("extractor4");
+            .join(&extractor_name);
         let output_csv = self
             .results_dir
-            .join("method4_output_vtune.csv");
+            .join(format!("method{}_output_vtune.csv", self.profiler_extractor));
 
         let vtune_env = self.get_vtune_env().unwrap_or_else(|| {
             env::vars().map(|(k, v)| (k, v)).collect()
@@ -193,14 +194,18 @@ impl BenchmarkRunner {
             env_with_ld.push(("LD_LIBRARY_PATH".to_string(), ld_path));
         }
 
+        let tc_str = self.thread_count.to_string();
+        let kf_str = if self.keyframes_only { "1" } else { "0" };
         let vtune_collect_cmd = format!(
-            "vtune -collect hotspots -knob sampling-mode=sw -result-dir {} -- {} {} {} {} {}",
+            "vtune -collect hotspots -knob sampling-mode=sw -result-dir {} -- {} {} {} {} {} {} {}",
             self.vtune_dir.display(),
             extractor_exec.display(),
             self.video_file,
             do_print,
             output_csv.display(),
             is_verbose,
+            tc_str,
+            kf_str,
         );
 
         if !self.run_shell_command(

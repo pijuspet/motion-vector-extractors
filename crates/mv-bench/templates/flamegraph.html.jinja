@@ -108,7 +108,7 @@
     <div class="header">
         <div class="header-top">
             <h1>{{ title }}</h1>
-            <span class="hint">Click frame to zoom | Right-click to reset | Ctrl+F to search</span>
+            <span class="hint">Click frame to zoom | Ctrl+F to search</span>
         </div>
         <div class="details-grid">
             <div class="detail-item" id="fn-name">
@@ -135,7 +135,7 @@
     </div>
 
     <script>
-        const sampleDurationMs = {{ sample_duration_ms }};
+        const totalDurationMs = {{ total_duration_ms }};
 
         function formatTime(ms) {
             if (ms >= 60000) {
@@ -176,15 +176,7 @@
                         maximumFractionDigits: 1
                     }) + ' ' + unit;
 
-                    let timeMs;
-                    if (unit === 'ms') {
-                        timeMs = count;
-                    } else if (unit === 's' || unit === 'seconds') {
-                        timeMs = count * 1000;
-                    } else {
-                        timeMs = count * sampleDurationMs;
-                    }
-                    timeEl.textContent = formatTime(timeMs);
+                    timeEl.textContent = formatTime(pct / 100 * totalDurationMs);
                 } else {
                     nameEl.textContent = text || '-';
                     pctEl.textContent = '-';

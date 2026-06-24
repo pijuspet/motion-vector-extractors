@@ -14,6 +14,7 @@ pub struct BenchmarkResult {
     pub time_per_frame: f64,
     pub fps: f64,
     pub cpu_ms_per_frame: f64,
+    pub mv_extract_ms_per_frame: f64,
     pub memory: f64,
     pub mem_per_stream: f64,
     pub frames: i32,
@@ -129,6 +130,7 @@ pub fn run_benchmark_averaged(
                 time_per_frame: entries.iter().map(|e| e.time_per_frame).sum::<f64>() / n,
                 fps: entries.iter().map(|e| e.fps).sum::<f64>() / n,
                 cpu_ms_per_frame: entries.iter().map(|e| e.cpu_ms_per_frame).sum::<f64>() / n,
+                mv_extract_ms_per_frame: entries.iter().map(|e| e.mv_extract_ms_per_frame).sum::<f64>() / n,
                 memory: entries.iter().map(|e| e.memory).sum::<f64>() / n,
                 mem_per_stream: entries.iter().map(|e| e.mem_per_stream).sum::<f64>() / n,
                 frames: (entries.iter().map(|e| e.frames as f64).sum::<f64>() / n) as i32,
@@ -144,15 +146,15 @@ pub fn write_csv(results: &[BenchmarkResult], path: &str) -> Result<(), String> 
     let mut buf = String::new();
     writeln!(
         buf,
-        "method,streams,time_per_frame,fps,cpu_ms_per_frame,memory,mem_per_stream,frames"
+        "method,streams,time_per_frame,fps,cpu_ms_per_frame,mv_extract_ms_per_frame,memory,mem_per_stream,frames"
     )
     .unwrap();
     for r in results {
         writeln!(
             buf,
-            "{},{},{},{},{},{},{},{}",
-            r.method, r.streams, r.time_per_frame, r.fps, r.cpu_ms_per_frame, r.memory,
-            r.mem_per_stream, r.frames
+            "{},{},{},{},{},{},{},{},{}",
+            r.method, r.streams, r.time_per_frame, r.fps, r.cpu_ms_per_frame,
+            r.mv_extract_ms_per_frame, r.memory, r.mem_per_stream, r.frames
         )
         .unwrap();
     }
