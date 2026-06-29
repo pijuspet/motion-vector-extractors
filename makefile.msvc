@@ -275,6 +275,7 @@ build: check-env
 	cp '$(TARGET_CUST)/$(REL)/extractor3$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor3$(EXE_EXT)'
 	cp '$(TARGET_CUST)/$(REL)/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor4$(EXE_EXT)'
 	cp '$(TARGET_CUST)/$(REL)/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)'
+	cp '$(TARGET_CUST)/$(REL)/extractor6$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor6$(EXE_EXT)'
 	@echo "[INFO]  Copying FFmpeg DLLs (sys → sys/, cust → cust/)..."
 	@cp -u '$(REGULAR_PREFIX)/bin/'*.dll '$(EXECUTABLES_DIR_SYS)/' 2>/dev/null || true
 	@cp -u '$(CUSTOM_PREFIX)/bin/'*.dll  '$(EXECUTABLES_DIR_CUST)/' 2>/dev/null || true

@@ -198,6 +198,7 @@ build:
 	cp $(TARGET_CUST)/release/extractor3 $(EXECUTABLES_DIR)/extractor3
 	cp $(TARGET_CUST)/release/extractor1 $(EXECUTABLES_DIR)/extractor4
 	cp $(TARGET_CUST)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
+	cp $(TARGET_CUST)/release/extractor6 $(EXECUTABLES_DIR)/extractor6
 
 # System-only build: every extractor links against the regular system FFmpeg.
 # Useful for isolating whether a regression comes from the custom patch or

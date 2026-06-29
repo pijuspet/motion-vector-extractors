@@ -23,6 +23,7 @@ const METHODS: &[MethodInfo] = &[
     MethodInfo { id: 3, name: "Custom FFmpeg MV-Only - RTSP protocol" },
     MethodInfo { id: 4, name: "Custom FFmpeg - Flush decoder" },
     MethodInfo { id: 5, name: "Custom FFmpeg" },
+    MethodInfo { id: 6, name: "Custom FFmpeg - Keyframes only" },
 ];
 
 impl MethodInfo {
