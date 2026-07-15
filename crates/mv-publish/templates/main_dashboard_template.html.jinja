@@ -30,9 +30,13 @@
         <tr>
             {% for run in runs %}
             <td>
+                {% if run.vtune_hotspots %}
                 <ac:image ac:thumbnail="true" ac:width="450">
                     <ri:attachment ri:filename="{{ run.vtune_hotspots }}" />
                 </ac:image>
+                {% else %}
+                <em>No profiler hotspots available</em>
+                {% endif %}
             </td>
             {% endfor %}
         </tr>

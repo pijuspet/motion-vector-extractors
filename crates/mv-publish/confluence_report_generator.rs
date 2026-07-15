@@ -93,7 +93,10 @@ impl ConfluenceReportGenerator {
         }
     }
 
-    fn generate_report_title(&self, directory: &str) -> String {
+    /// Pre-parameterized title format: "Automated Report: <date> <time>". Kept
+    /// around to recognize pages created before run parameters were added to
+    /// the title, so those pages can be renamed in place instead of duplicated.
+    fn generate_report_title_legacy(&self, directory: &str) -> String {
         let name = Path::new(directory)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -113,6 +116,40 @@ impl ConfluenceReportGenerator {
             );
         }
         format!("Automated Report: {}", name)
+    }
+
+    /// Folder names are laid down by BenchmarkRunner as
+    /// `<timestamp>_<video_stem>_t<threads>[_kf][_csv]` (see full_benchmark.rs).
+    /// When that shape is present, the title is enriched with the same run
+    /// parameters the makefile exposes (VIDEO_NAME, THREAD_COUNT,
+    /// KEYFRAMES_ONLY, WRITE_CSV) so reports are distinguishable at a glance.
+    /// Folders that don't match (older runs predating this naming, or the
+    /// video-less timestamp-only folders) fall back to the legacy date-only
+    /// title unchanged.
+    fn generate_report_title(&self, directory: &str) -> String {
+        let base = self.generate_report_title_legacy(directory);
+
+        let name = Path::new(directory)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        let re = Regex::new(r"^\d{8}_\d{4}_(.+)_t(\d+)(_kf)?(_csv)?$").unwrap();
+        let Some(caps) = re.captures(&name) else {
+            return base;
+        };
+
+        let video = &caps[1];
+        let threads = &caps[2];
+        let mut params = vec![format!("THREAD_COUNT={}", threads)];
+        if caps.get(3).is_some() {
+            params.push("KEYFRAMES_ONLY=1".to_string());
+        }
+        if caps.get(4).is_some() {
+            params.push("WRITE_CSV=1".to_string());
+        }
+
+        format!("{} — {} ({})", base, video, params.join(", "))
     }
 
     fn collect_files(
@@ -213,6 +250,7 @@ impl ConfluenceReportGenerator {
 
     fn generate_detailed_report_body(
         &self,
+        results_dir: &str,
         plots_dir: &str,
         page_id: &str,
         git_commit_url: Option<&str>,
@@ -221,8 +259,19 @@ impl ConfluenceReportGenerator {
             .client
             .get_attachment_content(page_id, "mv_comparison_result.txt");
 
+        // Only runs profiled with VTune (Windows) have these; perf/flamegraph
+        // runs (Linux) don't, so skip the section entirely rather than link a
+        // missing attachment.
         let vtune_images: Vec<serde_json::Value> = DETAILED_REPORT_VTUNE
             .iter()
+            .filter(|spec| {
+                let full_dir = if spec.subdir.is_empty() {
+                    results_dir.to_string()
+                } else {
+                    format!("{}/{}", results_dir, spec.subdir)
+                };
+                Path::new(&format!("{}/{}", full_dir, spec.filename)).is_file()
+            })
             .map(|spec| {
                 serde_json::json!({
                     "title": spec.title.unwrap_or(""),
@@ -307,6 +356,12 @@ impl ConfluenceReportGenerator {
         results_dirs: &[&str],
         git_commits: &[Option<&str>],
         run_titles: &[&str],
+        // (has_vtune_hotspots_image, has_call_tree_html, has_mv_comparison_txt) per run,
+        // based on whether the *source* file exists locally for that run — not whether
+        // an attachment happens to exist on the dashboard page, which can be stale
+        // leftover content from a previous run that didn't get overwritten because
+        // this run has nothing to re-attach under that filename.
+        has_files: &[(bool, bool, bool)],
     ) -> Result<String, String> {
         let template_path = self
             .templates_dir
@@ -323,23 +378,32 @@ impl ConfluenceReportGenerator {
             .map_err(|e| format!("Template error: {}", e))?;
 
         let mut runs = Vec::new();
-        for (idx, ((results_dir, git_commit), title)) in results_dirs
+        for (idx, (((results_dir, git_commit), title), (run_has_vtune, run_has_calltree, run_has_mv_comparison))) in results_dirs
             .iter()
             .zip(git_commits.iter())
             .zip(run_titles.iter())
+            .zip(has_files.iter())
             .enumerate()
         {
             let prefix = format!("run{}_", idx);
 
-            let mv_comparison = self.client.get_attachment_content(
-                dashboard_id,
-                &format!("{}mv_comparison_result.txt", prefix),
-            );
+            let mv_comparison = if *run_has_mv_comparison {
+                self.client.get_attachment_content(
+                    dashboard_id,
+                    &format!("{}mv_comparison_result.txt", prefix),
+                )
+            } else {
+                None
+            };
 
-            let calltree = self.client.get_attachment_content(
-                dashboard_id,
-                &format!("{}call_tree.html", prefix),
-            );
+            let calltree = if *run_has_calltree {
+                self.client.get_attachment_content(
+                    dashboard_id,
+                    &format!("{}call_tree.html", prefix),
+                )
+            } else {
+                None
+            };
 
             let report_title = if !results_dir.is_empty() {
                 let basename = Path::new(results_dir.trim_end_matches('/'))
@@ -354,7 +418,7 @@ impl ConfluenceReportGenerator {
             runs.push(serde_json::json!({
                 "title": title,
                 "mv_comparison": mv_comparison,
-                "vtune_hotspots": format!("{}vtune_hotspots.png", prefix),
+                "vtune_hotspots": if *run_has_vtune { Some(format!("{}vtune_hotspots.png", prefix)) } else { None },
                 "git_commit": git_commit,
                 "calltree": calltree,
                 "detail_table": format!("{}detail_table_1streams_highlighted.png", prefix),
@@ -425,6 +489,7 @@ impl ConfluenceReportGenerator {
         }
 
         let body = self.generate_detailed_report_body(
+            results_dir,
             &plots_dir,
             page_id,
             git_commit_url,
@@ -450,12 +515,22 @@ impl ConfluenceReportGenerator {
         let video_type_id = self.get_or_create_video_type_page()?;
 
         let mut all_files = Vec::new();
+        let mut has_files: Vec<(bool, bool, bool)> = Vec::new();
         for (idx, results_dir) in results_dirs.iter().enumerate() {
             let prefix = format!("run{}_", idx);
             all_files.extend(self.collect_files(results_dir, MAIN_DASHBOARD_PLOTS, &prefix));
             all_files.extend(self.collect_files(results_dir, DETAILED_REPORT_VTUNE, &prefix));
             all_files.extend(self.collect_files(results_dir, ADDITIONAL_FILES, &prefix));
             all_files.extend(self.collect_files(results_dir, VTUNE_FILES, &prefix));
+
+            // Local source existence, not "does an attachment currently exist" —
+            // an old attachment can linger on the dashboard page from a previous
+            // run that isn't being replaced here, which would otherwise show
+            // stale content for a run that doesn't actually have this file.
+            let has_vtune_image = Path::new(&format!("{}/vtune_results/vtune_hotspots.png", results_dir)).is_file();
+            let has_calltree = Path::new(&format!("{}/vtune_results/call_tree.html", results_dir)).is_file();
+            let has_mv_comparison = Path::new(&format!("{}/mv_comparison_result.txt", results_dir)).is_file();
+            has_files.push((has_vtune_image, has_calltree, has_mv_comparison));
         }
 
         for (fpath, fname, _) in &all_files {
@@ -475,6 +550,7 @@ impl ConfluenceReportGenerator {
             results_dirs,
             git_commits,
             run_titles,
+            &has_files,
         )?;
 
         println!(

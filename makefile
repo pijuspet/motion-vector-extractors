@@ -7,9 +7,20 @@ NRUNS = 3
 # Set KEYFRAMES_ONLY=1 to have every extractor decode I-frames only.
 KEYFRAMES_ONLY ?= 0
 # Set THREAD_COUNT=N to pin every extractor to N threads (0 = FFmpeg auto).
-THREAD_COUNT ?= 28
+THREAD_COUNT ?= 1
 # Set WRITE_CSV=0 to skip writing per-extractor MV output CSV files.
-WRITE_CSV ?= 0
+# List-0-only MV export (drops list-1/forward-reference rows), on by default
+# so CSV sizes are directly comparable across every method: extractor1/3/5/6
+# (custom FFmpeg) have always been list-0-only via mv_l0_only, and extractor9/10
+# (from-scratch Rust/C) now match via E9_L0_ONLY/E10_L0_ONLY. Set L0_ONLY=0 to
+# get full both-list output everywhere (e.g. for B-frame/list-1 investigation).
+L0_ONLY ?= 1
+# Which two methods the "Generate MV comparison" step's full (both-lists)
+# sanity check compares (step 3, logged as "first"/"second" rather than bare
+# method numbers). Default 1/4: both built from extractor1.rs, one against
+# the regular FFmpeg and one against the custom fork.
+COMPARE_FIRST ?= 1
+COMPARE_SECOND ?= 4
 # Extractor number to profile with perf/VTune (step 5/6).
 PROFILER_EXTRACTOR ?= 4
 
@@ -18,19 +29,19 @@ PROFILER_EXTRACTOR ?= 4
 # VIDEO_NAME ?= dashcam.mp4
 # VIDEO_NAME ?= 2018-03-05.09-50-15.09-55-01.school.G423.r13.mp4
 # VIDEO_NAME ?= 2018-03-15.15-55-00.16-00-00.bus.G475.r13.mp4
-# VIDEO_NAME ?= MCTTR0102b.mp4
-VIDEO_NAME ?= bigbunny_walking.mp4
+VIDEO_NAME ?= MCTTR0102b.mp4
+# VIDEO_NAME ?= bigbunny_walking.mp4
 
 # All video names iterated by benchmark_keyframes and benchmark_threads.
 # Files that don't exist for a given type are silently skipped.
-# 2018-03-05.09-50-15.09-55-01.school.G423.r13.mp4 
-VIDEO_NAMES ?= 2018-03-15.15-55-00.16-00-00.bus.G475.r13.mp4 \
-               MCTTR0102b.mp4 
+VIDEO_NAMES ?= 2018-03-05.09-50-15.09-55-01.school.G423.r13.mp4 
+# VIDEO_NAMES ?= 2018-03-15.15-55-00.16-00-00.bus.G475.r13.mp4 \
+            #    MCTTR0102b.mp4
 			#    bigbunny_walking.mp4 \
             #    stickman.mp4 \
             #    dashcam.mp4 
 
-VIDEO_TYPES := h264_cabac h264_cavlc h264_avi h265
+VIDEO_TYPES := h264_cabac #h264_cavlc h264_avi h265
 VIDEO_TYPE = h264_cabac
 # VIDEO_TYPE = h264_cavlc
 # VIDEO_TYPE = h264_avi
@@ -99,7 +110,7 @@ SLIM_FFMPEG := --disable-everything \
 FFMPEG_BUILD = \
 	cd $1/FFmpeg && \
 	chmod +x ./configure ./ffbuild/*.sh && \
-	./configure --prefix=$(abspath $1) --enable-shared --enable-swresample --enable-debug --disable-stripping --disable-doc $(SLIM_FFMPEG) --pkg-config-flags="--static" && \
+	./configure --prefix=$(abspath $1) --enable-shared --disable-static --enable-swresample --enable-debug --disable-stripping --disable-doc $(SLIM_FFMPEG) --pkg-config-flags="--static" && \
 	make -j"$$(nproc)" && make install
 
 # =============================================================================
@@ -234,9 +245,9 @@ benchmark_all:
 		if [ -f "$$filepath" ]; then \
 			echo "\n========== $$vtype / $$filepath =========="; \
 			if [ -z "$(TYPE)" ]; then \
-				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
+				L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 			else \
-				cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
+				L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 			fi; \
 		else \
 			echo "SKIP: $$filepath not found"; \
@@ -245,12 +256,15 @@ benchmark_all:
 
 # STEPS (optional) selects benchmark steps non-interactively (e.g. STEPS=2 to
 # run only the extraction pass). Left empty, full_benchmark prompts on stdin.
+# L0_ONLY=1 (default) is inherited by every extractor child process via
+# fork+exec environment inheritance — see extractor1/3/5/6.rs (mv_l0_only
+# AVOption) and E9_L0_ONLY/E10_L0_ONLY relayed from it in benchmark_extractors.rs.
 benchmark:
-	cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) $(STEPS)
+	L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) $(STEPS)
 
 # Run the benchmark with keyframe-only decoding across every video in
-# VIDEO_NAMES × VIDEO_TYPES. KEYFRAMES_ONLY=1 is inherited by every extractor
-# child process via fork+exec environment inheritance.
+# VIDEO_NAMES × VIDEO_TYPES. KEYFRAMES_ONLY=1/L0_ONLY are inherited by every
+# extractor child process via fork+exec environment inheritance.
 benchmark_keyframes:
 	@for vname in $(VIDEO_NAMES); do \
 		for vtype in $(VIDEO_TYPES); do \
@@ -261,7 +275,7 @@ benchmark_keyframes:
 			fi; \
 			if [ -f "$$filepath" ]; then \
 				echo "\n========== $$vname / $$vtype (keyframes only) =========="; \
-				cargo run --bin full_benchmark \
+				L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --bin full_benchmark \
 					$$filepath $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) 1 $(WRITE_CSV) $(PROFILER_EXTRACTOR) 4; \
 			fi; \
 		done; \
@@ -285,7 +299,7 @@ benchmark_threads:
 				fi; \
 				if [ -f "$$filepath" ]; then \
 					echo "\n--- $$vname / $$vtype ---"; \
-					cargo run --bin full_benchmark \
+					L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --bin full_benchmark \
 						$$filepath $(STREAMS) $$vtype cust $(NRUNS) $$t $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 4 6; \
 				fi; \
 			done; \
@@ -324,6 +338,14 @@ publish:
 generate_video:
 	cargo run --bin generate_motion_vectors_video $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
 	cargo run --bin combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
+
+compare_mvs:
+	LD_LIBRARY_PATH=$(REGULAR_PREFIX)/lib:$$LD_LIBRARY_PATH \
+		$(REGULAR_PREFIX)/bin/ffprobe -v error -select_streams v:0 -show_entries packet=pts_time \
+		-of csv=p=0 $(VIDEO_FILE) > $(LAST_RESULTS_DIR)/pkt_order.txt
+	cargo run --release --bin mv_diff_driver -- \
+		$(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) \
+		$(LAST_RESULTS_DIR)/pkt_order.txt $(LAST_RESULTS_DIR)/mv_diff_neg1.txt
 
 # =============================================================================
 # INSTALLER DIFF GENERATION

@@ -206,7 +206,7 @@ impl BenchmarkRunner {
                 "-result-dir", &vtune_dir.to_string_lossy(),
                 "--",
                 &extractor.to_string_lossy(),
-                &self.video_file, "1",
+                &self.video_file, "0",
                 &output_csv.to_string_lossy(),
                 "1", &tc_str, kf_str,
             ])
@@ -294,7 +294,7 @@ impl BenchmarkRunner {
             let tc_str = self.thread_count.to_string();
             let kf_str = if self.keyframes_only { "1" } else { "0" };
             let perf_cmd = format!(
-                "LD_LIBRARY_PATH={} {} record -g --call-graph dwarf -F 99 -o {} -- {} {} 1 {} 1 {} {}",
+                "LD_LIBRARY_PATH={} {} record -g --call-graph dwarf -F 99 -o {} -- {} {} 0 {} 1 {} {}",
                 ld_path,
                 perf_bin,
                 perf_data.display(),

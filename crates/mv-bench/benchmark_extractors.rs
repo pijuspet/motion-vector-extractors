@@ -109,6 +109,45 @@ fn get_num_cores() -> i64 {
         .unwrap_or(1)
 }
 
+/// Physical (non-SMT) core count. `available_parallelism` counts logical
+/// threads, so normalising "CPU % total" by it understates saturation on
+/// hyperthreaded CPUs (two logical threads share one core, so 100% logical
+/// busy ≈ ~130% of real throughput). Count unique (physical id, core id)
+/// pairs from /proc/cpuinfo instead; with SMT the percentage can now exceed
+/// 100%, which honestly reflects threads contending for shared cores.
+/// ponytail: Linux-only parse, falls back to logical count elsewhere.
+fn get_num_physical_cores() -> i64 {
+    #[cfg(target_os = "linux")]
+    {
+        use std::collections::HashSet;
+        if let Ok(info) = fs::read_to_string("/proc/cpuinfo") {
+            let mut seen = HashSet::new();
+            let (mut phys, mut core) = (None, None);
+            for line in info.lines() {
+                if let Some((k, v)) = line.split_once(':') {
+                    match k.trim() {
+                        "physical id" => phys = v.trim().parse::<i64>().ok(),
+                        "core id" => core = v.trim().parse::<i64>().ok(),
+                        _ => {}
+                    }
+                } else if line.trim().is_empty() {
+                    // blank line ends one processor block
+                    if let (Some(p), Some(c)) = (phys.take(), core.take()) {
+                        seen.insert((p, c));
+                    }
+                }
+            }
+            if let (Some(p), Some(c)) = (phys, core) {
+                seen.insert((p, c));
+            }
+            if !seen.is_empty() {
+                return seen.len() as i64;
+            }
+        }
+    }
+    get_num_cores() // fallback: logical count
+}
+
 // =============================================================================
 // Unix implementation
 // =============================================================================
@@ -534,7 +573,7 @@ fn run_benchmark(
         let avg_cpu_per_stream = total_cpu_time / stream_count as f64;
         result.cpu_usage_percent = (avg_cpu_per_stream / result.total_time_ms) * 100.0;
 
-        let num_cores = get_num_cores();
+        let num_cores = get_num_physical_cores();
         result.cpu_total_percent = if num_cores > 0 {
             (total_cpu_time / result.total_time_ms) * 100.0 / num_cores as f64
         } else {
@@ -567,10 +606,11 @@ fn print_results(results: &[BenchmarkResult], stream_count: i32) {
     let dash = "-".repeat(line);
 
     let title = "COMPLETE MOTION VECTOR EXTRACTION BENCHMARK";
-    let num_cores = get_num_cores();
     let streams_title = format!(
-        "Streams per Method: {}   |   Logical Cores: {}",
-        stream_count, num_cores
+        "Streams per Method: {}   |   Logical Cores: {}   |   Physical Cores: {}",
+        stream_count,
+        get_num_cores(),
+        get_num_physical_cores()
     );
 
     println!("\n{}", sep);
@@ -620,7 +660,7 @@ fn print_results(results: &[BenchmarkResult], stream_count: i32) {
     println!("  MV extract ms   = decode-loop wall time / frames_per_stream   — pure extraction latency (excludes FFmpeg init)");
     println!("  CPU %/stream    = avg CPU time per stream / wall time * 100  — single-stream CPU utilisation");
     println!(
-        "  CPU % total     = total CPU time / wall time / cores * 100   — system-wide CPU load"
+        "  CPU % total     = total CPU time / wall time / physical cores * 100  — system-wide CPU load (>100% = SMT contention)"
     );
     println!("{}", dash);
 }
@@ -639,6 +679,16 @@ pub fn run_benchmark_extractors(
         eprintln!("Streams must be between 1 and {}", MAX_STREAMS);
         return None;
     }
+    // L0_ONLY (makefile variable, default 1 — see `benchmark`/`benchmark_all`
+    // targets) controls list-0-only export uniformly across every method:
+    // extractor1/3/5/6 read it directly (mv_l0_only AVOption, default on
+    // regardless of this var — see extractor3.rs etc.) since they inherit our
+    // env; extractor9/10 default l0_only off in their own ExtractorArgs, so
+    // relay it explicitly here to match the same default-on benchmark
+    // behaviour and keep CSV sizes comparable across all methods.
+    let l0_only = std::env::var("L0_ONLY").map(|v| v != "0").unwrap_or(true);
+    std::env::set_var("E9_L0_ONLY", if l0_only { "1" } else { "0" });
+    std::env::set_var("E10_L0_ONLY", if l0_only { "1" } else { "0" });
 
     if is_verbose {
         println!("Video file       : {}", video_file);
@@ -702,4 +752,18 @@ pub fn run_benchmark_extractors(
         })
         .collect();
     Some(mapped)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn physical_cores_sane() {
+        let phys = get_num_physical_cores();
+        let logical = get_num_cores();
+        // At least one, and never more physical cores than logical threads.
+        assert!(phys >= 1, "physical cores must be >= 1, got {phys}");
+        assert!(phys <= logical, "physical {phys} > logical {logical}");
+    }
 }

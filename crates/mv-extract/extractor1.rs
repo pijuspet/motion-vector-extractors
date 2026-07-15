@@ -94,6 +94,11 @@ fn main() {
         ff::av_dict_set(&mut opts, flags2_key.as_ptr(), flags2_val.as_ptr(), 0);
         let mv_only_key = CString::new("motion_vectors_only").unwrap();
         ff::av_opt_set_int(dec_ctx as *mut c_void, mv_only_key.as_ptr(), 1, 0);
+        let mv_l0_key = CString::new("mv_l0_only").unwrap();
+        // Default on (matches this extractor's historical always-l0-only
+        // output); override with L0_ONLY=0 to also export list-1 rows.
+        let l0_only = std::env::var("L0_ONLY").map(|v| v != "0").unwrap_or(true);
+        ff::av_opt_set_int(dec_ctx as *mut c_void, mv_l0_key.as_ptr(), if l0_only { 1 } else { 0 }, 0);
         if args.keyframes_only {
             (*dec_ctx).skip_frame = ff::AVDiscard::AVDISCARD_NONKEY;
         }
