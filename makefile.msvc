@@ -43,6 +43,18 @@ KEYFRAMES_ONLY ?= 0
 THREAD_COUNT ?= 0
 # Set WRITE_CSV=0 to skip writing per-extractor MV output CSV files.
 WRITE_CSV ?= 1
+# List-0-only MV export (drops list-1/forward-reference rows), on by default
+# so CSV sizes are directly comparable across every method: extractor1/3/5/6
+# (custom FFmpeg) have always been list-0-only via mv_l0_only, and extractor9/10
+# (from-scratch Rust/C) now match via E9_L0_ONLY/E10_L0_ONLY. Set L0_ONLY=0 to
+# get full both-list output everywhere (e.g. for B-frame/list-1 investigation).
+L0_ONLY ?= 1
+# Which two methods the "Generate MV comparison" step's full (both-lists)
+# sanity check compares (step 3, logged as "first"/"second" rather than bare
+# method numbers). Default 1/4: both built from extractor1.rs, one against
+# the regular FFmpeg and one against the custom fork.
+COMPARE_FIRST ?= 1
+COMPARE_SECOND ?= 4
 # Extractor number to profile with perf/VTune (step 5/6).
 PROFILER_EXTRACTOR ?= 4
 
@@ -318,9 +330,9 @@ benchmark_all:
 			echo ""; \
 			echo "========== $$vtype / $$filepath =========="; \
 			if [ -z "$(TYPE)" ]; then \
-				cargo run --target $(RUST_TARGET) --bin full_benchmark "$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
+				L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --target $(RUST_TARGET) --bin full_benchmark "$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 			else \
-				cargo run --target $(RUST_TARGET) --bin full_benchmark "$$filepath" $(STREAMS) $$vtype $(TYPE) $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
+				L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --target $(RUST_TARGET) --bin full_benchmark "$$filepath" $(STREAMS) $$vtype $(TYPE) $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 			fi; \
 		else \
 			echo "SKIP: $$filepath not found"; \
@@ -328,12 +340,14 @@ benchmark_all:
 	done
 
 # STEPS (optional) selects benchmark steps non-interactively (e.g. STEPS=2).
+# L0_ONLY=1 (default) / COMPARE_FIRST / COMPARE_SECOND are inherited by every
+# extractor child process via the spawned process environment.
 benchmark:
-	cargo run --target $(RUST_TARGET) --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) $(STEPS)
+	L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --target $(RUST_TARGET) --bin full_benchmark '$(VIDEO_FILE)' $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) $(STEPS)
 
 # Run the benchmark with keyframe-only decoding across every video in
-# VIDEO_NAMES × VIDEO_TYPES. KEYFRAMES_ONLY=1 is inherited by every extractor
-# child process via the spawned process environment.
+# VIDEO_NAMES × VIDEO_TYPES. KEYFRAMES_ONLY=1/L0_ONLY are inherited by every
+# extractor child process via the spawned process environment.
 benchmark_keyframes:
 	@for vname in $(VIDEO_NAMES); do \
 		for vtype in $(VIDEO_TYPES); do \
@@ -345,7 +359,7 @@ benchmark_keyframes:
 			if [ -f "$$filepath" ]; then \
 				echo ""; \
 				echo "========== $$vname / $$vtype (keyframes only) =========="; \
-				cargo run --target $(RUST_TARGET) --bin full_benchmark \
+				L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --target $(RUST_TARGET) --bin full_benchmark \
 					"$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) 1 $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 			fi; \
 		done; \
@@ -371,7 +385,7 @@ benchmark_threads:
 				if [ -f "$$filepath" ]; then \
 					echo ""; \
 					echo "--- $$vname / $$vtype ---"; \
-					cargo run --target $(RUST_TARGET) --bin full_benchmark \
+					L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --target $(RUST_TARGET) --bin full_benchmark \
 						"$$filepath" $(STREAMS) $$vtype cust $(NRUNS) $$t $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 				fi; \
 			done; \
@@ -422,7 +436,7 @@ help:
 	@echo "    make -f makefile.msvc benchmark_keyframes   # all videos, keyframes-only mode"
 	@echo "    make -f makefile.msvc benchmark_threads     # all videos, sweep thread counts"
 	@echo ""
-	@echo "  Vars: VIDEO_NAME=$(VIDEO_NAME)  VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)  KEYFRAMES_ONLY=$(KEYFRAMES_ONLY)  THREAD_COUNT=$(THREAD_COUNT)  WRITE_CSV=$(WRITE_CSV)  PROFILER_EXTRACTOR=$(PROFILER_EXTRACTOR)"
+	@echo "  Vars: VIDEO_NAME=$(VIDEO_NAME)  VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)  KEYFRAMES_ONLY=$(KEYFRAMES_ONLY)  THREAD_COUNT=$(THREAD_COUNT)  WRITE_CSV=$(WRITE_CSV)  PROFILER_EXTRACTOR=$(PROFILER_EXTRACTOR)  L0_ONLY=$(L0_ONLY)  COMPARE_FIRST=$(COMPARE_FIRST)  COMPARE_SECOND=$(COMPARE_SECOND)"
 	@echo ""
 
 .PHONY: check-env install setup_ffmpeg build_tools build build_sys all benchmark_all benchmark benchmark_keyframes benchmark_threads test decode_ffmpeg help
