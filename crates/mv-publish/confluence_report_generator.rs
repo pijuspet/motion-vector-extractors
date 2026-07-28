@@ -5,6 +5,60 @@ use regex::Regex;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+/// Collapse `mv_comparison_result.txt` into counts for inlining in a report.
+///
+/// The file holds one line per difference, which on a mismatching run reaches
+/// hundreds of MB — far too much to paste into a Confluence page. The full file
+/// stays attached; this renders only how much differed.
+///
+/// Distinct motion vectors is the headline number rather than the line count:
+/// one vector produces several lines when more than one column differs (a
+/// `src_x` line and a `src_y` line share the same `Frame N src=(..) dst=(..)`
+/// prefix). Lines with no `": "` separator — notably the
+/// "No differences found" sentinel — are passed through unchanged.
+fn summarize_mv_comparison(raw: &str) -> String {
+    use std::collections::{BTreeMap, HashSet};
+
+    let mut vectors: HashSet<&str> = HashSet::new();
+    let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
+    let mut total = 0usize;
+
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((key, rest)) = line.split_once(": ") else {
+            continue;
+        };
+        total += 1;
+        vectors.insert(key);
+
+        // Bucket by difference type, dropping the row index / values so the
+        // breakdown stays to a handful of rows.
+        let kind = match rest.split_once(" (") {
+            Some((head, _)) => head,
+            None => rest,
+        };
+        *by_kind.entry(kind.to_string()).or_default() += 1;
+    }
+
+    if total == 0 {
+        return raw.trim().to_string();
+    }
+
+    let mut out = format!(
+        "{} motion vectors mismatched ({} difference lines)\n",
+        vectors.len(),
+        total
+    );
+    for (kind, count) in &by_kind {
+        out.push_str(&format!("  {:<28} {}\n", format!("{}:", kind), count));
+    }
+    out.push_str("\nFull list in the attached mv_comparison_result.txt.");
+    out
+}
+
 struct FileSpec {
     title: Option<&'static str>,
     filename: &'static str,
@@ -257,7 +311,8 @@ impl ConfluenceReportGenerator {
     ) -> Result<String, String> {
         let mv_comparison = self
             .client
-            .get_attachment_content(page_id, "mv_comparison_result.txt");
+            .get_attachment_content(page_id, "mv_comparison_result.txt")
+            .map(|raw| summarize_mv_comparison(&raw));
 
         // Only runs profiled with VTune (Windows) have these; perf/flamegraph
         // runs (Linux) don't, so skip the section entirely rather than link a
@@ -388,10 +443,12 @@ impl ConfluenceReportGenerator {
             let prefix = format!("run{}_", idx);
 
             let mv_comparison = if *run_has_mv_comparison {
-                self.client.get_attachment_content(
-                    dashboard_id,
-                    &format!("{}mv_comparison_result.txt", prefix),
-                )
+                self.client
+                    .get_attachment_content(
+                        dashboard_id,
+                        &format!("{}mv_comparison_result.txt", prefix),
+                    )
+                    .map(|raw| summarize_mv_comparison(&raw))
             } else {
                 None
             };
@@ -562,5 +619,31 @@ impl ConfluenceReportGenerator {
         println!("[DEBUG] Dashboard page update complete.");
 
         Ok(())
+    }
+}
+#[cfg(test)]
+mod summarize_tests {
+    use super::summarize_mv_comparison;
+
+    #[test]
+    fn counts_distinct_vectors_not_lines() {
+        // Two lines, one vector (both columns differ on the same key).
+        let raw = "\
+Frame 1 src=(10,20) dst=(8,18) source=-1: 'src_x' differs (first=10, second=11)
+Frame 1 src=(10,20) dst=(8,18) source=-1: 'src_y' differs (first=20, second=21)
+Frame 2 src=(5,5) dst=(4,5) source=-1: missing in second file
+";
+        let s = summarize_mv_comparison(raw);
+        let squashed: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(s.starts_with("2 motion vectors mismatched (3 difference lines)"), "{s}");
+        assert!(squashed.contains("missing in second file: 1"), "{s}");
+        assert!(squashed.contains("'src_x' differs: 1"), "{s}");
+        assert!(squashed.contains("'src_y' differs: 1"), "{s}");
+    }
+
+    #[test]
+    fn passes_through_the_no_differences_sentinel() {
+        let raw = "No differences found in frames in all frames.\n";
+        assert_eq!(summarize_mv_comparison(raw), "No differences found in frames in all frames.");
     }
 }

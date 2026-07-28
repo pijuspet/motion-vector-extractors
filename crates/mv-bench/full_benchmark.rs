@@ -6,7 +6,8 @@ use std::process::Command;
 
 use crate::benchmark::benchmark;
 use crate::benchmark_extractors::run_benchmark_extractors;
-use crate::mv_diff;
+use mv_types::motion_vector::load_motion_vectors;
+use mv_types::mv_compare::{compare_frames, is_zero_size, write_results};
 
 pub struct BenchmarkRunner {
     pub video_file: String,
@@ -408,118 +409,46 @@ impl BenchmarkRunner {
         // where the mv_l0_only AVOption doesn't exist (silently ignored, so
         // it always emits both lists), and method4 against the custom-patched
         // fork, where it does apply. Under the L0_ONLY default (see the
-        // makefile), method4 drops every list-1 row while method1 can't — an
-        // unfiltered compare would report every one of those as a spurious
-        // diff, not a real decoder mismatch. Skip this pairing while L0_ONLY
-        // is active; the list-0 comparison below (method0 vs method9) already
-        // filters source==-1 on both sides so it stays valid either way.
+        // makefile) method4 drops every list-1 row while method1 can't, so
+        // restrict both sides to list-0 and compare what they actually have in
+        // common rather than skipping the check. The other asymmetry —
+        // regular FFmpeg keeping zero-size vectors that the custom fork drops
+        // — needs no handling here: compare_frames() already skips those on
+        // both sides. Both are ffmpeg-based and numbered in display order, so
+        // unlike generate_mv_comparison_neg1() this needs no decode-order remap.
         let l0_only = std::env::var("L0_ONLY").map(|v| v != "0").unwrap_or(true);
-        if l0_only {
-            println!(
-                "MV comparison (first=method{first} vs second=method{second}): skipped — \
-                 L0_ONLY is set, so first (regular FFmpeg, always both lists) and second \
-                 (custom FFmpeg, list-0 only) aren't comparable. Run with L0_ONLY=0 to \
-                 include this check."
-            );
-        } else {
-            let first_csv = self.results_dir.join(format!("method{first}_output_0.csv"));
-            let second_csv = self.results_dir.join(format!("method{second}_output_0.csv"));
+        let first_csv = self.results_dir.join(format!("method{first}_output_0.csv"));
+        let second_csv = self.results_dir.join(format!("method{second}_output_0.csv"));
 
-            println!("MV comparison: first=method{first} second=method{second}");
-            if let Err(e) = mv_types::mv_compare::compare(
-                &first_csv.to_string_lossy(),
-                &second_csv.to_string_lossy(),
-                &self.motion_vectors_comparison_file.to_string_lossy(),
-            ) {
-                eprintln!("MV comparison error: {}", e);
-            }
-        }
-
-        self.generate_mv_comparison_neg1();
-    }
-
-    /// Compare method0 (original FFmpeg) against method9 (custom from-scratch
-    /// parser), list-0 (`source == -1`, backward-reference) motion vectors
-    /// only — the same comparison `make compare_mvs` runs standalone, folded
-    /// into the interactive benchmark flow so it doesn't need a second
-    /// invocation. See [`mv_bench::mv_diff::compare_list0`] for the display-
-    /// order remap this needs and why.
-    ///
-    /// Report-only: missing CSVs (e.g. this run didn't include methods 0/9)
-    /// just skip the step rather than failing the benchmark.
-    fn generate_mv_comparison_neg1(&self) {
-        let method0_csv = self.results_dir.join("method0_output_0.csv");
-        let method9_csv = self.results_dir.join("method9_output_0.csv");
-        if !method0_csv.exists() || !method9_csv.exists() {
-            println!(
-                "MV comparison (list-0): skipped, method0/method9 CSVs not found in {}",
-                self.results_dir.display()
-            );
-            return;
-        }
-
-        // Regular (unpatched) FFmpeg-8.0's ffprobe, deliberately not the
-        // custom-patched build: the custom decoder's full-decode path has a
-        // pre-existing bug that can segfault on B-frame content when
-        // motion_vectors_only isn't set, which plain ffprobe never sets.
-        // Packet PTS extraction doesn't need any custom-decoder feature, so
-        // this sidesteps the bug instead of tripping over it.
-        let ffprobe = self
-            .current_dir
-            .join("ffmpeg")
-            .join("FFmpeg-8.0")
-            .join("bin")
-            .join("ffprobe");
-        let ffprobe_libdir = self
-            .current_dir
-            .join("ffmpeg")
-            .join("FFmpeg-8.0")
-            .join("lib");
-        let pkt_order_path = self.results_dir.join("pkt_order.txt");
-
-        let output = std::process::Command::new(&ffprobe)
-            .args([
-                "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "packet=pts_time",
-                "-of", "csv=p=0",
-            ])
-            .arg(&self.video_file)
-            .env("LD_LIBRARY_PATH", &ffprobe_libdir)
-            .output();
-        let output = match output {
-            Ok(o) if o.status.success() => o,
-            Ok(o) => {
-                eprintln!(
-                    "MV comparison (list-0): ffprobe failed: {}",
-                    String::from_utf8_lossy(&o.stderr)
-                );
-                return;
-            }
-            Err(e) => {
-                eprintln!("MV comparison (list-0): could not run ffprobe ({}): {}", ffprobe.display(), e);
-                return;
-            }
-        };
-        if let Err(e) = fs::write(&pkt_order_path, &output.stdout) {
-            eprintln!("MV comparison (list-0): could not write {}: {}", pkt_order_path.display(), e);
-            return;
-        }
-
-        let output_file = self.results_dir.join("mv_diff_neg1.txt");
-        match mv_diff::compare_list0(
-            &method0_csv.to_string_lossy(),
-            &method9_csv.to_string_lossy(),
-            &pkt_order_path.to_string_lossy(),
-            &output_file,
+        println!(
+            "MV comparison: first=method{first} second=method{second}{}",
+            if l0_only { " (list-0 only)" } else { "" }
+        );
+        match (
+            load_motion_vectors(&first_csv.to_string_lossy()),
+            load_motion_vectors(&second_csv.to_string_lossy()),
         ) {
-            Ok(summary) => {
+            (Ok(mut a), Ok(mut b)) => {
+                if l0_only {
+                    a.retain(|m| m.source == -1);
+                    b.retain(|m| m.source == -1);
+                }
+                let diffs = compare_frames(&a, &b);
                 println!(
-                    "MV comparison (list-0): method0={} method9={} differences={} -> {}",
-                    summary.method0_rows, summary.method9_rows, summary.diffs, output_file.display()
+                    "MV comparison: first={} second={} differences={}",
+                    a.iter().filter(|m| !is_zero_size(m)).count(),
+                    b.iter().filter(|m| !is_zero_size(m)).count(),
+                    diffs.len()
                 );
+                if let Err(e) =
+                    write_results(&diffs, &self.motion_vectors_comparison_file)
+                {
+                    eprintln!("MV comparison error: {}", e);
+                }
             }
-            Err(e) => eprintln!("MV comparison (list-0): {}", e),
+            (Err(e), _) | (_, Err(e)) => {
+                eprintln!("MV comparison: could not load CSVs: {}", e)
+            }
         }
     }
 

@@ -9,6 +9,7 @@ KEYFRAMES_ONLY ?= 0
 # Set THREAD_COUNT=N to pin every extractor to N threads (0 = FFmpeg auto).
 THREAD_COUNT ?= 1
 # Set WRITE_CSV=0 to skip writing per-extractor MV output CSV files.
+WRITE_CSV ?= 0
 # List-0-only MV export (drops list-1/forward-reference rows), on by default
 # so CSV sizes are directly comparable across every method: extractor1/3/5/6
 # (custom FFmpeg) have always been list-0-only via mv_l0_only, and extractor9/10
@@ -338,6 +339,49 @@ publish:
 generate_video:
 	cargo run --bin generate_motion_vectors_video $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
 	cargo run --bin combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
+
+# Same as generate_video, but for every results dir at/after a given time
+# instead of just the newest one.
+#   make generate_videos_since                # today from 09:44
+#   make generate_videos_since SINCE=1400     # today from 14:00
+#   make generate_videos_since SINCE_DAY=20260726 SINCE=0000
+#
+# Each run dir encodes its source video, so the video type, stem and the
+# matching file under videos/ are derived per-dir rather than taken from
+# VIDEO_TYPE/VIDEO_FILE. The "custom" CSV is whichever of CUST_METHODS the run
+# actually produced (a run driven at method5 has no method4 CSV), so this
+# doesn't assume the CSV_FILE_PATH_CUST default.
+SINCE     ?= 0944
+SINCE_DAY ?= $(shell date +%Y%m%d)
+CUST_METHODS ?= 4 5 3
+
+generate_videos_since:
+	@n=0; skipped=0; \
+	for d in $(CURRENT_DIR)/results/*/$(SINCE_DAY)_*/; do \
+		[ -d "$$d" ] || continue; \
+		d=$${d%/}; b=$$(basename $$d); \
+		hhmm=$$(echo "$$b" | cut -d_ -f2); \
+		[ "$$(echo "$$hhmm $(SINCE)" | awk '{print ($$1 < $$2)}')" = 1 ] && continue; \
+		vtype=$$(basename $$(dirname $$d)); \
+		stem=$$(echo "$$b" | sed -E 's/^[0-9]{8}_[0-9]{4}_//; s/_t[0-9]+(_kf)?(_csv)?$$//'); \
+		vid=$$(ls $(CURRENT_DIR)/videos/$$vtype/$$stem.* 2>/dev/null | head -n 1); \
+		orig=$$d/method0_output_0.csv; \
+		cust=; for m in $(CUST_METHODS); do \
+			c=$$d/method$${m}_output_0.csv; \
+			if [ -f "$$c" ]; then cust=$$c; break; fi; \
+		done; \
+		if [ -z "$$cust" ]; then echo "skip $$b: no custom CSV (tried methods $(CUST_METHODS))"; skipped=$$((skipped+1)); continue; fi; \
+		if [ -z "$$vid" ]; then echo "skip $$b: no source video at videos/$$vtype/$$stem.*"; skipped=$$((skipped+1)); continue; fi; \
+		echo "=== $$vtype/$$b  (custom=$$(basename $$cust)) ==="; \
+		cargo run --bin generate_motion_vectors_video $$cust $$d || exit 1; \
+		if [ -f "$$orig" ]; then \
+			cargo run --bin combine_motion_vectors_with_video $$vid $$orig $$cust $$d || exit 1; \
+		else \
+			echo "  no method0 CSV, skipping side-by-side combine"; \
+		fi; \
+		n=$$((n+1)); \
+	done; \
+	echo "generate_videos_since: generated for $$n run(s), skipped $$skipped"
 
 compare_mvs:
 	LD_LIBRARY_PATH=$(REGULAR_PREFIX)/lib:$$LD_LIBRARY_PATH \
