@@ -267,20 +267,30 @@ impl<W: Write> MvCompactCsvWriter<W> {
     }
 
     pub fn write(&mut self, v: &MvCompact) -> std::io::Result<()> {
+        // Build the row on the stack and issue ONE write_all. The previous
+        // thirteen write_all calls per row (one per field/comma) put
+        // BufWriter's slow path at ~7% of extractor CPU in VTune; each call
+        // re-checks capacity and can spill mid-row.
+        // Worst case: two i32 (11) + four i16 (6) + 6 separators = 52 bytes.
+        let mut row = [0u8; 64];
+        let mut n = 0;
         let mut buf = itoa::Buffer::new();
-        let w = &mut self.inner;
-        w.write_all(buf.format(v.frame).as_bytes())?;
-        w.write_all(b",")?;
-        w.write_all(buf.format(v.source).as_bytes())?;
-        w.write_all(b",")?;
-        w.write_all(buf.format(v.src_x).as_bytes())?;
-        w.write_all(b",")?;
-        w.write_all(buf.format(v.src_y).as_bytes())?;
-        w.write_all(b",")?;
-        w.write_all(buf.format(v.dst_x).as_bytes())?;
-        w.write_all(b",")?;
-        w.write_all(buf.format(v.dst_y).as_bytes())?;
-        w.write_all(b"\n")?;
+        macro_rules! field {
+            ($val:expr, $sep:expr) => {{
+                let s = buf.format($val).as_bytes();
+                row[n..n + s.len()].copy_from_slice(s);
+                n += s.len();
+                row[n] = $sep;
+                n += 1;
+            }};
+        }
+        field!(v.frame, b',');
+        field!(v.source, b',');
+        field!(v.src_x, b',');
+        field!(v.src_y, b',');
+        field!(v.dst_x, b',');
+        field!(v.dst_y, b'\n');
+        self.inner.write_all(&row[..n])?;
         self.total += 1;
         Ok(())
     }

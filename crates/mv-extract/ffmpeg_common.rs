@@ -51,13 +51,21 @@ impl ExtractorArgs {
             );
             return None;
         }
+        let keyframes_only = argv[6] == "1";
+        let mut thread_count = argv[5].parse::<i32>().unwrap_or(0);
+        // Keyframes-only decodes ~2-5% of the frames with no inter-frame
+        // dependencies to pipeline, so frame threads only add setup/handoff
+        // cost: measured 0.024 ms/f at 1 thread vs 0.055 at 128. Clamp.
+        if keyframes_only {
+            thread_count = 1;
+        }
         Some(Self {
             video_file: argv[1].clone(),
             do_print: argv[2].parse::<i32>().unwrap_or(0) != 0,
             output_file: argv[3].clone(),
             is_verbose: argv[4].parse::<i32>().unwrap_or(0) != 0,
-            thread_count: argv[5].parse::<i32>().unwrap_or(0),
-            keyframes_only: argv[6] == "1",
+            thread_count,
+            keyframes_only,
         })
     }
 }
@@ -70,15 +78,20 @@ pub type FileMvWriter = MotionVectorCsvWriter<BufWriter<File>>;
 /// `AV_FRAME_DATA_MOTION_VECTORS_COMPACT` instead of the full-size side data.
 pub type FileMvCompactWriter = MvCompactCsvWriter<BufWriter<File>>;
 
+/// Buffer for the CSV writers. The BufWriter default (8 KiB) meant a spill
+/// every ~370 compact rows — VTune showed `write_all_cold` as a top-3
+/// extractor hotspot. 1 MiB cuts the write syscalls ~128x.
+const MV_WRITER_BUF: usize = 1 << 20;
+
 /// Open the CSV output file and wrap it in a streaming writer.
 pub fn open_mv_writer(path: &str) -> std::io::Result<FileMvWriter> {
     let file = File::create(path)?;
-    MotionVectorCsvWriter::new(BufWriter::new(file))
+    MotionVectorCsvWriter::new(BufWriter::with_capacity(MV_WRITER_BUF, file))
 }
 
 pub fn open_mv_compact_writer(path: &str) -> std::io::Result<FileMvCompactWriter> {
     let file = File::create(path)?;
-    MvCompactCsvWriter::new(BufWriter::new(file))
+    MvCompactCsvWriter::new(BufWriter::with_capacity(MV_WRITER_BUF, file))
 }
 
 /// Open an `MvWriter`, picking the compact flavour when the custom FFmpeg
