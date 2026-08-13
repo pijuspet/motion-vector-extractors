@@ -273,8 +273,21 @@ setup_ffmpeg_pgo: check-shell
 # BUILD TARGETS
 # =============================================================================
 
+# mv-video is EXCLUDED, same as in makefile.msvc. It is the only crate that pulls
+# in the `opencv` crate (MV-visualization video), and opencv's build script probes
+# for a *system* OpenCV install. `install` does pacman mingw-w64-x86_64-opencv, but
+# the probe still fails under CI: MSYS2 rewrites PKG_CONFIG_PATH into Windows form
+# when it spawns the native cargo.exe, and the drive-letter colon in "D:\..." then
+# shreds the path list, so opencv4.pc is never found:
+#     PKG_CONFIG_PATH contains the following:
+#         - D
+#         - \a\_temp\msys64\mingw64\lib\pkgconfig;D
+# Nothing in the workspace depends on mv-video (it is a leaf crate) and it is not
+# part of the extractor deliverable, so excluding it costs nothing here. To build
+# it locally, run `cargo build -p mv-video` directly with OPENCV_INCLUDE_PATHS /
+# OPENCV_LINK_PATHS / OPENCV_LINK_LIBS set, which bypasses the pkg-config probe.
 build_tools: check-shell
-	cargo build --workspace --release
+	cargo build --workspace --exclude mv-video --release
 
 TARGET_SYS  := $(CARGO_BASE)/extractor-sys
 TARGET_CUST := $(CARGO_BASE)/extractor-cust
@@ -414,7 +427,7 @@ benchmark_threads:
 # /mingw64 pkg-config). No tests exist yet, so this compiles the workspace and
 # runs zero tests today — a placeholder for the future suite.
 test: check-shell
-	cargo test --workspace
+	cargo test --workspace --exclude mv-video
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
