@@ -228,6 +228,100 @@ install:
 setup_ffmpeg: check-env
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
 	$(call FFMPEG_BUILD,$(REGULAR_PREFIX))
+# -----------------------------------------------------------------------------
+# Profile-guided optimization   ** BEST-EFFORT / UNTESTED, like the rest of this file **
+# -----------------------------------------------------------------------------
+# MSVC PGO is a different mechanism from GCC's, so this is NOT a port of the
+# -fprofile-generate/-fprofile-use recipe in makefile / makefile.windows:
+#
+#   instrument : cl /GL           + link /GENPROFILE:PGD=<pgd>
+#   train      : run the .exe     -> writes <pgd-dir>/*.pgc next to the .pgd
+#   optimize   : cl /GL           + link /USEPROFILE:PGD=<pgd>
+#
+# /GENPROFILE + /USEPROFILE supersede the older /LTCG:PGINSTRUMENT +
+# pgomgr /merge + /LTCG:PGOPTIMIZE dance; /USEPROFILE merges the .pgc files
+# itself, so no pgomgr step is needed.
+#
+# Differences from the GCC targets worth knowing:
+#   - `make clean` is still required between phases (same reason: configure
+#     regenerates config.mak but leaves the objects), but the profile lives in
+#     its own directory outside the tree anyway, so clean cannot eat it.
+#   - The training run needs the INSTRUMENTED DLLs on PATH — hence the copy into
+#     the executables dir before training, same as the GCC targets.
+#   - /GL is whole-program optimization; it makes the compile phase noticeably
+#     slower. On Windows the configure probes usually still dominate.
+#
+# VERIFY: the exact .pgd path handling. link.exe wants a Windows path, so it is
+# passed through cygpath -w. If link reports it cannot create/find the .pgd,
+# check that PGO_*_DIR exists and is writable from the native (non-MSYS) side.
+PGO_TRAIN_CLIPS   ?= MCTTR0102b
+PGO_TRAIN_TYPES   ?= h264_cabac h264_cavlc h265 h264_avi
+PGO_TRAIN_THREADS ?= 1 16
+PGO_CUST_DIR := $(CUSTOM_PREFIX)/pgo
+PGO_SLIM_DIR := $(SLIM_PREFIX)/pgo
+
+# $(1) = extractor binary to train with, $(2) = profile directory.
+# A missing file is skipped rather than fatal, so narrowing PGO_TRAIN_TYPES does
+# not require a matching clip in every corpus. Writes a TRAINED_ON manifest: a
+# profile directory with no record of its workload cannot be reasoned about later.
+define pgo_train_run
+	@echo "  clips=[$(PGO_TRAIN_CLIPS)] corpora=[$(PGO_TRAIN_TYPES)] threads=[$(PGO_TRAIN_THREADS)]"
+	@for clip in $(PGO_TRAIN_CLIPS); do \
+		for vtype in $(PGO_TRAIN_TYPES); do \
+			if [ "$$vtype" = "h264_avi" ]; then \
+				f='$(CURRENT_DIR)'/videos/$$vtype/$$clip.avi; \
+			else \
+				f='$(CURRENT_DIR)'/videos/$$vtype/$$clip.mp4; \
+			fi; \
+			if [ -f "$$f" ]; then \
+				for t in $(PGO_TRAIN_THREADS); do \
+					echo "  train: $$vtype/$$clip t$$t"; \
+					$(1) "$$f" 0 /dev/null 0 $$t 0 >/dev/null || exit 1; \
+				done; \
+			else \
+				echo "  SKIP (missing): $$f"; \
+			fi; \
+		done; \
+	done
+	@printf 'trained: %s\nclips:   %s\ncorpora: %s\nthreads: %s\n' \
+		"$$(date -Is)" "$(PGO_TRAIN_CLIPS)" "$(PGO_TRAIN_TYPES)" "$(PGO_TRAIN_THREADS)" \
+		> '$(2)/TRAINED_ON'
+endef
+
+setup_ffmpeg_pgo: check-env
+	@echo "===== PGO 1/3: instrumented custom build (MSVC /GENPROFILE) ====="
+	rm -rf '$(PGO_CUST_DIR)' && mkdir -p '$(PGO_CUST_DIR)'
+	cd '$(CUSTOM_PREFIX)/FFmpeg' && \
+	chmod +x ./configure ./ffbuild/*.sh && \
+	./configure --prefix='$(CUSTOM_PREFIX)' --toolchain=msvc --arch=amd64 \
+		--enable-asm --enable-shared --disable-static --enable-swresample \
+		--enable-debug --disable-stripping --disable-doc --disable-programs \
+		--disable-bzlib --disable-libopenjpeg --disable-iconv --disable-zlib \
+		--extra-cflags="-MD -GL" \
+		--extra-ldflags="/NODEFAULTLIB:libcmt /GENPROFILE:PGD=$$(cygpath -w '$(PGO_CUST_DIR)')\\mv.pgd" \
+		--pkg-config-flags="--static" $(SLIM_FFMPEG) && \
+	make clean && make -j"$$(nproc)" && make install
+	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
+	@mkdir -p '$(EXECUTABLES_DIR_CUST)'
+	cp '$(TARGET_CUST)/$(REL)/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)'
+	@cp -u '$(CUSTOM_PREFIX)/bin/'*.dll '$(EXECUTABLES_DIR_CUST)/' 2>/dev/null || true
+	@echo "===== PGO 2/3: training run ====="
+	$(call pgo_train_run,'$(CURRENT_DIR)/$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)',$(PGO_CUST_DIR))
+	@n=$$(ls '$(PGO_CUST_DIR)'/*.pgc 2>/dev/null | wc -l); \
+	echo "  collected $$n .pgc profile files"; \
+	if [ "$$n" -eq 0 ]; then echo "ERROR: no profile data — aborting"; exit 1; fi
+	@echo "===== PGO 3/3: optimized rebuild (MSVC /USEPROFILE) ====="
+	cd '$(CUSTOM_PREFIX)/FFmpeg' && \
+	./configure --prefix='$(CUSTOM_PREFIX)' --toolchain=msvc --arch=amd64 \
+		--enable-asm --enable-shared --disable-static --enable-swresample \
+		--enable-debug --disable-stripping --disable-doc --disable-programs \
+		--disable-bzlib --disable-libopenjpeg --disable-iconv --disable-zlib \
+		--extra-cflags="-MD -GL" \
+		--extra-ldflags="/NODEFAULTLIB:libcmt /USEPROFILE:PGD=$$(cygpath -w '$(PGO_CUST_DIR)')\\mv.pgd" \
+		--pkg-config-flags="--static" $(SLIM_FFMPEG) && \
+	make clean && make -j"$$(nproc)" && make install
+	$(MAKE) -f makefile.msvc build
+	@echo "[OK]    PGO custom build complete."
 
 # =============================================================================
 # BUILD TARGETS
@@ -427,8 +521,9 @@ help:
 	@echo ""
 	@echo "    make -f makefile.msvc install         # print prereq + Defender guidance"
 	@echo "    make -f makefile.msvc check-env       # verify cl/link/nasm/cargo on PATH"
-	@echo "    make -f makefile.msvc setup_ffmpeg    # build both FFmpeg variants (--toolchain=msvc)"
-	@echo "    make -f makefile.msvc build           # build all extractors (sys + custom)"
+	@echo "    make -f makefile.msvc setup_ffmpeg    # build all three FFmpeg variants (sys + custom + slim)"
+	@echo "    make -f makefile.msvc setup_ffmpeg_pgo       # PGO the custom fork (/GENPROFILE -> train -> /USEPROFILE)"
+	@echo "    make -f makefile.msvc build           # build all extractors (sys + custom + slim)"
 	@echo "    make -f makefile.msvc build_tools     # cargo build --workspace (excludes mv-video / opencv)"
 	@echo "    make -f makefile.msvc test            # cargo test --workspace (excludes mv-video / opencv)"
 	@echo "    make -f makefile.msvc benchmark             # single-video benchmark (needs system OpenCV)"
@@ -438,5 +533,8 @@ help:
 	@echo ""
 	@echo "  Vars: VIDEO_NAME=$(VIDEO_NAME)  VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)  KEYFRAMES_ONLY=$(KEYFRAMES_ONLY)  THREAD_COUNT=$(THREAD_COUNT)  WRITE_CSV=$(WRITE_CSV)  PROFILER_EXTRACTOR=$(PROFILER_EXTRACTOR)  L0_ONLY=$(L0_ONLY)  COMPARE_FIRST=$(COMPARE_FIRST)  COMPARE_SECOND=$(COMPARE_SECOND)"
 	@echo ""
+	@echo "  PGO vars (both PGO targets): PGO_TRAIN_CLIPS=$(PGO_TRAIN_CLIPS)  PGO_TRAIN_TYPES=$(PGO_TRAIN_TYPES)  PGO_TRAIN_THREADS=$(PGO_TRAIN_THREADS)"
+	@echo "    e.g. make -f makefile.msvc setup_ffmpeg_pgo PGO_TRAIN_TYPES=h264_cabac PGO_TRAIN_THREADS=1"
+	@echo ""
 
-.PHONY: check-env install setup_ffmpeg build_tools build build_sys all benchmark_all benchmark benchmark_keyframes benchmark_threads test decode_ffmpeg help
+.PHONY: check-env install setup_ffmpeg setup_ffmpeg_pgo build_tools build build_sys all benchmark_all benchmark benchmark_keyframes benchmark_threads test decode_ffmpeg help

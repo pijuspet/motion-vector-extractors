@@ -22,9 +22,9 @@ _SPEEDUP_Y_MAX = {
     ("h264_cavlc",        "cpu_ms_per_frame"): 5.1,
     ("h264_cavlc",        "memory"):           1.7,
 
-    ("h264_cabac",        "fps"):              4.7,
-    ("h264_cabac",        "time_per_frame"):   4.7,
-    ("h264_cabac",        "cpu_ms_per_frame"): 4.7,
+    ("h264_cabac",        "fps"):              5,
+    ("h264_cabac",        "time_per_frame"):   5,
+    ("h264_cabac",        "cpu_ms_per_frame"): 5,
     ("h264_cabac",        "memory"):           2.7,
 
     ("h264_avi",          "fps"):              4.7,

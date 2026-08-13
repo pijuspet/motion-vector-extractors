@@ -186,6 +186,88 @@ endif
 setup_ffmpeg: check-shell
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
 	$(call FFMPEG_BUILD,$(REGULAR_PREFIX))
+# -----------------------------------------------------------------------------
+# Profile-guided optimization
+# -----------------------------------------------------------------------------
+# Three phases: instrument, train, rebuild with the profile. `make clean`
+# between them is mandatory — configure regenerates config.mak but leaves the
+# objects behind, and they must be recompiled under the new -fprofile-* flags
+# or the profile is silently ignored.
+#
+# The profile is kept OUT of the source tree (-fprofile-generate=DIR): FFmpeg's
+# CLEANSUFFIXES (ffbuild/common.mak) lists *.gcda, so an in-tree profile would
+# be deleted by the very `make clean` these phases need — silently, because
+# -Wno-missing-profile hides the resulting "no profile data" warnings.
+#
+# All three knobs below are overridable and apply to both PGO targets:
+#   make -f makefile.windows setup_ffmpeg_pgo PGO_TRAIN_TYPES=h264_cabac PGO_TRAIN_THREADS=1
+PGO_TRAIN_CLIPS   ?= MCTTR0102b
+PGO_TRAIN_TYPES   ?= h264_cabac h264_cavlc h265 h264_avi
+PGO_TRAIN_THREADS ?= 1 16
+PGO_CUST_DIR := $(CUSTOM_PREFIX)/pgo
+PGO_SLIM_DIR := $(SLIM_PREFIX)/pgo
+
+# $(1) = extractor binary to train with, $(2) = profile directory.
+# A missing file is skipped rather than fatal, so narrowing PGO_TRAIN_TYPES does
+# not require a matching clip in every corpus. Writes a TRAINED_ON manifest: a
+# .gcda directory with no record of its workload cannot be reasoned about later.
+define pgo_train_run
+	@echo "  clips=[$(PGO_TRAIN_CLIPS)] corpora=[$(PGO_TRAIN_TYPES)] threads=[$(PGO_TRAIN_THREADS)]"
+	@for clip in $(PGO_TRAIN_CLIPS); do \
+		for vtype in $(PGO_TRAIN_TYPES); do \
+			if [ "$$vtype" = "h264_avi" ]; then \
+				f='$(CURRENT_DIR)'/videos/$$vtype/$$clip.avi; \
+			else \
+				f='$(CURRENT_DIR)'/videos/$$vtype/$$clip.mp4; \
+			fi; \
+			if [ -f "$$f" ]; then \
+				for t in $(PGO_TRAIN_THREADS); do \
+					echo "  train: $$vtype/$$clip t$$t"; \
+					$(1) "$$f" 0 /dev/null 0 $$t 0 >/dev/null || exit 1; \
+				done; \
+			else \
+				echo "  SKIP (missing): $$f"; \
+			fi; \
+		done; \
+	done
+	@printf 'trained: %s\nclips:   %s\ncorpora: %s\nthreads: %s\n' \
+		"$$(date -Is)" "$(PGO_TRAIN_CLIPS)" "$(PGO_TRAIN_TYPES)" "$(PGO_TRAIN_THREADS)" \
+		> '$(2)/TRAINED_ON'
+endef
+
+setup_ffmpeg_pgo: check-shell
+	@echo "===== PGO 1/3: instrumented custom build ====="
+	rm -rf '$(PGO_CUST_DIR)' && mkdir -p '$(PGO_CUST_DIR)'
+	cd '$(CUSTOM_PREFIX)/FFmpeg' && \
+	chmod +x ./configure ./ffbuild/*.sh && \
+	./configure --prefix='$(CUSTOM_PREFIX)' --enable-shared --disable-static \
+		--enable-swresample --target-os=mingw32 --arch=x86_64 \
+		--enable-debug --disable-stripping --disable-doc \
+		$(SLIM_FFMPEG) --pkg-config-flags="--static" \
+		--extra-cflags="-fprofile-generate='$(PGO_CUST_DIR)' -fprofile-update=atomic" \
+		--extra-ldflags="-fprofile-generate='$(PGO_CUST_DIR)'" && \
+	make clean && make -j"$$(nproc)" && make install
+	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
+	@mkdir -p '$(EXECUTABLES_DIR_CUST)'
+	cp '$(TARGET_CUST)/release/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)'
+	@cp -u '$(CUSTOM_PREFIX)/bin/'*.dll '$(EXECUTABLES_DIR_CUST)/' 2>/dev/null || true
+	@echo "===== PGO 2/3: training run ====="
+	$(call pgo_train_run,'$(CURRENT_DIR)/$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)',$(PGO_CUST_DIR))
+	@n=$$(find '$(PGO_CUST_DIR)' -name '*.gcda' | wc -l); \
+	echo "  collected $$n .gcda profile files"; \
+	if [ "$$n" -eq 0 ]; then echo "ERROR: no profile data — aborting"; exit 1; fi
+	@echo "===== PGO 3/3: optimized rebuild ====="
+	cd '$(CUSTOM_PREFIX)/FFmpeg' && \
+	./configure --prefix='$(CUSTOM_PREFIX)' --enable-shared --disable-static \
+		--enable-swresample --target-os=mingw32 --arch=x86_64 \
+		--enable-debug --disable-stripping --disable-doc \
+		$(SLIM_FFMPEG) --pkg-config-flags="--static" \
+		--extra-cflags="-fprofile-use='$(PGO_CUST_DIR)' -fprofile-correction \
+			-Wno-missing-profile -Wno-coverage-mismatch" && \
+	make clean && make -j"$$(nproc)" && make install
+	$(MAKE) -f makefile.windows build
+	@echo "[OK]    PGO custom build complete ($$(find '$(PGO_CUST_DIR)' -name '*.gcda' | wc -l) profile files retained)."
+
 
 # =============================================================================
 # BUILD TARGETS
@@ -424,8 +506,9 @@ help:
 	@echo "  Usage (run from MSYS2 MINGW64 shell):"
 	@echo ""
 	@echo "    make -f makefile.windows install              # MSYS2 deps + venv + pip"
-	@echo "    make -f makefile.windows setup_ffmpeg         # build both FFmpeg variants"
-	@echo "    make -f makefile.windows build                # build all extractors (sys + custom)"
+	@echo "    make -f makefile.windows setup_ffmpeg         # build all three FFmpeg variants (sys + custom + slim)"
+	@echo "    make -f makefile.windows setup_ffmpeg_pgo     # PGO the custom fork (instrument -> train -> rebuild)"
+	@echo "    make -f makefile.windows build                # build all extractors (sys + custom + slim)"
 	@echo "    make -f makefile.windows build_sys            # build extractors against system FFmpeg only"
 	@echo "    make -f makefile.windows build_tools          # cargo build --workspace --release"
 	@echo "    make -f makefile.windows test                 # cargo test --workspace"
@@ -440,6 +523,9 @@ help:
 	@echo "    make -f makefile.windows installer_diff       # regenerate custom_ffmpeg.diff"
 	@echo ""
 	@echo "  Vars: VIDEO_NAME=$(VIDEO_NAME)  VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)  KEYFRAMES_ONLY=$(KEYFRAMES_ONLY)  THREAD_COUNT=$(THREAD_COUNT)  WRITE_CSV=$(WRITE_CSV)  L0_ONLY=$(L0_ONLY)  COMPARE_FIRST=$(COMPARE_FIRST)  COMPARE_SECOND=$(COMPARE_SECOND)"
+	@echo ""
+	@echo "  PGO vars (both PGO targets): PGO_TRAIN_CLIPS=$(PGO_TRAIN_CLIPS)  PGO_TRAIN_TYPES=$(PGO_TRAIN_TYPES)  PGO_TRAIN_THREADS=$(PGO_TRAIN_THREADS)"
+	@echo "    e.g. make -f makefile.windows setup_ffmpeg_pgo PGO_TRAIN_TYPES=h264_cabac PGO_TRAIN_THREADS=1"
 	@echo ""
 	@echo "  Notes:"
 	@echo "    - VTune (profiler) and perf (flamegraph) are Linux-only and skipped on Windows."

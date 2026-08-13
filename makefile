@@ -73,7 +73,10 @@ CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method4_output_0.csv # custom ffmpeg
 # FFMPEG & PKG-CONFIG SETUP
 # =============================================================================
 
-FF_PKGS := libavformat libavcodec libavutil libswresample
+# Only what the extractors link. libswresample/libswscale/libavfilter/
+# libavdevice were listed here historically but never used — dropping them is
+# what allows the slim tree to not build them at all.
+FF_PKGS := libavformat libavcodec libavutil
 pkg_cmd = PKG_CONFIG_PATH=$(1)/lib/pkgconfig pkg-config
 
 # Functions to extract flags, libs, and rpath
@@ -169,6 +172,101 @@ endif
 setup_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
 	$(call FFMPEG_BUILD,$(REGULAR_PREFIX))
+# -----------------------------------------------------------------------------
+# Profile-guided optimization
+# -----------------------------------------------------------------------------
+# Three phases: instrument, train, rebuild with the profile. `make clean`
+# between them is mandatory — configure regenerates config.mak but leaves the
+# objects behind, and they must be recompiled under the new -fprofile-* flags
+# or the profile is silently ignored.
+#
+# What the training run covers. All three are overridable on the command line
+# and apply to BOTH setup_ffmpeg_pgo and setup_ffmpeg_slim_pgo — a profile is
+# only as good as the workload it saw, so narrow these when you want the build
+# tuned for one specific case rather than the whole corpus:
+#
+#   # tune the fork for single-threaded CABAC only
+#   make setup_ffmpeg_pgo PGO_TRAIN_TYPES=h264_cabac PGO_TRAIN_THREADS=1
+#
+#   # tune the slim tree for your own footage, both thread regimes
+#   make setup_ffmpeg_slim_pgo PGO_TRAIN_CLIPS="clipA clipB" PGO_TRAIN_THREADS="1 16"
+#
+# Defaults: one clip across all four corpora, so the profile covers every
+# decoder these trees carry (h264 CABAC, h264 CAVLC, HEVC, AVI / MPEG-4 Part 2).
+# PGO wants branch coverage, not volume — one clip per codec is enough. Note the
+# default clip is also a benchmark clip, so measure PGO gains on a held-out clip
+# (school / bus) or the number is train-on-test.
+PGO_TRAIN_CLIPS   ?= MCTTR0102b
+PGO_TRAIN_TYPES   ?= h264_cabac h264_cavlc h265 h264_avi
+# Both extremes by default: t1 exercises the serial decode path (where PGO's
+# gain concentrates), t16 the frame-threading and synchronisation paths. Set
+# to just "1" if the target workload is single-threaded — the profile then
+# stops spending budget on thread-handoff branches that will never be taken.
+PGO_TRAIN_THREADS ?= 1 16
+
+# $(1) = extractor binary to train with, $(2) = profile directory.
+# Loops clips x corpora x thread counts. A missing file is skipped rather than
+# fatal, so narrowing PGO_TRAIN_TYPES does not require a matching clip in every
+# corpus. Writes a TRAINED_ON manifest next to the profile: a .gcda directory
+# with no record of the workload behind it cannot be reasoned about later.
+define pgo_train_run
+	@echo "  clips=[$(PGO_TRAIN_CLIPS)] corpora=[$(PGO_TRAIN_TYPES)] threads=[$(PGO_TRAIN_THREADS)]"
+	@for clip in $(PGO_TRAIN_CLIPS); do \
+		for vtype in $(PGO_TRAIN_TYPES); do \
+			if [ "$$vtype" = "h264_avi" ]; then \
+				f=$(CURRENT_DIR)/videos/$$vtype/$$clip.avi; \
+			else \
+				f=$(CURRENT_DIR)/videos/$$vtype/$$clip.mp4; \
+			fi; \
+			if [ -f "$$f" ]; then \
+				for t in $(PGO_TRAIN_THREADS); do \
+					echo "  train: $$vtype/$$clip t$$t"; \
+					$(1) "$$f" 0 /dev/null 0 $$t 0 >/dev/null || exit 1; \
+				done; \
+			else \
+				echo "  SKIP (missing): $$f"; \
+			fi; \
+		done; \
+	done
+	@printf 'trained: %s\nclips:   %s\ncorpora: %s\nthreads: %s\n' \
+		"$$(date -Is)" "$(PGO_TRAIN_CLIPS)" "$(PGO_TRAIN_TYPES)" "$(PGO_TRAIN_THREADS)" \
+		> $(2)/TRAINED_ON
+endef
+
+PGO_CUST_DIR := $(CUSTOM_PREFIX)/pgo
+
+setup_ffmpeg_pgo:
+	@echo "===== PGO 1/3: instrumented custom build ====="
+	rm -rf $(PGO_CUST_DIR) && mkdir -p $(PGO_CUST_DIR)
+	cd $(CUSTOM_PREFIX)/FFmpeg && \
+	chmod +x ./configure ./ffbuild/*.sh && \
+	./configure --prefix=$(CUSTOM_PREFIX) --enable-shared --disable-static \
+		--enable-swresample --enable-debug --disable-stripping --disable-doc \
+		$(SLIM_FFMPEG) --pkg-config-flags="--static" \
+		--extra-cflags="-fprofile-generate=$(PGO_CUST_DIR) -fprofile-update=atomic" \
+		--extra-ldflags="-fprofile-generate=$(PGO_CUST_DIR)" && \
+	make clean && make -j"$$(nproc)" && make install
+	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
+	cp $(TARGET_CUST)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
+	@echo "===== PGO 2/3: training run ====="
+	$(call pgo_train_run,$(CURRENT_DIR)/$(EXECUTABLES_DIR)/extractor5,$(PGO_CUST_DIR))
+	@n=$$(find $(PGO_CUST_DIR) -name '*.gcda' | wc -l); \
+	echo "  collected $$n .gcda profile files"; \
+	if [ "$$n" -eq 0 ]; then echo "ERROR: no profile data — aborting"; exit 1; fi
+	@echo "===== PGO 3/3: optimized rebuild ====="
+	cd $(CUSTOM_PREFIX)/FFmpeg && \
+	./configure --prefix=$(CUSTOM_PREFIX) --enable-shared --disable-static \
+		--enable-swresample --enable-debug --disable-stripping --disable-doc \
+		$(SLIM_FFMPEG) --pkg-config-flags="--static" \
+		--extra-cflags="-fprofile-use=$(PGO_CUST_DIR) -fprofile-correction \
+			-Wno-missing-profile -Wno-coverage-mismatch" && \
+	make clean && make -j"$$(nproc)" && make install
+	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
+	cp $(TARGET_CUST)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
+	@# Proves the profile was actually consumed — a silent no-op PGO otherwise
+	@# looks identical to a successful one.
+	@echo "PGO custom build complete ($$(find $(PGO_CUST_DIR) -name '*.gcda' | wc -l) profile files retained)."
+
 
 # =============================================================================
 # BUILD TARGETS
