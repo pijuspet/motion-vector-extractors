@@ -153,10 +153,6 @@ setup_ffmpeg: $(PLATFORM_GUARD)
 	$(call ffmpeg_build,$(CUSTOM_PREFIX))
 	$(call ffmpeg_build,$(REGULAR_PREFIX))
 
-	chmod +x ./configure ./ffbuild/*.sh && \
-	./configure --prefix=$(abspath $1) --enable-shared --disable-static --enable-swresample --enable-debug --disable-stripping --disable-doc $(SLIM_FFMPEG) --pkg-config-flags="--static" && \
-	make -j"$$(nproc)" && make install
-
 # -----------------------------------------------------------------------------
 # Profile-guided optimization
 # -----------------------------------------------------------------------------
