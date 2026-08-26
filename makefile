@@ -396,9 +396,7 @@ benchmark_threads:
 # There are no tests yet, so today this just compiles the workspace and runs
 # zero tests — it's the placeholder the future suite will hang off of.
 test:
-	PKG_CONFIG_PATH=$(REGULAR_PREFIX)/lib/pkgconfig \
-	RUSTFLAGS="-C link-arg=-Wl,-rpath,$(REGULAR_PREFIX)/lib -C link-arg=-Wl,--disable-new-dtags" \
-	cargo test --workspace
+	$(call cargo_sys_env,test --workspace $(CARGO_EXCLUDE) $(CARGO_TARGET_FLAG))
 
 test_ffmpeg:
 	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
