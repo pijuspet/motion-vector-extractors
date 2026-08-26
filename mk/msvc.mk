@@ -43,7 +43,6 @@ REL         := $(RUST_TARGET)/release
 # Same DLL-segregation rationale as mk/mingw.mk.
 EXECUTABLES_DIR_SYS  := $(EXECUTABLES_DIR)/sys
 EXECUTABLES_DIR_CUST := $(EXECUTABLES_DIR)/cust
-EXECUTABLES_DIR_SLIM := $(EXECUTABLES_DIR)/slim
 
 # Cargo target dir must be on a space-free path.
 CARGO_TARGET_BASE := $(HOME)/cargo-target/motion-vector-extractors
@@ -132,17 +131,6 @@ SLIM_FFMPEG := --disable-everything \
 	--enable-protocol=file,rtp,tcp,udp \
 	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
 
-SLIMMEST_FFMPEG := \
-	--disable-avdevice --disable-avfilter --disable-swscale --disable-swresample \
-	--disable-network --disable-autodetect --disable-iconv \
-	--disable-iamf --disable-faan \
-	--disable-everything \
-	--enable-decoder=h264,hevc,mpeg4 \
-	--enable-parser=h264,hevc,mpeg4video \
-	--enable-demuxer=mov,avi,h264,hevc \
-	--enable-protocol=file \
-	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
-
 # `cl`/`link`/`nasm` must be on PATH (launch MSYS2 bash from the VS x64 Native
 # Tools prompt). Produces DLLs + MSVC import libs. Flags mirror a known-good
 # MSVC build:
@@ -162,13 +150,6 @@ FF_CONFIGURE_FLAGS = --toolchain=msvc --arch=amd64 \
 	--disable-bzlib --disable-libopenjpeg --disable-iconv --disable-zlib \
 	--extra-cflags="-MD" --extra-ldflags="/NODEFAULTLIB:libcmt" \
 	--pkg-config-flags="--static" $(SLIM_FFMPEG)
-
-SLIM_CONFIGURE = ./configure --prefix='$(SLIM_PREFIX)' --toolchain=msvc --arch=amd64 \
-		--enable-asm --enable-shared --disable-static \
-		--disable-programs --disable-doc --disable-debug \
-		--disable-bzlib --disable-libopenjpeg --disable-zlib \
-		--extra-cflags="-MD" --extra-ldflags="/NODEFAULTLIB:libcmt" \
-		--pkg-config-flags="--static" $(SLIMMEST_FFMPEG)
 
 # -----------------------------------------------------------------------------
 # Cargo invocation
@@ -254,17 +235,7 @@ define pgo_configure_cust_use
 		--pkg-config-flags="--static" $(SLIM_FFMPEG)
 endef
 
-define pgo_configure_slim_gen
-	$(SLIM_CONFIGURE) \
-		--extra-cflags="-MD -GL" \
-		--extra-ldflags="/NODEFAULTLIB:libcmt /GENPROFILE:PGD=$$(cygpath -w '$(1)')\\mv.pgd"
-endef
 
-define pgo_configure_slim_use
-	$(SLIM_CONFIGURE) \
-		--extra-cflags="-MD -GL" \
-		--extra-ldflags="/NODEFAULTLIB:libcmt /USEPROFILE:PGD=$$(cygpath -w '$(1)')\\mv.pgd"
-endef
 
 # -----------------------------------------------------------------------------
 # FFmpeg CLI (decode_ffmpeg) — DLLs resolved via PATH.

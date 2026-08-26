@@ -15,7 +15,6 @@ REL     := release
 # crates/mv-bench/benchmark_extractors.rs, which builds a flat path.
 EXECUTABLES_DIR_SYS  := $(EXECUTABLES_DIR)
 EXECUTABLES_DIR_CUST := $(EXECUTABLES_DIR)
-EXECUTABLES_DIR_SLIM := $(EXECUTABLES_DIR)
 
 CARGO_TARGET_BASE := $(CURRENT_DIR)/target
 VENV_FOLDER       ?= $(PARENT_DIR)/venv-motion-vectors
@@ -52,34 +51,12 @@ SLIM_FFMPEG := --disable-everything \
 	--enable-protocol=file,rtp,tcp,udp \
 	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
 
-# Component set for the slim tree — only what motion-vector extraction touches.
-# The extractors call 23 FFmpeg entry points, all in avformat (demux) + avcodec
-# (decode) + avutil (frames), so the other four libraries are not built at all.
-# mpeg4 is not optional despite the name, for the reason given above.
-SLIMMEST_FFMPEG := \
-	--disable-avdevice --disable-avfilter --disable-swscale --disable-swresample \
-	--disable-network --disable-autodetect --disable-iconv \
-	--disable-iamf --disable-faan \
-	--disable-everything \
-	--enable-decoder=h264,hevc,mpeg4 \
-	--enable-parser=h264,hevc,mpeg4video \
-	--enable-demuxer=mov,avi,h264,hevc \
-	--enable-protocol=file \
-	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
-
 # Configure flags shared by the regular + custom trees (the shared makefile
 # supplies --prefix). Kept as one variable so the PGO targets can reuse it
 # verbatim and append only their -fprofile-* flags.
 FF_CONFIGURE_FLAGS = --enable-shared --disable-static --enable-swresample \
 	--enable-debug --disable-stripping --disable-doc \
 	$(SLIM_FFMPEG) --pkg-config-flags="--static"
-
-# Full configure line for the slim tree. No --enable-debug: it is meant to be
-# the small, production-shaped build. See ffmpeg/slim-ffmpeg/README.md for how
-# the pruning was derived.
-SLIM_CONFIGURE = ./configure --prefix=$(SLIM_PREFIX) --enable-shared --disable-static \
-		--disable-programs --disable-doc --disable-debug \
-		$(SLIMMEST_FFMPEG) --pkg-config-flags="--static"
 
 # -----------------------------------------------------------------------------
 # Cargo invocation
@@ -137,17 +114,7 @@ define pgo_configure_cust_use
 			-Wno-missing-profile -Wno-coverage-mismatch"
 endef
 
-define pgo_configure_slim_gen
-	$(SLIM_CONFIGURE) \
-		--extra-cflags="-fprofile-generate=$(1) -fprofile-update=atomic" \
-		--extra-ldflags="-fprofile-generate=$(1)"
-endef
 
-define pgo_configure_slim_use
-	$(SLIM_CONFIGURE) \
-		--extra-cflags="-fprofile-use=$(1) -fprofile-correction \
-			-Wno-missing-profile -Wno-coverage-mismatch"
-endef
 
 # -----------------------------------------------------------------------------
 # FFmpeg CLI (decode_ffmpeg) — resolved via LD_LIBRARY_PATH

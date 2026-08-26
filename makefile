@@ -593,7 +593,7 @@ ifneq ($(PLATFORM),linux)
 endif
 
 .PHONY: install platform_install \
-        setup_ffmpeg setup_ffmpeg_slim setup_ffmpeg_pgo setup_ffmpeg_slim_pgo \
+        setup_ffmpeg setup_ffmpeg_pgo \
         build build_sys build_tools \
         all benchmark benchmark_all benchmark_keyframes benchmark_threads \
         test test_ffmpeg decode_ffmpeg \
