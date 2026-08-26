@@ -1,4 +1,35 @@
 # =============================================================================
+# motion-vector-extractors — build, benchmark and reporting driver
+# =============================================================================
+# One makefile for every platform. Everything platform-specific lives in
+# mk/<platform>.mk; everything below this header is shared.
+#
+#   make <target>                    Linux, or MSYS2 MINGW64 (auto-detected)
+#   make PLATFORM=msvc <target>      Windows, native MSVC toolchain
+#
+# PLATFORM is exported, so any recursive $(MAKE) — and anything this makefile
+# spawns that shells back out to make, such as full_benchmark — stays on the
+# platform it was invoked with.
+
+SHELL := /bin/bash
+
+# -----------------------------------------------------------------------------
+# Platform selection
+# -----------------------------------------------------------------------------
+# MSVC is never auto-detected: it and MinGW both run under MSYS2 and `uname -s`
+# reports MINGW64_NT/MSYS_NT for both, so it has to be asked for explicitly.
+ifeq ($(origin PLATFORM),undefined)
+  UNAME_S := $(shell uname -s)
+  ifneq (,$(filter MINGW% MSYS%,$(UNAME_S)))
+    PLATFORM := mingw
+  else
+    PLATFORM := linux
+  endif
+endif
+# Exported so recursive $(MAKE) calls stay on the same platform.
+export PLATFORM
+
+# =============================================================================
 # CONFIGURATION & GLOBAL VARIABLES
 # =============================================================================
 
@@ -35,150 +66,105 @@ VIDEO_NAME ?= MCTTR0102b.mp4
 
 # All video names iterated by benchmark_keyframes and benchmark_threads.
 # Files that don't exist for a given type are silently skipped.
-VIDEO_NAMES ?= 2018-03-05.09-50-15.09-55-01.school.G423.r13.mp4 
-# VIDEO_NAMES ?= 2018-03-15.15-55-00.16-00-00.bus.G475.r13.mp4 \
-            #    MCTTR0102b.mp4
-			#    bigbunny_walking.mp4 \
-            #    stickman.mp4 \
-            #    dashcam.mp4 
+VIDEO_NAMES ?= 2018-03-05.09-50-15.09-55-01.school.G423.r13.mp4 \
+               2018-03-15.15-55-00.16-00-00.bus.G475.r13.mp4 \
+               MCTTR0102b.mp4 \
+			   bigbunny_walking.mp4 \
+               stickman.mp4 \
+               dashcam.mp4 
 
-VIDEO_TYPES := h264_cabac #h264_cavlc h264_avi h265
-VIDEO_TYPE = h264_cabac
+VIDEO_TYPES ?= h264_cabac
+# VIDEO_TYPES ?= h264_cabac h264_cavlc h264_avi h265
+VIDEO_TYPE  ?= h264_cabac
 # VIDEO_TYPE = h264_cavlc
 # VIDEO_TYPE = h264_avi
 # VIDEO_TYPE = h265
 
-CC = g++
+# $(CURDIR) is portable and shell-free; under MSYS2 MINGW64 it yields the
+# forward-slash POSIX-style path the rest of this file expects.
+CURRENT_DIR := $(CURDIR)
+PARENT_DIR  := $(patsubst %/,%,$(dir $(CURRENT_DIR)))
+
+EXECUTABLES_DIR := executables
+
+CUSTOM_PREFIX  := $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0-custom
+REGULAR_PREFIX := $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0
+include mk/$(PLATFORM).mk
 
 # =============================================================================
 # PATHS & ENVIRONMENTS
 # =============================================================================
 
-CURRENT_DIR := ${shell pwd}
-PARENT_DIR  := $(shell dirname $(CURRENT_DIR))
-VENV_FOLDER = $(PARENT_DIR)/venv-motion-vectors
-PYTHON = $(VENV_FOLDER)/bin/python
+PYTHON := $(VENV_FOLDER)/bin/python$(EXE_EXT)
 
-EXECUTABLES_DIR = executables
+TARGET_SYS    := $(CARGO_TARGET_BASE)/extractor-sys
+TARGET_CUST   := $(CARGO_TARGET_BASE)/extractor-cust
+VIDEO_FILE := $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/$(VIDEO_NAME)
 
-VIDEO_FILE = $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/$(VIDEO_NAME)
+INITIAL_RUN_DATA := $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results_$(VIDEO_TYPE)
+# Trailing slash on the glob so `ls -d` yields only directories: reports written
+# alongside the run folders (e.g. compare_runs output) would otherwise sort last
+# and make this resolve to a plain file.
+LAST_RESULTS_DIR = $(patsubst %/,%,$(shell ls -d "$(CURRENT_DIR)/results/$(VIDEO_TYPE)/"*/ 2>/dev/null | sort | tail -n 1))
 
-INITIAL_RUN_DATA = $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results_$(VIDEO_TYPE)
-LAST_RESULTS_DIR = $(shell ls -d $(CURRENT_DIR)/results/$(VIDEO_TYPE)/* | sort | tail -n 1)
+# NB: no trailing comments on these two — make keeps the whitespace before a
+# `#` as part of the value, and these are used quoted.
+CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv
+CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method5_output_0.csv
 
-CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv # original ffmpeg
-CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method4_output_0.csv # custom ffmpeg
+ifeq ($(PLATFORM),msvc)
+MAKE_HINT := make PLATFORM=msvc
+else
+MAKE_HINT := make
+endif
+
+.DEFAULT_GOAL := help
 
 # =============================================================================
-# FFMPEG & PKG-CONFIG SETUP
+# INSTALLATION
 # =============================================================================
 
-# Only what the extractors link. libswresample/libswscale/libavfilter/
-# libavdevice were listed here historically but never used — dropping them is
-# what allows the slim tree to not build them at all.
-FF_PKGS := libavformat libavcodec libavutil
-pkg_cmd = PKG_CONFIG_PATH=$(1)/lib/pkgconfig pkg-config
+# Platform-specific dependency installation lives in mk/<platform>.mk as
+# `platform_install`; only the shared tail is here.
+install: platform_install
+	@if [ ! -f .env ] && [ -f .env_template ]; then cp .env_template .env; fi
+	@mkdir -p '$(EXECUTABLES_DIR)'
+	@echo "[OK]    Install complete."
 
-# Functions to extract flags, libs, and rpath
-get_cflags = $(shell $(call pkg_cmd,$(1)) --cflags $(FF_PKGS) 2>/dev/null)
-get_libs   = $(shell $(call pkg_cmd,$(1)) --libs $(FF_PKGS) 2>/dev/null)
-get_rpath  = -Wl,-rpath,$(1)/lib -Wl,--disable-new-dtags
+# =============================================================================
+# FFMPEG SETUP
+# =============================================================================
 
-define def_ff_flags
-$(2)_CFLAGS := $$(call get_cflags,$(1))
-$(2)_LIBS   := $$(call get_libs,$(1))
-$(2)_RPATH  := $$(call get_rpath,$(1))
-$(2)        := $$($(2)_CFLAGS) $$($(2)_LIBS) $$($(2)_RPATH)
+# $(1) = install prefix. The tree is configured and built in place under
+# <prefix>/FFmpeg and installed into <prefix>.
+define ffmpeg_build
+	cd '$(1)/FFmpeg' && \
+	chmod +x ./configure ./ffbuild/*.sh && \
+	./configure --prefix='$(1)' $(FF_CONFIGURE_FLAGS) && \
+	make -j"$$(nproc)" && make install
 endef
 
-CUSTOM_PREFIX   := $(abspath $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0-custom)
-REGULAR_PREFIX  := $(abspath $(CURRENT_DIR)/ffmpeg/FFmpeg-8.0)
-$(eval $(call def_ff_flags,$(CUSTOM_PREFIX),CUST_FF))
-$(eval $(call def_ff_flags,$(REGULAR_PREFIX),SYS_FF))
+# `build` links extractor11 against SLIM_PREFIX via pkg-config, so the slim tree
+# has to exist before any benchmark target runs — on a fresh checkout
+# `setup_ffmpeg` followed by `all` used to fail there with empty pkg-config
+# flags. Building all three prefixes here is what makes method 11 reachable
+# from `make all`.
+setup_ffmpeg: $(PLATFORM_GUARD)
+	$(call ffmpeg_build,$(CUSTOM_PREFIX))
+	$(call ffmpeg_build,$(REGULAR_PREFIX))
 
-# Slimmed component set — only what the extractors actually use. Validated to
-# produce byte-identical MV output to a full build across h264/hevc/mpeg4.
-#   - mpeg4 decoder is REQUIRED: the "h264_avi" inputs are really MPEG-4 Part 2,
-#     and h264's MV export is compile-gated behind CONFIG_MPEGVIDEODEC, which an
-#     mpegvideo decoder (mpeg4) turns on — without it h264 exports zero MVs.
-#   - rtsp/sdp are demuxers (RTSP rides on the rtp/tcp/udp protocols).
-SLIM_FFMPEG := --disable-everything \
-	--enable-decoder=h264,hevc,mpeg4 \
-	--enable-parser=h264,hevc,mpeg4video \
-	--enable-demuxer=mov,avi,h264,hevc,mpegts,rtsp,sdp \
-	--enable-muxer=mov \
-	--enable-protocol=file,rtp,tcp,udp \
-	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
-
-# FFmpeg build macro
-FFMPEG_BUILD = \
-	cd $1/FFmpeg && \
 	chmod +x ./configure ./ffbuild/*.sh && \
 	./configure --prefix=$(abspath $1) --enable-shared --disable-static --enable-swresample --enable-debug --disable-stripping --disable-doc $(SLIM_FFMPEG) --pkg-config-flags="--static" && \
 	make -j"$$(nproc)" && make install
 
-# =============================================================================
-# INSTALLATION & DEPENDENCIES
-# =============================================================================
-
-# CI (GitHub Actions sets CI=true) skips profiler/report-only tooling so a build
-# can be verified without VTune/perf. SUDO is empty for local root runs and set
-# to `sudo` by CI.
-SUDO ?=
-
-# Packages required to build + benchmark. Rust is bootstrapped separately via
-# rustup (see the install recipe) — the apt `cargo`/`rustup` packages conflict
-# with each other on recent Ubuntu, so they're intentionally not listed here.
-APT_CORE  := build-essential gcc g++ make pkg-config nasm libclang-dev libopencv-dev clang
-# Profiler / report-generation extras (perf, notifications, pdf/plot rendering).
-APT_EXTRA := xdg-utils libnss3 libnotify4 wkhtmltopdf linux-tools-common linux-tools-realtime
-
-install_vtune:
-ifndef CI
-	@echo "Adding Intel oneAPI repository..."
-	wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-		| gpg --dearmor \
-		| sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
-	echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] \
-		https://apt.repos.intel.com/oneapi all main" \
-		| sudo tee /etc/apt/sources.list.d/oneAPI.list
-	apt update
-	apt install -y intel-oneapi-vtune
-	@echo "Enabling ptrace for VTune..."
-	sysctl -w kernel.yama.ptrace_scope=0
-	@if grep -q "kernel.yama.ptrace_scope" /etc/sysctl.d/10-ptrace.conf 2>/dev/null; then \
-		sed -i 's/kernel.yama.ptrace_scope = .*/kernel.yama.ptrace_scope = 0/' /etc/sysctl.d/10-ptrace.conf; \
-	else \
-		echo "kernel.yama.ptrace_scope = 0" >> /etc/sysctl.d/10-ptrace.conf; \
-	fi
-	sysctl -p /etc/sysctl.d/10-ptrace.conf
-	@echo "VTune installation complete."
-else
-	@echo "[CI] Skipping VTune / oneAPI install."
-endif
-
-install: install_vtune
-	command -v cargo >/dev/null 2>&1 || curl https://sh.rustup.rs -sSf | sh -s -- -y
-	$(SUDO) apt install -y $(APT_CORE)
-	cp -n .env_template .env
-	mkdir -p $(EXECUTABLES_DIR)
-ifndef CI
-	$(SUDO) apt install -y $(APT_EXTRA)
-	mkdir -p $(VENV_FOLDER)
-	python3 -m venv $(VENV_FOLDER)
-	. $(VENV_FOLDER)/bin/activate && pip install -r requirements.txt
-endif
-
-setup_ffmpeg:
-	$(call FFMPEG_BUILD,$(CUSTOM_PREFIX))
-	$(call FFMPEG_BUILD,$(REGULAR_PREFIX))
 # -----------------------------------------------------------------------------
 # Profile-guided optimization
 # -----------------------------------------------------------------------------
 # Three phases: instrument, train, rebuild with the profile. `make clean`
 # between them is mandatory — configure regenerates config.mak but leaves the
-# objects behind, and they must be recompiled under the new -fprofile-* flags
-# or the profile is silently ignored.
+# objects behind, and they must be recompiled under the new profile flags or
+# the profile is silently ignored. The exact instrument/optimize flags are
+# per-toolchain and live in mk/<platform>.mk.
 #
 # What the training run covers. All three are overridable on the command line
 # and apply to BOTH setup_ffmpeg_pgo and setup_ffmpeg_slim_pgo — a profile is
@@ -204,19 +190,21 @@ PGO_TRAIN_TYPES   ?= h264_cabac h264_cavlc h265 h264_avi
 # stops spending budget on thread-handoff branches that will never be taken.
 PGO_TRAIN_THREADS ?= 1 16
 
+PGO_CUST_DIR := $(CUSTOM_PREFIX)/pgo
+
 # $(1) = extractor binary to train with, $(2) = profile directory.
 # Loops clips x corpora x thread counts. A missing file is skipped rather than
 # fatal, so narrowing PGO_TRAIN_TYPES does not require a matching clip in every
-# corpus. Writes a TRAINED_ON manifest next to the profile: a .gcda directory
+# corpus. Writes a TRAINED_ON manifest next to the profile: a profile directory
 # with no record of the workload behind it cannot be reasoned about later.
 define pgo_train_run
 	@echo "  clips=[$(PGO_TRAIN_CLIPS)] corpora=[$(PGO_TRAIN_TYPES)] threads=[$(PGO_TRAIN_THREADS)]"
 	@for clip in $(PGO_TRAIN_CLIPS); do \
 		for vtype in $(PGO_TRAIN_TYPES); do \
 			if [ "$$vtype" = "h264_avi" ]; then \
-				f=$(CURRENT_DIR)/videos/$$vtype/$$clip.avi; \
+				f='$(CURRENT_DIR)'/videos/$$vtype/$$clip.avi; \
 			else \
-				f=$(CURRENT_DIR)/videos/$$vtype/$$clip.mp4; \
+				f='$(CURRENT_DIR)'/videos/$$vtype/$$clip.mp4; \
 			fi; \
 			if [ -f "$$f" ]; then \
 				for t in $(PGO_TRAIN_THREADS); do \
@@ -230,176 +218,173 @@ define pgo_train_run
 	done
 	@printf 'trained: %s\nclips:   %s\ncorpora: %s\nthreads: %s\n' \
 		"$$(date -Is)" "$(PGO_TRAIN_CLIPS)" "$(PGO_TRAIN_TYPES)" "$(PGO_TRAIN_THREADS)" \
-		> $(2)/TRAINED_ON
+		> '$(2)/TRAINED_ON'
 endef
 
-PGO_CUST_DIR := $(CUSTOM_PREFIX)/pgo
-
-setup_ffmpeg_pgo:
-	@echo "===== PGO 1/3: instrumented custom build ====="
-	rm -rf $(PGO_CUST_DIR) && mkdir -p $(PGO_CUST_DIR)
-	cd $(CUSTOM_PREFIX)/FFmpeg && \
-	chmod +x ./configure ./ffbuild/*.sh && \
-	./configure --prefix=$(CUSTOM_PREFIX) --enable-shared --disable-static \
-		--enable-swresample --enable-debug --disable-stripping --disable-doc \
-		$(SLIM_FFMPEG) --pkg-config-flags="--static" \
-		--extra-cflags="-fprofile-generate=$(PGO_CUST_DIR) -fprofile-update=atomic" \
-		--extra-ldflags="-fprofile-generate=$(PGO_CUST_DIR)" && \
-	make clean && make -j"$$(nproc)" && make install
-	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
-	cp $(TARGET_CUST)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
-	@echo "===== PGO 2/3: training run ====="
-	$(call pgo_train_run,$(CURRENT_DIR)/$(EXECUTABLES_DIR)/extractor5,$(PGO_CUST_DIR))
-	@n=$$(find $(PGO_CUST_DIR) -name '*.gcda' | wc -l); \
-	echo "  collected $$n .gcda profile files"; \
+# $(1) = profile directory. Proves the profile was actually produced — a silent
+# no-op PGO otherwise looks identical to a successful one.
+define pgo_check_profile
+	@n=$$(find '$(1)' -name '$(PGO_PROFILE_GLOB)' | wc -l); \
+	echo "  collected $$n profile files"; \
 	if [ "$$n" -eq 0 ]; then echo "ERROR: no profile data — aborting"; exit 1; fi
-	@echo "===== PGO 3/3: optimized rebuild ====="
-	cd $(CUSTOM_PREFIX)/FFmpeg && \
-	./configure --prefix=$(CUSTOM_PREFIX) --enable-shared --disable-static \
-		--enable-swresample --enable-debug --disable-stripping --disable-doc \
-		$(SLIM_FFMPEG) --pkg-config-flags="--static" \
-		--extra-cflags="-fprofile-use=$(PGO_CUST_DIR) -fprofile-correction \
-			-Wno-missing-profile -Wno-coverage-mismatch" && \
+endef
+
+setup_ffmpeg_pgo: $(PLATFORM_GUARD)
+	@echo "===== PGO 1/3: instrumented custom build ====="
+	rm -rf '$(PGO_CUST_DIR)' && mkdir -p '$(PGO_CUST_DIR)'
+	cd '$(CUSTOM_PREFIX)/FFmpeg' && \
+	chmod +x ./configure ./ffbuild/*.sh && \
+	$(call pgo_configure_cust_gen,$(PGO_CUST_DIR)) && \
 	make clean && make -j"$$(nproc)" && make install
 	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
-	cp $(TARGET_CUST)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
-	@# Proves the profile was actually consumed — a silent no-op PGO otherwise
-	@# looks identical to a successful one.
-	@echo "PGO custom build complete ($$(find $(PGO_CUST_DIR) -name '*.gcda' | wc -l) profile files retained)."
+	@mkdir -p '$(EXECUTABLES_DIR_CUST)'
+	cp '$(TARGET_CUST)/$(REL)/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)'
+	$(call copy_runtime_libs,$(CUSTOM_PREFIX),$(EXECUTABLES_DIR_CUST))
+	@echo "===== PGO 2/3: training run ====="
+	$(call pgo_train_run,'$(CURRENT_DIR)/$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)',$(PGO_CUST_DIR))
+	$(call pgo_check_profile,$(PGO_CUST_DIR))
+	@echo "===== PGO 3/3: optimized rebuild ====="
+	cd '$(CUSTOM_PREFIX)/FFmpeg' && \
+	$(call pgo_configure_cust_use,$(PGO_CUST_DIR)) && \
+	make clean && make -j"$$(nproc)" && make install
+	$(MAKE) build
+	@echo "[OK]    PGO custom build complete."
 
 
 # =============================================================================
 # BUILD TARGETS
 # =============================================================================
-# Point pkg-config at the built regular FFmpeg prefix (and bake its rpath) so
-# the workspace's ffmpeg-sys-next links against FFmpeg 8.0 instead of whatever
-# incomplete/older FFmpeg happens to be on the system pkg-config path.
-build_tools:
-	PKG_CONFIG_PATH=$(REGULAR_PREFIX)/lib/pkgconfig \
-	RUSTFLAGS="-C link-arg=-Wl,-rpath,$(REGULAR_PREFIX)/lib -C link-arg=-Wl,--disable-new-dtags" \
-	cargo build --workspace --release
 
-TARGET_SYS  := $(CURRENT_DIR)/target/extractor-sys
-TARGET_CUST := $(CURRENT_DIR)/target/extractor-cust
+# The workspace pulls in ffmpeg-sys-next (via mv-extract), so it is built
+# against the regular FFmpeg prefix rather than whatever incomplete/older
+# FFmpeg happens to be on the system pkg-config path. See cargo_sys_env in
+# mk/<platform>.mk for how that prefix is wired up.
+build_tools: $(PLATFORM_GUARD)
+	$(call cargo_sys_env,build --workspace $(CARGO_EXCLUDE) --release $(CARGO_TARGET_FLAG))
 
-# $(1) = FFmpeg prefix, $(2) = CARGO_TARGET_DIR to use, $(3) = extra cargo flags
-# Builds every extractor in the mv-extract crate linked against the given
-# FFmpeg prefix. $(3) is used to enable the `custom_ffmpeg` Cargo feature when
-# linking against the patched FFmpeg — that feature gates access to
-# AVMotionVectorCompact / AV_FRAME_DATA_MOTION_VECTORS_COMPACT, which only
-# exist in the custom build.
-define build_extractors
-	PKG_CONFIG_PATH=$(1)/lib/pkgconfig \
-	RUSTFLAGS="-C link-arg=-Wl,-rpath,$(1)/lib -C link-arg=-Wl,--disable-new-dtags" \
-	CARGO_TARGET_DIR=$(2) \
-	cargo build --release -p mv-extract $(3)
-endef
-
-# Build every extractor twice: once against the regular FFmpeg and once
-# against the custom patched FFmpeg. Extractors 0/1/2 are deployed from the
-# system build; 3/5 from the custom build; extractor1 from the custom build
-# is renamed to extractor4 (custom-FFmpeg flush-decoder variant).
-build:
+# Build every extractor twice: once against the regular FFmpeg and once against
+# the custom patched FFmpeg. Extractors 0/1/2 are deployed from the system
+# build; 3/5/6 from the custom build; extractor1 from the custom build is
+# renamed to extractor4 (custom-FFmpeg flush-decoder variant), and extractor6
+# from the system build becomes extractor7 (same trick).
+build: $(PLATFORM_GUARD)
 	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
 	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
-	cp $(TARGET_SYS)/release/extractor0  $(EXECUTABLES_DIR)/extractor0
-	cp $(TARGET_SYS)/release/extractor1  $(EXECUTABLES_DIR)/extractor1
-	cp $(TARGET_SYS)/release/extractor2  $(EXECUTABLES_DIR)/extractor2
-	cp $(TARGET_CUST)/release/extractor3 $(EXECUTABLES_DIR)/extractor3
-	cp $(TARGET_CUST)/release/extractor1 $(EXECUTABLES_DIR)/extractor4
-	cp $(TARGET_CUST)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
-	cp $(TARGET_CUST)/release/extractor6 $(EXECUTABLES_DIR)/extractor6
+	@mkdir -p '$(EXECUTABLES_DIR_SYS)' '$(EXECUTABLES_DIR_CUST)'
+	cp '$(TARGET_SYS)/$(REL)/extractor0$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor0$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor1$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor1$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor2$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor2$(EXE_EXT)'
+	cp '$(TARGET_CUST)/$(REL)/extractor3$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor3$(EXE_EXT)'
+	cp '$(TARGET_CUST)/$(REL)/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor4$(EXE_EXT)'
+	cp '$(TARGET_CUST)/$(REL)/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)'
+	cp '$(TARGET_CUST)/$(REL)/extractor6$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor6$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor6$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor7$(EXE_EXT)'
+	$(call copy_runtime_libs,$(REGULAR_PREFIX),$(EXECUTABLES_DIR_SYS))
+	$(call copy_runtime_libs,$(CUSTOM_PREFIX),$(EXECUTABLES_DIR_CUST))
+	@echo "[OK]    Build complete."
 
 # System-only build: every extractor links against the regular system FFmpeg.
-# Useful for isolating whether a regression comes from the custom patch or
-# from the extractor code itself. extractor4 here is just extractor1 under a
-# different name — identical binary to method 1.
-build_sys:
+# Useful for isolating whether a regression comes from the custom patch or from
+# the extractor code itself. extractor4 here is just extractor1 under a
+# different name — identical binary to method 1 — and method11 is extractor5
+# again, which is the point of this target.
+build_sys: $(PLATFORM_GUARD)
 	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
-	cp $(TARGET_SYS)/release/extractor0 $(EXECUTABLES_DIR)/extractor0
-	cp $(TARGET_SYS)/release/extractor1 $(EXECUTABLES_DIR)/extractor1
-	cp $(TARGET_SYS)/release/extractor2 $(EXECUTABLES_DIR)/extractor2
-	cp $(TARGET_SYS)/release/extractor3 $(EXECUTABLES_DIR)/extractor3
-	cp $(TARGET_SYS)/release/extractor1 $(EXECUTABLES_DIR)/extractor4
-	cp $(TARGET_SYS)/release/extractor5 $(EXECUTABLES_DIR)/extractor5
+	@mkdir -p '$(EXECUTABLES_DIR_SYS)' '$(EXECUTABLES_DIR_SLIM)'
+	cp '$(TARGET_SYS)/$(REL)/extractor0$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor0$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor1$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor2$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor2$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor3$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor3$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor4$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor5$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor6$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor6$(EXE_EXT)'
+	cp '$(TARGET_SYS)/$(REL)/extractor6$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor7$(EXE_EXT)'
+	$(call copy_runtime_libs,$(REGULAR_PREFIX),$(EXECUTABLES_DIR_SYS))
+	$(call copy_runtime_libs,$(REGULAR_PREFIX),$(EXECUTABLES_DIR_SLIM))
 
 # =============================================================================
 # BENCHMARKING
 # =============================================================================
 
+# L0_ONLY / COMPARE_FIRST / COMPARE_SECOND are inherited by every extractor
+# child process via the spawned process environment — see extractor1/3/5/6.rs
+# (mv_l0_only AVOption) and E9_L0_ONLY/E10_L0_ONLY relayed from it in
+# crates/mv-bench/benchmark_extractors.rs.
+BENCH_ENV = L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND)
+BENCH_CMD = cargo run $(CARGO_TARGET_FLAG) --bin full_benchmark
+
 all:
 	$(MAKE) benchmark_all TYPE=sys
 	$(MAKE) benchmark_all TYPE=cust
 
-# make benchmark_all VIDEO_NAME=bigbunny.mp4
-# make benchmark_all VIDEO_NAME=bigbunny.mp4 TYPE=sys
+#   make benchmark_all VIDEO_NAME=bigbunny.mp4
+#   make benchmark_all VIDEO_NAME=bigbunny.mp4 TYPE=sys
 benchmark_all:
 	@vname="$(VIDEO_NAME)"; \
 	for vtype in $(VIDEO_TYPES); do \
 		if [ "$$vtype" = "h264_avi" ]; then \
-			filepath=$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi; \
+			filepath="$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi"; \
 		else \
-			filepath=$(CURRENT_DIR)/videos/$$vtype/$$vname; \
+			filepath="$(CURRENT_DIR)/videos/$$vtype/$$vname"; \
 		fi; \
 		if [ -f "$$filepath" ]; then \
-			echo "\n========== $$vtype / $$filepath =========="; \
-			if [ -z "$(TYPE)" ]; then \
-				L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
-			else \
-				L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --bin full_benchmark $$filepath $(STREAMS) $$vtype $(TYPE) $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
-			fi; \
+			echo ""; \
+			echo "========== $$vtype / $$filepath =========="; \
+			$(BENCH_ENV) $(BENCH_CMD) "$$filepath" $(STREAMS) $$vtype $(if $(TYPE),$(TYPE),cust) \
+				$(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 0; \
 		else \
 			echo "SKIP: $$filepath not found"; \
 		fi; \
 	done
 
 # STEPS (optional) selects benchmark steps non-interactively (e.g. STEPS=2 to
-# run only the extraction pass). Left empty, full_benchmark prompts on stdin.
-# L0_ONLY=1 (default) is inherited by every extractor child process via
-# fork+exec environment inheritance — see extractor1/3/5/6.rs (mv_l0_only
-# AVOption) and E9_L0_ONLY/E10_L0_ONLY relayed from it in benchmark_extractors.rs.
+# run only the extraction pass). Left empty, full_benchmark prompts on stdin —
+# which is why BENCH_WRAPPER (winpty under MinGW) is applied only in that case.
 benchmark:
-	L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --bin full_benchmark $(VIDEO_FILE) $(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) $(STEPS)
+	$(BENCH_ENV) $(if $(strip $(STEPS)),,$(BENCH_WRAPPER)) $(BENCH_CMD) '$(VIDEO_FILE)' \
+		$(STREAMS) $(VIDEO_TYPE) cust $(NRUNS) $(THREAD_COUNT) $(KEYFRAMES_ONLY) \
+		$(WRITE_CSV) $(PROFILER_EXTRACTOR) $(STEPS)
 
 # Run the benchmark with keyframe-only decoding across every video in
-# VIDEO_NAMES × VIDEO_TYPES. KEYFRAMES_ONLY=1/L0_ONLY are inherited by every
-# extractor child process via fork+exec environment inheritance.
+# VIDEO_NAMES x VIDEO_TYPES.
 benchmark_keyframes:
 	@for vname in $(VIDEO_NAMES); do \
 		for vtype in $(VIDEO_TYPES); do \
 			if [ "$$vtype" = "h264_avi" ]; then \
-				filepath=$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi; \
+				filepath="$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi"; \
 			else \
-				filepath=$(CURRENT_DIR)/videos/$$vtype/$$vname; \
+				filepath="$(CURRENT_DIR)/videos/$$vtype/$$vname"; \
 			fi; \
 			if [ -f "$$filepath" ]; then \
-				echo "\n========== $$vname / $$vtype (keyframes only) =========="; \
-				L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --bin full_benchmark \
-					$$filepath $(STREAMS) $$vtype cust $(NRUNS) $(THREAD_COUNT) 1 $(WRITE_CSV) $(PROFILER_EXTRACTOR) 4; \
+				echo ""; \
+				echo "========== $$vname / $$vtype (keyframes only) =========="; \
+				$(BENCH_ENV) $(BENCH_CMD) "$$filepath" $(STREAMS) $$vtype cust \
+					$(NRUNS) $(THREAD_COUNT) 1 $(WRITE_CSV) $(PROFILER_EXTRACTOR) 4; \
 			fi; \
 		done; \
 	done
 
-# Sweep thread counts 1→2→4→…→MAX_THREADS across every video in
-# VIDEO_NAMES × VIDEO_TYPES. Useful for understanding multi-thread scaling.
+# Sweep thread counts 1->2->4->...->MAX_THREADS across every video in
+# VIDEO_NAMES x VIDEO_TYPES. Useful for understanding multi-thread scaling.
 # Override: make benchmark_threads MAX_THREADS=16
-MAX_THREADS ?= $(shell nproc)
 benchmark_threads:
 	@t=1; while [ $$t -le $(MAX_THREADS) ]; do \
-		echo "\n========================================"; \
+		echo ""; \
+		echo "========================================"; \
 		echo "  THREAD COUNT = $$t"; \
 		echo "========================================"; \
 		for vname in $(VIDEO_NAMES); do \
 			for vtype in $(VIDEO_TYPES); do \
 				if [ "$$vtype" = "h264_avi" ]; then \
-					filepath=$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi; \
+					filepath="$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi"; \
 				else \
-					filepath=$(CURRENT_DIR)/videos/$$vtype/$$vname; \
+					filepath="$(CURRENT_DIR)/videos/$$vtype/$$vname"; \
 				fi; \
 				if [ -f "$$filepath" ]; then \
-					echo "\n--- $$vname / $$vtype ---"; \
-					L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) cargo run --bin full_benchmark \
-						$$filepath $(STREAMS) $$vtype cust $(NRUNS) $$t $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 4 6; \
+					echo ""; \
+					echo "--- $$vname / $$vtype ---"; \
+					$(BENCH_ENV) $(BENCH_CMD) "$$filepath" $(STREAMS) $$vtype cust \
+						$(NRUNS) $$t $(KEYFRAMES_ONLY) $(WRITE_CSV) $(PROFILER_EXTRACTOR) 4 6; \
 				fi; \
 			done; \
 		done; \
@@ -432,11 +417,13 @@ decode_ffmpeg:
 # =============================================================================
 
 publish:
-	cargo run --bin publish_report 3 $(INITIAL_RUN_DATA) $(LAST_RESULTS_DIR) $(VIDEO_TYPE) test_git test_git 1
+	$(BENCH_WRAPPER) cargo run $(CARGO_TARGET_FLAG) --bin publish_report 3 \
+		'$(INITIAL_RUN_DATA)' '$(LAST_RESULTS_DIR)' $(VIDEO_TYPE) test_git test_git 1
 
 generate_video:
-	cargo run --bin generate_motion_vectors_video $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
-	cargo run --bin combine_motion_vectors_with_video $(VIDEO_FILE) $(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) $(LAST_RESULTS_DIR)
+	cargo run $(CARGO_TARGET_FLAG) --bin generate_motion_vectors_video '$(CSV_FILE_PATH_CUST)' '$(LAST_RESULTS_DIR)'
+	cargo run $(CARGO_TARGET_FLAG) --bin combine_motion_vectors_with_video '$(VIDEO_FILE)' \
+		'$(CSV_FILE_PATH_ORIG)' '$(CSV_FILE_PATH_CUST)' '$(LAST_RESULTS_DIR)'
 
 # Same as generate_video, but for every results dir at/after a given time
 # instead of just the newest one.
@@ -449,8 +436,8 @@ generate_video:
 # VIDEO_TYPE/VIDEO_FILE. The "custom" CSV is whichever of CUST_METHODS the run
 # actually produced (a run driven at method5 has no method4 CSV), so this
 # doesn't assume the CSV_FILE_PATH_CUST default.
-SINCE     ?= 0944
-SINCE_DAY ?= $(shell date +%Y%m%d)
+SINCE        ?= 0944
+SINCE_DAY    ?= $(shell date +%Y%m%d)
 CUST_METHODS ?= 4 5 3
 
 generate_videos_since:
@@ -471,9 +458,9 @@ generate_videos_since:
 		if [ -z "$$cust" ]; then echo "skip $$b: no custom CSV (tried methods $(CUST_METHODS))"; skipped=$$((skipped+1)); continue; fi; \
 		if [ -z "$$vid" ]; then echo "skip $$b: no source video at videos/$$vtype/$$stem.*"; skipped=$$((skipped+1)); continue; fi; \
 		echo "=== $$vtype/$$b  (custom=$$(basename $$cust)) ==="; \
-		cargo run --bin generate_motion_vectors_video $$cust $$d || exit 1; \
+		cargo run $(CARGO_TARGET_FLAG) --bin generate_motion_vectors_video $$cust $$d || exit 1; \
 		if [ -f "$$orig" ]; then \
-			cargo run --bin combine_motion_vectors_with_video $$vid $$orig $$cust $$d || exit 1; \
+			cargo run $(CARGO_TARGET_FLAG) --bin combine_motion_vectors_with_video $$vid $$orig $$cust $$d || exit 1; \
 		else \
 			echo "  no method0 CSV, skipping side-by-side combine"; \
 		fi; \
@@ -483,6 +470,13 @@ generate_videos_since:
 
 compare_mvs:
 	LD_LIBRARY_PATH=$(REGULAR_PREFIX)/lib:$$LD_LIBRARY_PATH \
+		'$(REGULAR_PREFIX)/bin/ffprobe$(EXE_EXT)' -v error -select_streams v:0 \
+		-show_entries packet=pts_time -of csv=p=0 '$(VIDEO_FILE)' \
+		> '$(LAST_RESULTS_DIR)/pkt_order.txt'
+	cargo run --release $(CARGO_TARGET_FLAG) --bin mv_diff_driver -- \
+		'$(CSV_FILE_PATH_ORIG)' '$(CSV_FILE_PATH_CUST)' \
+		'$(LAST_RESULTS_DIR)/pkt_order.txt' '$(LAST_RESULTS_DIR)/mv_diff_neg1.txt'
+
 		$(REGULAR_PREFIX)/bin/ffprobe -v error -select_streams v:0 -show_entries packet=pts_time \
 		-of csv=p=0 $(VIDEO_FILE) > $(LAST_RESULTS_DIR)/pkt_order.txt
 	cargo run --release --bin mv_diff_driver -- \
@@ -493,9 +487,10 @@ compare_mvs:
 # INSTALLER DIFF GENERATION
 # =============================================================================
 
-FFMPEG_INSTALLER_DIR = $(CURRENT_DIR)/ffmpeg_installer
-FRESH_FFMPEG_DIR     = /tmp/ffmpeg-8.0-fresh
-FFMPEG_BRANCH        = release/8.0
+FFMPEG_INSTALLER_DIR := $(CURRENT_DIR)/ffmpeg_installer
+# MSYS2 maps /tmp to its own tmp dir; the same path works on both platforms.
+FRESH_FFMPEG_DIR     ?= /tmp/ffmpeg-8.0-fresh
+FFMPEG_BRANCH        ?= release/8.0
 
 fetch_fresh_ffmpeg:
 	@if [ ! -d "$(FRESH_FFMPEG_DIR)" ]; then \
@@ -522,6 +517,9 @@ installer_diff: fetch_fresh_ffmpeg
 		-x '*.so' \
 		-x '*.so.*' \
 		-x '*.ver.*' \
+		-x '*.dll' \
+		-x '*.dll.a' \
+		-x '*.exe' \
 		-x '*.a' \
 		-x '*.o' \
 		-x '*.d' \
@@ -541,10 +539,64 @@ installer_diff: fetch_fresh_ffmpeg
 
 # Convenience: generate diff + stage it in the submodule
 installer_publish: installer_diff
-	cd $(FFMPEG_INSTALLER_DIR) && git add ffmpeg_version.diff && \
-		git status
+	cd '$(FFMPEG_INSTALLER_DIR)' && git add ffmpeg_version.diff && git status
 	@echo "Diff staged in ffmpeg-installer. Commit when ready."
 
 # Nuke the cached fresh clone (forces re-download next time)
 clean_fresh_ffmpeg:
-	rm -rf $(FRESH_FFMPEG_DIR)
+	rm -rf '$(FRESH_FFMPEG_DIR)'
+# =============================================================================
+# HELP
+# =============================================================================
+
+help:
+	@echo ""
+	@echo "  motion-vector-extractors — platform: $(PLATFORM)"
+	@echo ""
+	@echo "    $(MAKE_HINT) install                 # toolchain + dependencies"
+	@echo "    $(MAKE_HINT) setup_ffmpeg            # build all three FFmpeg trees (sys + custom + slim)"
+	@echo "    $(MAKE_HINT) setup_ffmpeg_pgo        # PGO the custom fork (instrument -> train -> rebuild)"
+	@echo "    $(MAKE_HINT) build                   # build all extractors (sys + custom + slim)"
+	@echo "    $(MAKE_HINT) build_sys               # build extractors against the regular FFmpeg only"
+	@echo "    $(MAKE_HINT) build_tools             # cargo build --workspace --release"
+	@echo "    $(MAKE_HINT) test                    # cargo test --workspace"
+	@echo ""
+	@echo "    $(MAKE_HINT) benchmark               # single-video benchmark"
+	@echo "    $(MAKE_HINT) benchmark_all           # iterate over VIDEO_TYPES"
+	@echo "    $(MAKE_HINT) all                     # benchmark_all for sys + cust"
+	@echo "    $(MAKE_HINT) benchmark_keyframes     # all videos, keyframes-only mode"
+	@echo "    $(MAKE_HINT) benchmark_threads       # all videos, sweep thread counts"
+	@echo ""
+	@echo "    $(MAKE_HINT) publish                 # publish report"
+	@echo "    $(MAKE_HINT) generate_video          # render MV overlay video"
+	@echo "    $(MAKE_HINT) generate_videos_since   # same, for every recent results dir"
+	@echo "    $(MAKE_HINT) compare_mvs             # method0 vs method9 MV diff"
+	@echo "    $(MAKE_HINT) compare_runs            # reproducibility check across runs"
+	@echo "    $(MAKE_HINT) decode_ffmpeg           # decode VIDEO_FILE via the custom FFmpeg"
+	@echo "    $(MAKE_HINT) installer_diff          # regenerate custom_ffmpeg.diff"
+	@echo ""
+	@echo "  Vars: VIDEO_NAME=$(VIDEO_NAME)"
+	@echo "        VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)  THREAD_COUNT=$(THREAD_COUNT)"
+	@echo "        KEYFRAMES_ONLY=$(KEYFRAMES_ONLY)  WRITE_CSV=$(WRITE_CSV)  L0_ONLY=$(L0_ONLY)"
+	@echo "        COMPARE_FIRST=$(COMPARE_FIRST)  COMPARE_SECOND=$(COMPARE_SECOND)  PROFILER_EXTRACTOR=$(PROFILER_EXTRACTOR)"
+	@echo ""
+	@echo "  PGO vars: PGO_TRAIN_CLIPS=$(PGO_TRAIN_CLIPS)"
+	@echo "            PGO_TRAIN_TYPES=$(PGO_TRAIN_TYPES)  PGO_TRAIN_THREADS=$(PGO_TRAIN_THREADS)"
+	@echo "    e.g. $(MAKE_HINT) setup_ffmpeg_pgo PGO_TRAIN_TYPES=h264_cabac PGO_TRAIN_THREADS=1"
+	@echo ""
+ifneq ($(PLATFORM),linux)
+	@echo "  Notes:"
+	@echo "    - VTune (profiler) and perf (flamegraph) are Linux-only and skipped on Windows."
+	@echo "    - DLL resolution uses PATH, not rpath: build copies the FFmpeg DLLs into"
+	@echo "      $(EXECUTABLES_DIR)/{sys,cust,slim}/ so the .exe files run in place."
+	@echo ""
+endif
+
+.PHONY: install platform_install \
+        setup_ffmpeg setup_ffmpeg_slim setup_ffmpeg_pgo setup_ffmpeg_slim_pgo \
+        build build_sys build_tools \
+        all benchmark benchmark_all benchmark_keyframes benchmark_threads \
+        test test_ffmpeg decode_ffmpeg \
+        publish generate_video generate_videos_since compare_mvs compare_runs \
+        fetch_fresh_ffmpeg installer_diff installer_publish clean_fresh_ffmpeg \
+        help $(PLATFORM_PHONY)

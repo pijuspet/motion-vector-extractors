@@ -5,7 +5,7 @@ name: build
 # CI instead of by hand. GitHub sets CI=true automatically, which makes the
 # makefiles skip profiler/report-only tooling (VTune, perf, Python venv).
 #
-# A third job builds the native-MSVC path (makefile.msvc). It is EXPERIMENTAL:
+# A third job builds the native-MSVC path (PLATFORM=msvc, mk/msvc.mk). It is EXPERIMENTAL:
 # non-blocking (continue-on-error) and skipped on pull_request to save Windows
 # minutes. Flip both once it goes green.
 
@@ -58,7 +58,7 @@ jobs:
           path: |
             ffmpeg/FFmpeg-8.0
             ffmpeg/FFmpeg-8.0-custom
-          key: ${{ runner.os }}-ffmpeg-${{ steps.ff.outputs.sha }}-${{ hashFiles('makefile') }}
+          key: ${{ runner.os }}-ffmpeg-${{ steps.ff.outputs.sha }}-${{ hashFiles('makefile', 'mk/linux.mk') }}
 
       - name: apt update
         run: sudo apt-get update
@@ -122,25 +122,25 @@ jobs:
           path: |
             ffmpeg/FFmpeg-8.0
             ffmpeg/FFmpeg-8.0-custom
-          key: ${{ runner.os }}-ffmpeg-${{ steps.ff.outputs.sha }}-${{ hashFiles('makefile.windows') }}
+          key: ${{ runner.os }}-ffmpeg-${{ steps.ff.outputs.sha }}-${{ hashFiles('makefile', 'mk/mingw.mk') }}
 
       - name: make install
-        run: make -f makefile.windows install
+        run: make install
 
       - name: make setup_ffmpeg
-        run: make -f makefile.windows setup_ffmpeg
+        run: make setup_ffmpeg
 
       - name: make build
-        run: make -f makefile.windows build
+        run: make build
 
       - name: make build_tools
-        run: make -f makefile.windows build_tools
+        run: make build_tools
 
       - name: make test
-        run: make -f makefile.windows test
+        run: make test
 
       - name: make benchmark
-        run: make -f makefile.windows benchmark STEPS=2 STREAMS=2 NRUNS=1
+        run: make benchmark STEPS=2 STREAMS=2 NRUNS=1
 
   windows-msvc:
     name: windows (msvc, experimental)
@@ -183,7 +183,7 @@ jobs:
       # bash/make/nasm plus the *MinGW* pkgconf (mingw-w64-x86_64-pkgconf) — but
       # no MinGW gcc. The MinGW pkgconf is a native-Windows build that emits
       # Windows -I/-L paths cl.exe/link.exe can read; the MSYS cygwin pkgconf
-      # emits POSIX /d/a/... paths the MSVC toolchain can't use (see makefile.msvc
+      # emits POSIX /d/a/... paths the MSVC toolchain can't use (see mk/msvc.mk
       # PKG_CONFIG note). Rust + cl come from the runner.
       # VERIFY: path-type inherit can mangle Windows-style INCLUDE/LIB inside
       # MSYS2; this is the most likely thing to need adjustment.
@@ -209,25 +209,25 @@ jobs:
           path: |
             ffmpeg/FFmpeg-8.0
             ffmpeg/FFmpeg-8.0-custom
-          key: windows-msvc-ffmpeg-${{ steps.ff.outputs.sha }}-${{ hashFiles('makefile.msvc') }}
+          key: windows-msvc-ffmpeg-${{ steps.ff.outputs.sha }}-${{ hashFiles('makefile', 'mk/msvc.mk') }}
 
       - name: check-env
-        run: make -f makefile.msvc check-env
+        run: make PLATFORM=msvc check-env
 
       - name: make install
-        run: make -f makefile.msvc install
+        run: make PLATFORM=msvc install
 
       - name: make setup_ffmpeg
-        run: make -f makefile.msvc setup_ffmpeg
+        run: make PLATFORM=msvc setup_ffmpeg
 
       - name: make build
-        run: make -f makefile.msvc build
+        run: make PLATFORM=msvc build
 
       - name: make build_tools
-        run: make -f makefile.msvc build_tools
+        run: make PLATFORM=msvc build_tools
 
       - name: make test
-        run: make -f makefile.msvc test
+        run: make PLATFORM=msvc test
 
       - name: make benchmark
-        run: make -f makefile.msvc benchmark STEPS=2 STREAMS=2 NRUNS=1
+        run: make PLATFORM=msvc benchmark STEPS=2 STREAMS=2 NRUNS=1
