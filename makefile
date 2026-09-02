@@ -47,6 +47,23 @@ WRITE_CSV ?= 0
 # (from-scratch Rust/C) now match via E9_L0_ONLY/E10_L0_ONLY. Set L0_ONLY=0 to
 # get full both-list output everywhere (e.g. for B-frame/list-1 investigation).
 L0_ONLY ?= 1
+# Motion-vector export filters in the custom FFmpeg (extractor1/3/5/6; the
+# regular FFmpeg build has no such options and ignores them). They shrink the
+# OUTPUT only: the picture is fully entropy-decoded before any of this runs, so
+# decode cost is unchanged.
+#
+# Order: size threshold first, then the grid, so a cell is claimed by a vector
+# that actually passed the threshold rather than by a sub-threshold one
+# suppressing the real vector behind it.
+#
+# Spatial thinning: split the picture into MV_GRID x MV_GRID pixel cells and
+# keep at most one vector per cell per picture. 0 = keep every vector. This
+# gives an evenly spread field, which is what a fixed camera wants - unlike
+# sampling by decode order, which clusters wherever the macroblock walk went.
+MV_GRID ?= 0
+# Drop motion vectors whose displacement is shorter than this many whole pixels
+# (Euclidean length of dst-src). 0 = no size filter, export every vector.
+MV_MIN_SIZE ?= 0
 # Which two methods the "Generate MV comparison" step's full (both-lists)
 # sanity check compares (step 3, logged as "first"/"second" rather than bare
 # method numbers). Default 1/4: both built from extractor1.rs, one against
@@ -306,7 +323,8 @@ build_sys: $(PLATFORM_GUARD)
 # child process via the spawned process environment — see extractor1/3/5/6.rs
 # (mv_l0_only AVOption) and E9_L0_ONLY/E10_L0_ONLY relayed from it in
 # crates/mv-bench/benchmark_extractors.rs.
-BENCH_ENV = L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND)
+BENCH_ENV = L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) \
+            MV_GRID=$(MV_GRID) MV_MIN_SIZE=$(MV_MIN_SIZE)
 BENCH_CMD = cargo run $(CARGO_TARGET_FLAG) --bin full_benchmark
 
 all:
@@ -572,6 +590,7 @@ help:
 	@echo "  Vars: VIDEO_NAME=$(VIDEO_NAME)"
 	@echo "        VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)  THREAD_COUNT=$(THREAD_COUNT)"
 	@echo "        KEYFRAMES_ONLY=$(KEYFRAMES_ONLY)  WRITE_CSV=$(WRITE_CSV)  L0_ONLY=$(L0_ONLY)"
+	@echo "        MV_GRID=$(MV_GRID)  MV_MIN_SIZE=$(MV_MIN_SIZE)   # export filters (no decode saving)"
 	@echo "        COMPARE_FIRST=$(COMPARE_FIRST)  COMPARE_SECOND=$(COMPARE_SECOND)  PROFILER_EXTRACTOR=$(PROFILER_EXTRACTOR)"
 	@echo ""
 	@echo "  PGO vars: PGO_TRAIN_CLIPS=$(PGO_TRAIN_CLIPS)"

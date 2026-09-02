@@ -374,6 +374,33 @@ pub fn print_ffmpeg_version() {
     }
 }
 
+/// Apply the custom fork's motion-vector post-filter AVOptions, read from the
+/// environment (the makefile exports both via BENCH_ENV).
+///
+/// * `MV_GRID=N`      — export at most one vector per N x N pixel cell.
+/// * `MV_MIN_SIZE=N`  — drop vectors whose displacement is shorter than N pixels.
+///
+/// Unset, `0` or unparseable means "no filter", and in that case nothing is set
+/// at all, so default runs stay byte-identical to before these options existed.
+/// Both options exist only in the custom FFmpeg; against the regular build
+/// `av_opt_set_int` just returns AVERROR_OPTION_NOT_FOUND, which is why the
+/// extractors can call this unconditionally (same as `mv_l0_only` already does).
+pub unsafe fn set_mv_filter_opts(dec_ctx: *mut ff::AVCodecContext) {
+    for (opt, env) in [
+        ("mv_grid", "MV_GRID"),
+        ("mv_min_size", "MV_MIN_SIZE"),
+    ] {
+        let value = std::env::var(env)
+            .ok()
+            .and_then(|v| v.trim().parse::<i64>().ok())
+            .unwrap_or(0);
+        if value > 0 {
+            let key = CString::new(opt).unwrap();
+            ff::av_opt_set_int(dec_ctx as *mut std::ffi::c_void, key.as_ptr(), value, 0);
+        }
+    }
+}
+
 pub unsafe fn set_av_flags(fmt_ctx: &mut ff::AVFormatContext) -> Vec<*mut ff::AVDictionary> {
     let nb_streams = (*fmt_ctx).nb_streams as usize;
     let mut stream_opts: Vec<*mut ff::AVDictionary> = vec![ptr::null_mut(); nb_streams];
