@@ -64,6 +64,28 @@ MV_GRID ?= 0
 # Drop motion vectors whose displacement is shorter than this many whole pixels
 # (Euclidean length of dst-src). 0 = no size filter, export every vector.
 MV_MIN_SIZE ?= 0
+# --- Temporal decimation. The filters above cost full decode time; these do
+# not - they drop whole pictures before any bin is entropy-decoded.
+#
+# MV_SKIP_FRAME uses FFmpeg's own skip_frame vocabulary: noref, bidir, nointra,
+# nokey (note 'nointra', not 'nonintra'). Empty = decode everything.
+# bidir drops B pictures: measured 1.99s -> 1.31s on MCTTR, and every surviving
+# vector is bit-identical to an undecimated run.
+MV_SKIP_FRAME ?=
+# Skip every Nth picture, decoding the rest (0/1 = decode all). IDR always
+# decoded. Note the direction: 2 drops half, 3 a third, 4 a quarter, so a LARGER
+# N is a gentler trim. That is deliberate - a skipped picture cannot be
+# recovered afterwards (interpolating one from its neighbours measured a larger
+# error than the motion itself), so this is for mild trimming, not decimation.
+#
+# ALWAYS pair with MV_SKIP_FRAME=bidir: on its own it leaves B slices using
+# temporal direct mode reading a collocated picture that was skipped, which
+# measured 2.8-4.2% wrong vectors. With bidir, 0% wrong.
+#
+# The counter runs over ALL pictures in decode order, so on a stream with a
+# regular GOP the skip period can alias against it and remove far fewer decoded
+# pictures than 1/N suggests - measure per clip rather than assuming.
+MV_SKIP_EVERY_NTH ?= 0
 # Which two methods the "Generate MV comparison" step's full (both-lists)
 # sanity check compares (step 3, logged as "first"/"second" rather than bare
 # method numbers). Default 1/4: both built from extractor1.rs, one against
@@ -324,7 +346,8 @@ build_sys: $(PLATFORM_GUARD)
 # (mv_l0_only AVOption) and E9_L0_ONLY/E10_L0_ONLY relayed from it in
 # crates/mv-bench/benchmark_extractors.rs.
 BENCH_ENV = L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) \
-            MV_GRID=$(MV_GRID) MV_MIN_SIZE=$(MV_MIN_SIZE)
+            MV_GRID=$(MV_GRID) MV_MIN_SIZE=$(MV_MIN_SIZE) \
+            MV_SKIP_FRAME=$(MV_SKIP_FRAME) MV_SKIP_EVERY_NTH=$(MV_SKIP_EVERY_NTH)
 BENCH_CMD = cargo run $(CARGO_TARGET_FLAG) --bin full_benchmark
 
 all:
@@ -591,6 +614,7 @@ help:
 	@echo "        VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)  THREAD_COUNT=$(THREAD_COUNT)"
 	@echo "        KEYFRAMES_ONLY=$(KEYFRAMES_ONLY)  WRITE_CSV=$(WRITE_CSV)  L0_ONLY=$(L0_ONLY)"
 	@echo "        MV_GRID=$(MV_GRID)  MV_MIN_SIZE=$(MV_MIN_SIZE)   # export filters (no decode saving)"
+	@echo "        MV_SKIP_FRAME=$(MV_SKIP_FRAME)  MV_SKIP_EVERY_NTH=$(MV_SKIP_EVERY_NTH)   # temporal decimation (real speedup)"
 	@echo "        COMPARE_FIRST=$(COMPARE_FIRST)  COMPARE_SECOND=$(COMPARE_SECOND)  PROFILER_EXTRACTOR=$(PROFILER_EXTRACTOR)"
 	@echo ""
 	@echo "  PGO vars: PGO_TRAIN_CLIPS=$(PGO_TRAIN_CLIPS)"

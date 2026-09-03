@@ -5,7 +5,7 @@ use std::time::Instant;
 use ffmpeg_sys_next as ff;
 
 use mv_extract::ffmpeg_common::{
-    get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs, set_av_flags, unset_av_flags, set_mv_filter_opts
+    get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs, set_av_flags, unset_av_flags, set_mv_filter_opts, set_skip_frame_opt, SourceFrameIndex
 };
 
 fn main() {
@@ -105,6 +105,10 @@ fn main() {
         // is claimed by a vector that actually passed it. Neither reduces
         // decode time - the picture is fully decoded before they run.
         set_mv_filter_opts(dec_ctx);
+        // Temporal decimation, the one filter here that saves decode time:
+        // MV_SKIP_FRAME=bidir drops B pictures, MV_SKIP_EVERY_NTH=N skips
+        // every Nth picture before any of its bins are decoded.
+        set_skip_frame_opt(dec_ctx);
         if args.keyframes_only {
             (*dec_ctx).skip_frame = ff::AVDiscard::AVDISCARD_NONKEY;
         }
@@ -139,7 +143,7 @@ fn main() {
         }
 
         let decode_start = Instant::now();
-        let mut frame_num: i32 = 0;
+        let mut frames = SourceFrameIndex::new(video_stream);
         while ff::av_read_frame(fmt_ctx, pkt) >= 0 {
             if (*pkt).stream_index == vsi {
                 let mut ret = ff::avcodec_send_packet(dec_ctx, pkt);
@@ -155,6 +159,9 @@ fn main() {
                         eprintln!("Error during decoding.");
                         break;
                     }
+                    // Source position, not an output count: with decimation on
+                    // these numbers have gaps where pictures were skipped.
+                    let frame_num = frames.index_of(frame);
                     if let Some(w) = writer.as_mut() {
                         let wrote = write_frame_mvs(w, frame_num, frame);
                         if !wrote && args.is_verbose {
@@ -162,7 +169,6 @@ fn main() {
                         }
                     }
                     ff::av_frame_unref(frame);
-                    frame_num += 1;
                 }
             }
             ff::av_packet_unref(pkt);
@@ -171,11 +177,11 @@ fn main() {
         // Flush decoder
         ff::avcodec_send_packet(dec_ctx, ptr::null());
         while ff::avcodec_receive_frame(dec_ctx, frame) == 0 {
+            let frame_num = frames.index_of(frame);
             if let Some(w) = writer.as_mut() {
                 write_frame_mvs(w, frame_num, frame);
             }
             ff::av_frame_unref(frame);
-            frame_num += 1;
         }
 
         let decode_ms = decode_start.elapsed().as_secs_f64() * 1000.0;
@@ -194,6 +200,6 @@ fn main() {
         let mut pkt_ptr = pkt;
         ff::av_packet_free(&mut pkt_ptr);
 
-        println!("{} {} {} {:.3}", frame_num, total_mvs, rss_kb, decode_ms);
+        println!("{} {} {} {:.3}", frames.decoded(), total_mvs, rss_kb, decode_ms);
     }
 }

@@ -378,6 +378,7 @@ pub fn print_ffmpeg_version() {
 /// environment (the makefile exports both via BENCH_ENV).
 ///
 /// * `MV_GRID=N`      — export at most one vector per N x N pixel cell.
+/// * `MV_SKIP_EVERY_NTH=N` — skip every Nth picture outright (saves decode time).
 /// * `MV_MIN_SIZE=N`  — drop vectors whose displacement is shorter than N pixels.
 ///
 /// Unset, `0` or unparseable means "no filter", and in that case nothing is set
@@ -389,6 +390,10 @@ pub unsafe fn set_mv_filter_opts(dec_ctx: *mut ff::AVCodecContext) {
     for (opt, env) in [
         ("mv_grid", "MV_GRID"),
         ("mv_min_size", "MV_MIN_SIZE"),
+        // Temporal decimation: unlike the two above, this one actually cuts
+        // decode time, because a skipped picture never reaches the entropy
+        // decoder. See mv_skip_every_nth in the fork's avcodec.h.
+        ("mv_skip_every_nth", "MV_SKIP_EVERY_NTH"),
     ] {
         let value = std::env::var(env)
             .ok()
@@ -398,6 +403,185 @@ pub unsafe fn set_mv_filter_opts(dec_ctx: *mut ff::AVCodecContext) {
             let key = CString::new(opt).unwrap();
             ff::av_opt_set_int(dec_ctx as *mut std::ffi::c_void, key.as_ptr(), value, 0);
         }
+    }
+}
+
+/// CSV frame numbering that follows the SOURCE picture sequence rather than
+/// counting what came out of the decoder.
+///
+/// The two are the same until pictures start being dropped. `MV_SKIP_EVERY_NTH=5`
+/// makes the decoder emit nothing for every fifth picture, and a plain output
+/// counter then closes the gap - source picture 6 is written as frame 5 - so the
+/// CSV claims motion at times the run never looked at, every row after the first
+/// drop is attributed to the wrong picture, and nothing lines up with the same
+/// clip decoded undecimated. Numbering by source position instead leaves a
+/// skipped picture's index simply absent, which is what a reader can act on:
+/// "frame 5 is missing" is the truth, "frame 5 is what used to be frame 6" is
+/// not.
+///
+/// The index comes from the frame's PTS, not from the decoder, because the drop
+/// happens in three different places - `skip_frame` in the shared slice header
+/// path, `mv_skip_every_nth` in the fork's h264/hevc slice code, and the
+/// demuxer's own `discard` - and a timestamp is what all three preserve. Frames
+/// are emitted in display order, so PTS rises monotonically and
+/// `elapsed_ticks / ticks_per_picture` is exact on constant-frame-rate input.
+///
+/// Deliberately inert unless decimation is actually configured. With nothing
+/// being dropped the output counter already IS the source position, so falling
+/// back to it keeps every existing run - and every CSV ever compared against one
+/// - byte-identical, and sidesteps variable-frame-rate clips where the PTS
+/// arithmetic would not hold. Same reasoning as `set_mv_filter_opts`: a default
+/// run must look exactly as it did before the feature existed.
+pub struct SourceFrameIndex {
+    /// PTS units per source picture. 0 means "just count", either because no
+    /// decimation is configured or because the stream lacks a usable rate.
+    ticks: i64,
+    /// PTS that maps to index 0. `i64::MIN` until the first frame sets it.
+    origin: i64,
+    /// Frames actually decoded - what the benchmark's ms/frame is divided by,
+    /// and what the extractor prints as its frame count. NOT a source position.
+    decoded: i32,
+}
+
+/// True when any picture-dropping knob is set, i.e. when output order can
+/// diverge from source order. Reads the same environment the option setters do.
+fn decimation_configured() -> bool {
+    let nth = std::env::var("MV_SKIP_EVERY_NTH")
+        .ok()
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .unwrap_or(0);
+    if nth > 1 {
+        return true;
+    }
+    match std::env::var("MV_SKIP_FRAME") {
+        Ok(mode) => {
+            let mode = mode.trim();
+            !mode.is_empty() && mode != "none"
+        }
+        Err(_) => false,
+    }
+}
+
+impl SourceFrameIndex {
+    /// # Safety
+    /// `video_stream` must be a valid `*const AVStream` from the open format
+    /// context, live for the call.
+    pub unsafe fn new(video_stream: *const ff::AVStream) -> Self {
+        let mut me = SourceFrameIndex { ticks: 0, origin: i64::MIN, decoded: 0 };
+        if !decimation_configured() {
+            return me;
+        }
+
+        let tb = (*video_stream).time_base;
+        // avg_frame_rate is the container's own answer; r_frame_rate is
+        // libavformat's guess from the timestamps, and is the better fallback
+        // than giving up.
+        let mut fr = (*video_stream).avg_frame_rate;
+        if fr.num <= 0 || fr.den <= 0 {
+            fr = (*video_stream).r_frame_rate;
+        }
+        if fr.num <= 0 || fr.den <= 0 || tb.num <= 0 || tb.den <= 0 {
+            eprintln!(
+                "MV_SKIP_*: stream has no usable frame rate / time base - CSV frame \
+                 numbers will stay sequential and will not show the skipped pictures"
+            );
+            return me;
+        }
+
+        // One picture period (1/fr) expressed in time_base units. av_inv_q is a
+        // static inline, so it is not in the bindings - invert by hand.
+        let period = ff::AVRational { num: fr.den, den: fr.num };
+        let ticks = ff::av_rescale_q(1, period, tb);
+        if ticks <= 0 {
+            eprintln!(
+                "MV_SKIP_*: frame period rounds to {} time_base units - CSV frame \
+                 numbers will stay sequential",
+                ticks
+            );
+            return me;
+        }
+        me.ticks = ticks;
+
+        // The container's first presentation timestamp is index 0. When it is
+        // unknown the first decoded frame supplies the origin instead, which is
+        // the same picture in practice: every skip mode exempts IDR, so the
+        // first picture out is the first picture in.
+        let start = (*video_stream).start_time;
+        if start != i64::MIN {
+            me.origin = start;
+        }
+        me
+    }
+
+    /// Source position of `frame`, and one more frame counted as decoded.
+    /// Call exactly once per received frame, before `av_frame_unref`.
+    ///
+    /// # Safety
+    /// `frame` must be a valid, non-null `*const AVFrame` still holding the
+    /// decoder's output.
+    pub unsafe fn index_of(&mut self, frame: *const ff::AVFrame) -> i32 {
+        let sequential = self.decoded;
+        self.decoded += 1;
+
+        if self.ticks == 0 {
+            return sequential;
+        }
+
+        // AV_NOPTS_VALUE is a C macro (INT64_MIN), so bindgen emits no constant.
+        let mut pts = (*frame).pts;
+        if pts == i64::MIN {
+            pts = (*frame).best_effort_timestamp;
+        }
+        if pts == i64::MIN {
+            return sequential;
+        }
+        if self.origin == i64::MIN {
+            self.origin = pts;
+        }
+
+        let delta = pts - self.origin;
+        if delta < 0 {
+            return sequential;
+        }
+        ((delta + self.ticks / 2) / self.ticks) as i32
+    }
+
+    /// How many frames were decoded. This is the frame COUNT the benchmark
+    /// divides wall time by - not the last index written, which is larger
+    /// whenever pictures were skipped.
+    pub fn decoded(&self) -> i32 {
+        self.decoded
+    }
+}
+
+/// Temporal decimation: drop whole pictures before they are entropy-decoded.
+///
+/// `MV_SKIP_FRAME` accepts FFmpeg's `skip_frame` vocabulary — `noref`, `bidir`,
+/// `nointra`, `nokey` — and is unset by default. Unlike the spatial filters in
+/// `set_mv_filter_opts`, this one genuinely saves decode time: a discarded
+/// picture has none of its CABAC bins consumed at all.
+///
+/// Safe for the pictures that are still decoded, because H.264 predicts motion
+/// vectors from *spatial* neighbours within the same slice. The only cross-
+/// picture MV dependency is a B slice's temporal direct mode, which needs the
+/// collocated MV field — so dropping all B pictures (`bidir`) leaves the
+/// surviving I/P motion vectors bit-exact, while dropping references would not.
+pub unsafe fn set_skip_frame_opt(dec_ctx: *mut ff::AVCodecContext) {
+    let Ok(mode) = std::env::var("MV_SKIP_FRAME") else { return };
+    let mode = mode.trim();
+    if mode.is_empty() || mode == "none" {
+        return;
+    }
+    // Set by option NAME, not by struct field: the custom fork inserts fields
+    // into AVCodecContext, so every offset after codec_id differs from what
+    // ffmpeg-sys-next's bindings expect and a direct `(*dec_ctx).skip_frame =`
+    // lands on the wrong field. Same reason extractor1.rs uses the dict API for
+    // flags2. av_opt_set resolves "skip_frame" through the DLL's own offsetof.
+    let key = CString::new("skip_frame").unwrap();
+    let val = CString::new(mode).unwrap();
+    let rc = ff::av_opt_set(dec_ctx as *mut std::ffi::c_void, key.as_ptr(), val.as_ptr(), 0);
+    if rc < 0 {
+        eprintln!("MV_SKIP_FRAME: could not set skip_frame={:?} (rc={})", mode, rc);
     }
 }
 

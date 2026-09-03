@@ -5,7 +5,7 @@ use std::time::Instant;
 use ffmpeg_sys_next as ff;
 
 use mv_extract::ffmpeg_common::{
-    get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs, set_av_flags, unset_av_flags, set_mv_filter_opts
+    get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs, set_av_flags, unset_av_flags, set_mv_filter_opts, set_skip_frame_opt
 };
 
 fn main() {
@@ -106,6 +106,10 @@ fn main() {
         // is claimed by a vector that actually passed it. Neither reduces
         // decode time - the picture is fully decoded before they run.
         set_mv_filter_opts(dec_ctx);
+        // Temporal decimation, the one filter here that saves decode time:
+        // MV_SKIP_FRAME=bidir drops B pictures, MV_SKIP_EVERY_NTH=N skips
+        // every Nth picture before any of its bins are decoded.
+        set_skip_frame_opt(dec_ctx);
         (*dec_ctx).skip_frame = ff::AVDiscard::AVDISCARD_NONKEY;
         //endregion
 
