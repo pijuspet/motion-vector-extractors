@@ -42,6 +42,15 @@ fn main() {
         process::exit(1);
     }
 
+    // Fail here rather than letting every extractor spawn, print "Could not
+    // open input file." and exit non-zero: the suite would otherwise report a
+    // full set of zero-frame results and still exit 0. Inputs may also be RTSP
+    // URLs (method 3), which have no path to stat.
+    if !video_file.contains("://") && !std::path::Path::new(video_file).is_file() {
+        eprintln!("Error: input video not found: {}", video_file);
+        process::exit(1);
+    }
+
     let thread_count: i32 = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(0);
     let keyframes_only = args.get(7).map(|s| s == "1").unwrap_or(false);
     let write_csv = args.get(8).map(|s| s == "1").unwrap_or(false);

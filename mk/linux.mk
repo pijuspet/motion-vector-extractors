@@ -120,7 +120,6 @@ endef
 # works on a clone that only wants the FFmpeg-based methods.
 define build_edge264
 	@if [ -f '$(EDGE264_DIR)/Makefile' ]; then \
-		$(MAKE) --no-print-directory apply_edge264_patch && \
 		$(MAKE) --no-print-directory -C '$(EDGE264_DIR)' VARIANTS= BUILDTEST=no \
 			CFLAGS='$(EDGE264_EXTRA_CFLAGS)' && \
 		rm -f '$(EDGE264_DIR)/extractor$(EXE_EXT)' && \
@@ -129,9 +128,9 @@ define build_edge264
 			FFMPEG_PREFIX='$(REGULAR_PREFIX)' \
 			LDFLAGS='-Wl,-rpath,$(EDGE264_DIR) -Wl,--disable-new-dtags' && \
 		cp '$(EDGE264_DIR)/extractor$(EXE_EXT)' \
-			'$(EXECUTABLES_DIR_SYS)/extractor11$(EXE_EXT)'; \
+			'$(EXECUTABLES_DIR_SYS)/extractor8$(EXE_EXT)'; \
 	else \
-		echo "[SKIP]  edge264 submodule not checked out - method 11 not built"; \
+		echo "[SKIP]  edge264 submodule not checked out - method 8 not built"; \
 		echo "        run: git submodule update --init edge264"; \
 	fi
 endef
@@ -161,6 +160,16 @@ define pgo_configure_cust_use
 	./configure --prefix=$(CUSTOM_PREFIX) $(FF_CONFIGURE_FLAGS) \
 		--extra-cflags="-fprofile-use=$(1) -fprofile-correction \
 			-Wno-missing-profile -Wno-coverage-mismatch"
+endef
+
+# edge264 uses the same GCC mechanism, driven through its Makefile's CFLAGS /
+# LDFLAGS rather than a configure script. $(1) = profile directory.
+define pgo_edge264_gen
+	$(call edge264_build,-fprofile-generate=$(1) -fprofile-update=atomic,-fprofile-generate=$(1))
+endef
+
+define pgo_edge264_use
+	$(call edge264_build,-fprofile-use=$(1) -fprofile-correction -Wno-missing-profile -Wno-coverage-mismatch,)
 endef
 
 

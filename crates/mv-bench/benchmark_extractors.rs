@@ -721,6 +721,11 @@ pub fn run_benchmark_extractors(
 
     let mut results = Vec::with_capacity(METHODS.len());
     for method in METHODS {
+        let exe_path = method.exe_path(exe_dir);
+        if !std::path::Path::new(&exe_path).exists() {
+            println!("[SKIP]  {} - {} not built\n", method.name, exe_path);
+            continue;
+        }
         if is_verbose {
             println!("Running: {}", method.name);
         }

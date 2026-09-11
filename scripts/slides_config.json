@@ -12,6 +12,12 @@
         },
         "per_metric": [
             {
+                "metric": "wall_ms",
+                "title": "Wall-Clock Speedup vs Baseline ({baseline})",
+                "subtitle": "Time to process the whole clip: baseline / method — the honest speedup. Unlike the per-frame charts below, this stays correct when a method skips pictures (MV_SKIP_FRAME / MV_SKIP_EVERY_NTH).",
+                "filename": "speedup_wall.png"
+            },
+            {
                 "metric": "fps",
                 "title": "Throughput Speedup vs Baseline ({baseline})",
                 "subtitle": "FPS ratio: method / baseline — values > 1.0 = higher throughput",

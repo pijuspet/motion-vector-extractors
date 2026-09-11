@@ -119,7 +119,7 @@ endef
 # Not built on Windows yet. edge264 itself has a `windows` target and
 # edge264/extractor.c is plain C, but it reads RSS from /proc and the
 # harness would need the FFmpeg DLLs staged next to it (MethodInfo::exe_path()
-# in crates/mv-bench/benchmark_extractors.rs puts method 11 under
+# in crates/mv-bench/benchmark_extractors.rs puts method 8 under
 # executables/sys/, since it links the regular FFmpeg for demuxing). Replace
 # this stub with the build + cp steps from mk/linux.mk when that is done -
 # `build` and `build_sys` already call it, so nothing else has to change.

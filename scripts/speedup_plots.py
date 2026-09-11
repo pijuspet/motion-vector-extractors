@@ -4,6 +4,7 @@ import pandas as pd
 import seaborn as sns
 
 _METRIC_INFO = {
+    "wall_ms":                  ("Wall clock, whole clip",     "lower raw value = better"),
     "fps":                      ("Throughput (FPS)",           "higher raw value = better"),
     "time_per_frame":           ("Latency (ms/frame)",        "lower raw value = better"),
     "cpu_ms_per_frame":         ("CPU Efficiency (ms/frame)", "lower raw value = better"),
@@ -66,7 +67,22 @@ def detect_baseline_method(df: pd.DataFrame) -> str:
     return "Original FFmpeg MV only"
 
 
+def add_derived_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """Derive wall-clock time per run from the per-frame figure.
+
+    The Rust side records ms/frame(strm) = wall / (frames / streams), so the
+    inverse recovers wall time. Done here rather than in the CSV writer so old
+    result files keep working.
+    """
+    df = df.copy()
+    if {"time_per_frame", "frames", "streams"}.issubset(df.columns):
+        streams = df["streams"].replace(0, pd.NA)
+        df["wall_ms"] = df["time_per_frame"] * df["frames"] / streams
+    return df
+
+
 def compute_speedup_df(df: pd.DataFrame, baseline_method: str) -> pd.DataFrame:
+    df = add_derived_metrics(df)
     available_metrics = [m for m in _METRICS if m in df.columns]
 
     rows = []
@@ -116,11 +132,40 @@ def _direction(metric: str) -> str:
     return _METRIC_INFO[metric][1] if metric in _METRIC_INFO else ""
 
 
-def _y_max(metric: str, video_type: str) -> float:
+_AUTOSCALE_METRICS = {"wall_ms", "frames"}
+
+# Metrics normalised per DECODED frame. They are only comparable across methods
+# that decoded the same pictures, so when temporal decimation is in play they
+# understate a real win (a 10x faster run reads 0.88x). Charts of these carry a
+# warning whenever coverage is uneven; wall_ms and frames are exempt.
+_PER_FRAME_METRICS = {"fps", "time_per_frame", "cpu_ms_per_frame",
+                      "mv_extract_ms_per_frame"}
+
+
+def _coverage_warning(speedup_df, metric):
+    """Warning text for per-frame charts when methods decoded unequal frames."""
+    if metric not in _PER_FRAME_METRICS:
+        return ""
+    cov = speedup_df[speedup_df["metric"] == "frames"]
+    if cov.empty:
+        return ""
+    worst = cov["speedup"].min()
+    if worst >= 0.95:
+        return ""
+    return (f"NOT a like-for-like comparison: some methods decoded up to "
+            f"{1.0 / max(worst, 1e-9):.1f}x fewer pictures (temporal decimation). "
+            f"Per-frame metrics understate the real gain - see the wall-clock chart.")
+
+
+def _y_max(metric: str, video_type: str):
+    if metric in _AUTOSCALE_METRICS:
+        return None  # let matplotlib fit the data; these span 0.05x .. 60x
     return _SPEEDUP_Y_MAX.get((video_type, metric), 4)
 
 
-def _y_min(metric: str, video_type: str) -> float:
+def _y_min(metric: str, video_type: str):
+    if metric in _AUTOSCALE_METRICS:
+        return None
     return _SPEEDUP_Y_MIN.get((video_type, metric), 0.5)
 
 
@@ -188,7 +233,9 @@ def plot_speedup_line(
     ax.set_xlabel("Streams", fontsize=14)
     ax.set_ylabel("Speedup (×)", fontsize=14)
 
-    ax.set_ylim(_y_min(metric, video_type), _y_max(metric, video_type))
+    ymin, ymax = _y_min(metric, video_type), _y_max(metric, video_type)
+    if ymin is not None or ymax is not None:
+        ax.set_ylim(ymin, ymax)
 
     stream_vals = sorted(sub["streams"].unique())
     ax.set_xticks(stream_vals)
@@ -198,7 +245,11 @@ def plot_speedup_line(
     ax.legend(title="Method", loc="best", fontsize=11, title_fontsize=12)
     ax.grid(axis="y", alpha=0.3)
 
+    warn = _coverage_warning(speedup_df, metric)
     fig.tight_layout()
+    if warn:
+        fig.subplots_adjust(bottom=0.16)
+        fig.text(0.01, 0.055, warn, fontsize=11, color="crimson", ha="left", va="bottom")
     if run_info:
         fig.text(0.01, 0.01, run_info, fontsize=10, color="gray", style="italic", ha="left", va="bottom")
     save_path = os.path.join(plots_folder, filename)

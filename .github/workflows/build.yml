@@ -80,7 +80,7 @@ jobs:
 
       # STEPS=2 runs the extraction pass non-interactively (smoke-test sizing).
       - name: make benchmark
-        run: make benchmark STEPS=2 STREAMS=2 NRUNS=1
+        run: make benchmark STEPS=2 STREAMS=2 NRUNS=1 VIDEO_NAME=bigbunny.mp4
 
   windows:
     name: windows (msys2/mingw64)
@@ -140,7 +140,7 @@ jobs:
         run: make test
 
       - name: make benchmark
-        run: make benchmark STEPS=2 STREAMS=2 NRUNS=1
+        run: make benchmark STEPS=2 STREAMS=2 NRUNS=1 VIDEO_NAME=bigbunny.mp4
 
   windows-msvc:
     name: windows (msvc, experimental)
@@ -230,4 +230,4 @@ jobs:
         run: make PLATFORM=msvc test
 
       - name: make benchmark
-        run: make PLATFORM=msvc benchmark STEPS=2 STREAMS=2 NRUNS=1
+        run: make PLATFORM=msvc benchmark STEPS=2 STREAMS=2 NRUNS=1 VIDEO_NAME=bigbunny.mp4

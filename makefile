@@ -133,8 +133,6 @@ INITIAL_RUN_DATA := $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results_$(VID
 # alongside the run folders (e.g. compare_runs output) would otherwise sort last
 # and make this resolve to a plain file.
 # The glob is [0-9]* rather than *: run directories are timestamped, and a
-# non-run directory alongside them (results/<type>/_review, written by
-# review_deck) would otherwise sort last and be picked as "the latest run".
 LAST_RESULTS_DIR = $(patsubst %/,%,$(shell ls -d "$(CURRENT_DIR)/results/$(VIDEO_TYPE)/"[0-9]*/ 2>/dev/null | sort | tail -n 1))
 
 # NB: no trailing comments on these two — make keeps the whitespace before a
@@ -189,7 +187,7 @@ setup_ffmpeg: $(PLATFORM_GUARD)
 # target exists so the library can be rebuilt on its own after a submodule
 # update. See mk/<platform>.mk for the flags; the extractor itself lives in the
 # submodule as edge264/extractor.c (built by "make -C edge264 extractor").
-setup_edge264: apply_edge264_patch
+setup_edge264:
 	$(call edge264_build,,)
 	@echo "[OK]    edge264 build complete."
 
@@ -720,7 +718,7 @@ help:
 	@echo "    $(MAKE_HINT) install                 # toolchain + dependencies"
 	@echo "    $(MAKE_HINT) setup_ffmpeg            # build both FFmpeg trees (sys + custom)"
 	@echo "    $(MAKE_HINT) setup_ffmpeg_pgo        # PGO the custom fork (instrument -> train -> rebuild)"
-	@echo "    $(MAKE_HINT) setup_edge264           # build the edge264 decoder (method 11)"
+	@echo "    $(MAKE_HINT) setup_edge264           # build the edge264 decoder (method 8)"
 	@echo "    $(MAKE_HINT) setup_edge264_pgo       # PGO edge264 (instrument -> train -> rebuild)"
 	@echo "    $(MAKE_HINT) build                   # build all extractors (sys + custom)"
 	@echo "    $(MAKE_HINT) build_sys               # build extractors against the regular FFmpeg only"
@@ -776,6 +774,6 @@ endif
         build build_sys build_tools \
         all benchmark benchmark_all benchmark_keyframes benchmark_threads benchmark_filters benchmark_skip_nth \
         benchmark_min_size benchmark_grid \
-        publish publish_titles review_deck generate_video generate_videos_since compare_mvs \
+        publish publish_titles generate_video generate_videos_since compare_mvs \
         fetch_fresh_ffmpeg installer_diff installer_publish clean_fresh_ffmpeg \
         help $(PLATFORM_PHONY)
