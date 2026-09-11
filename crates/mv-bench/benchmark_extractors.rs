@@ -11,12 +11,12 @@ use crate::benchmark::BenchmarkResult as SharedBenchmarkResult;
 
 const MAX_STREAMS: i32 = 100;
 
-struct MethodInfo {
-    id: i32,
-    name: &'static str,
+pub struct MethodInfo {
+    pub id: i32,
+    pub name: &'static str,
 }
 
-const METHODS: &[MethodInfo] = &[
+pub const METHODS: &[MethodInfo] = &[
     MethodInfo { id: 0, name: "Original FFmpeg MV only" },
     MethodInfo { id: 1, name: "Original FFmpeg - Flush decoder" },
     MethodInfo { id: 2, name: "Original FFMPEG decode frames" },
@@ -24,16 +24,28 @@ const METHODS: &[MethodInfo] = &[
     MethodInfo { id: 4, name: "Custom FFmpeg - Flush decoder" },
     MethodInfo { id: 5, name: "Custom FFmpeg" },
     MethodInfo { id: 6, name: "Custom FFmpeg - Keyframes only" },
+    // extractor6.rs built against the regular FFmpeg — the keyframes-only
+    // counterpart to method 6, the same way method 4 is method 1 against the
+    // custom fork. No separate source file.
+    MethodInfo { id: 7, name: "Original FFmpeg - Keyframes only" },
+    MethodInfo { id: 8, name: "edge264 H.264 decoder" },
 ];
 
 impl MethodInfo {
+    #[cfg(windows)]
+    fn links_regular_ffmpeg(&self) -> bool {
+        // 8 is edge264, which is not FFmpeg at all — but it borrows the
+        // regular FFmpeg's demuxer, so it needs those DLLs beside it.
+        matches!(self.id, 0..=2 | 7 | 8)
+    }
+
     fn exe_path(&self, exe_dir: &str) -> String {
         #[cfg(windows)]
         {
             // On Windows there is no RPATH; DLLs are loaded from the exe's
             // directory. Separate sys/ and cust/ subdirs carry the matching
             // FFmpeg DLLs so each extractor loads the correct runtime.
-            let subdir = if self.id <= 2 { "sys" } else { "cust" };
+            let subdir = if self.links_regular_ffmpeg() { "sys" } else { "cust" };
             format!("{}/executables/{}/extractor{}.exe", exe_dir, subdir, self.id)
         }
         #[cfg(not(windows))]

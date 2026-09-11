@@ -173,10 +173,15 @@ impl ConfluenceReportGenerator {
     }
 
     /// Folder names are laid down by BenchmarkRunner as
-    /// `<timestamp>_<video_stem>_t<threads>[_kf][_csv]` (see full_benchmark.rs).
-    /// When that shape is present, the title is enriched with the same run
-    /// parameters the makefile exposes (VIDEO_NAME, THREAD_COUNT,
-    /// KEYFRAMES_ONLY, WRITE_CSV) so reports are distinguishable at a glance.
+    /// `<timestamp>_<video_stem>_t<threads>` followed by one tag per active
+    /// run setting (see the folder_name block in full_benchmark.rs):
+    ///
+    ///   _kf     KEYFRAMES_ONLY=1
+    ///   _g<N>   MV_GRID=N            grid filter
+    ///   _m<N>   MV_MIN_SIZE=N        vector-size filter
+    ///   _n<N>   MV_SKIP_EVERY_NTH=N  temporal decimation
+    ///   _csv    WRITE_CSV=1
+    ///
     /// Folders that don't match (older runs predating this naming, or the
     /// video-less timestamp-only folders) fall back to the legacy date-only
     /// title unchanged.
@@ -188,22 +193,60 @@ impl ConfluenceReportGenerator {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        let re = Regex::new(r"^\d{8}_\d{4}_(.+)_t(\d+)(_kf)?(_csv)?$").unwrap();
+        let re = Regex::new(r"^\d{8}_\d{4}_(.+)_t(\d+)((?:_[a-z]+[0-9]*)*)$").unwrap();
         let Some(caps) = re.captures(&name) else {
             return base;
         };
 
         let video = &caps[1];
-        let threads = &caps[2];
-        let mut params = vec![format!("THREAD_COUNT={}", threads)];
-        if caps.get(3).is_some() {
-            params.push("KEYFRAMES_ONLY=1".to_string());
-        }
-        if caps.get(4).is_some() {
-            params.push("WRITE_CSV=1".to_string());
+        let mut params = vec![format!("THREAD_COUNT={}", &caps[2])];
+        let mut strategy: Vec<String> = Vec::new();
+
+        for tag in caps[3].split('_').filter(|t| !t.is_empty()) {
+            let (head, num) = tag.split_at(1);
+            match (head, num) {
+                ("k", "f") => {
+                    strategy.push("keyframes only".to_string());
+                    params.push("KEYFRAMES_ONLY=1".to_string());
+                }
+                ("c", "sv") => params.push("WRITE_CSV=1".to_string()),
+                ("g", n) if !n.is_empty() => {
+                    strategy.push("filtering by grid".to_string());
+                    params.push(format!("MV_GRID={}", n));
+                }
+                ("m", n) if !n.is_empty() => {
+                    strategy.push("motion vector filtering by size".to_string());
+                    params.push(format!("MV_MIN_SIZE={}", n));
+                }
+                ("n", n) if !n.is_empty() => {
+                    strategy.push("skipping decoding of the frames".to_string());
+                    params.push(format!("MV_SKIP_EVERY_NTH={}", n));
+                }
+                _ => {}
+            }
         }
 
-        format!("{} — {} ({})", base, video, params.join(", "))
+        // A run with MV_SKIP_FRAME on but no every-Nth value is still a
+        // frame-skipping run and should say so.
+        if strategy.is_empty() && params.iter().any(|p| p.starts_with("MV_SKIP_FRAME=")) {
+            strategy.push("skipping decoding of the frames".to_string());
+        }
+
+        if strategy.is_empty() {
+            format!("{} — {} ({})", base, video, params.join(", "))
+        } else {
+            format!(
+                "{} — {} — {} ({})",
+                base,
+                video,
+                strategy.join(" + "),
+                params.join(", ")
+            )
+        }
+    }
+
+    pub fn public_report_title(&self, directory: &str) -> String {
+        self.generate_report_title(directory)
     }
 
     fn collect_files(

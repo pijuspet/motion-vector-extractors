@@ -378,7 +378,6 @@ pub fn print_ffmpeg_version() {
 /// environment (the makefile exports both via BENCH_ENV).
 ///
 /// * `MV_GRID=N`      — export at most one vector per N x N pixel cell.
-/// * `MV_SKIP_EVERY_NTH=N` — skip every Nth picture outright (saves decode time).
 /// * `MV_MIN_SIZE=N`  — drop vectors whose displacement is shorter than N pixels.
 ///
 /// Unset, `0` or unparseable means "no filter", and in that case nothing is set

@@ -26,6 +26,16 @@ make build
 ```
 This compiles every extractor twice — once linked against the standard FFmpeg (`target/extractor-sys`), and once against the custom-patched FFmpeg (`target/extractor-cust`). Binaries are copied into `executables/`.
 
+It also builds the [edge264](https://github.com/tvlabs/edge264) submodule and `extractor8` (benchmark method 8), a third-party from-scratch H.264 decoder driven by `edge264/extractor.c`. If the submodule has not been checked out the step is skipped with a hint rather than failing:
+
+```bash
+git submodule update --init edge264
+make setup_edge264       # rebuild just the decoder after a submodule update
+make setup_edge264_pgo   # instrument -> train -> rebuild, same recipe as setup_ffmpeg_pgo
+```
+
+The submodule is a **fork**: `edge264_fork/edge264_mv_extract.diff` gives edge264 a motion-vector-only mode (the counterpart of the custom FFmpeg fork's `motion_vectors_only`.
+
 ### Fixing stale Rust bindings after a header change
 
 `ffmpeg-sys-next` generates Rust FFI bindings via bindgen at build time. Cargo caches these bindings and only regenerates them when `PKG_CONFIG_PATH` changes — it does **not** watch the FFmpeg header files themselves. If you rebuild the custom FFmpeg (e.g. by reapplying or updating the patch) after `make build` has already run, the cached bindings in `target/extractor-cust` will be stale and will be missing `AVMotionVectorCompact` and `AV_FRAME_DATA_MOTION_VECTORS_COMPACT`, causing compile errors like:

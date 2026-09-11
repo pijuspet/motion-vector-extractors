@@ -186,6 +186,34 @@ endef
 define copy_runtime_libs
 	@cp -u '$(1)/bin/'*.dll '$(2)/' 2>/dev/null || true
 endef
+# -----------------------------------------------------------------------------
+# extractor8 (edge264)
+# -----------------------------------------------------------------------------
+# Not built on Windows yet. edge264 itself has a `windows` target and
+# edge264/extractor.c is plain C, but it reads RSS from /proc and the
+# harness would need the FFmpeg DLLs staged next to it (MethodInfo::exe_path()
+# in crates/mv-bench/benchmark_extractors.rs puts method 11 under
+# executables/sys/, since it links the regular FFmpeg for demuxing). Replace
+# this stub with the build + cp steps from mk/linux.mk when that is done -
+# `build` and `build_sys` already call it, so nothing else has to change.
+EDGE264_DIR     := $(CURRENT_DIR)/edge264
+EDGE264_EXTRA_CFLAGS :=
+
+define edge264_build
+	@echo "[SKIP]  edge264 is not built on Windows yet (see mk/msvc.mk)."
+endef
+
+define build_edge264
+	@echo "[SKIP]  extractor8 (edge264) is not built on Windows yet (see mk/msvc.mk)."
+endef
+
+define pgo_edge264_gen
+	@echo "[SKIP]  edge264 PGO is not available on Windows yet."
+endef
+
+define pgo_edge264_use
+	@echo "[SKIP]  edge264 PGO is not available on Windows yet."
+endef
 
 # -----------------------------------------------------------------------------
 # PGO (MSVC /GENPROFILE -> train -> /USEPROFILE)   ** UNTESTED **

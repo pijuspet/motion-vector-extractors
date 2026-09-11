@@ -381,6 +381,75 @@ impl BenchmarkPublisher {
         );
     }
 
+    /// Prints the Confluence page title every results/bulk run WOULD get, and
+    /// flags any two runs that would collide. Publishes nothing and needs no
+    /// credentials.
+    ///
+    /// This exists because the failure it catches is silent:
+    /// create_detailed_report_page() skips a title that already exists, so two
+    /// runs whose titles match do not error — the second one just never appears,
+    /// and the summary line still says "created/confirmed". Worth a look before
+    /// every bulk publish.
+    fn list_bulk_titles(&self) {
+        let bulk_dir = self.results_path.join("bulk");
+        let mut dirs: Vec<PathBuf> = match fs::read_dir(&bulk_dir) {
+            Ok(entries) => entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect(),
+            Err(e) => {
+                eprintln!("Cannot read {}: {}", bulk_dir.display(), e);
+                return;
+            }
+        };
+        dirs.sort();
+
+        // Credentials are irrelevant here: generate_report_title() only reads the
+        // folder name. Pass placeholders so this runs without a .env.
+        let generator = confluence_report_generator::ConfluenceReportGenerator::new(
+            "http://dry-run.invalid", "", "", "", "", "h264_cabac", &self.project_root,
+        );
+
+        let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut collisions = 0;
+        let mut plain = 0;
+        println!("Dry run — {} runs under {}\n", dirs.len(), bulk_dir.display());
+        let mut longest = 0usize;
+        for dir in &dirs {
+            let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+            // Mirror publish_all_bulk_runs: anything without a YYYYMMDD_HHMM stamp
+            // is not a run and never reaches Confluence. results/bulk/analysis is
+            // the obvious one - report charts live there, not benchmark output.
+            if Self::parse_folder_timestamp(&name).is_none() {
+                println!("[not a run, would be skipped] {}", name);
+                continue;
+            }
+            let title = generator.public_report_title(&dir.to_string_lossy());
+            longest = longest.max(title.chars().count());
+            // A title with no " — " never picked up the clip or the strategy.
+            if !title.contains(" — ") {
+                plain += 1;
+                println!("[NO PARAMS] {}\n            {}", name, title);
+            } else {
+                println!("{}", title);
+            }
+            if let Some(prev) = seen.insert(title.clone(), name.clone()) {
+                collisions += 1;
+                eprintln!("[COLLISION] {}\n            and {}\n            share the title \"{}\" — the second would be SKIPPED",
+                          prev, name, title);
+            }
+        }
+        println!(
+            "\n{} runs, {} unique titles, {} collisions, {} without run parameters. \
+             Longest title {} chars (Confluence allows 255).",
+            seen.len() + collisions, seen.len(), collisions, plain, longest
+        );
+        if collisions > 0 {
+            eprintln!("Fix the collisions before publishing, or those runs will silently share one page.");
+        }
+    }
+
     /// Rebuilds the main dashboard's First-run/Latest-run comparison using the
     /// most recent results/bulk/* run as "latest", tagged with the FFmpeg
     /// commit that was HEAD at its timestamp. "First run" stays the fixed
@@ -510,6 +579,7 @@ fn usage() {
     println!("  3: Publish to Confluence");
     println!("  4: Publish all results/bulk runs individually (dated to matching FFmpeg commit)");
     println!("  5: Update main dashboard comparison using the latest results/bulk run");
+    println!("  6: DRY RUN — print the page title each results/bulk run would get, publish nothing");
     println!("  0: Run ALL (benchmark, git, confluence)");
     println!();
 }
@@ -618,6 +688,9 @@ fn main() {
             }
             "5" => {
                 publisher.publish_dashboard_latest_bulk();
+            }
+            "6" => {
+                publisher.list_bulk_titles();
             }
             "0" => {
                 publisher.run_all();

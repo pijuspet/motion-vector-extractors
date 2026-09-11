@@ -21,7 +21,6 @@ REL     := release
 # #[cfg(windows)] branch in crates/mv-bench/benchmark_extractors.rs.
 EXECUTABLES_DIR_SYS  := $(EXECUTABLES_DIR)/sys
 EXECUTABLES_DIR_CUST := $(EXECUTABLES_DIR)/cust
-EXECUTABLES_DIR_SLIM := $(EXECUTABLES_DIR)/slim
 
 # Cargo target dir must be on a space-free path; dlltool/as split on spaces.
 CARGO_TARGET_BASE := $(HOME)/cargo-target/motion-vector-extractors
@@ -113,6 +112,34 @@ endef
 # next to the executables so they run in place.
 define copy_runtime_libs
 	@cp -u '$(1)/bin/'*.dll '$(2)/' 2>/dev/null || true
+endef
+# -----------------------------------------------------------------------------
+# extractor8 (edge264)
+# -----------------------------------------------------------------------------
+# Not built on Windows yet. edge264 itself has a `windows` target and
+# edge264/extractor.c is plain C, but it reads RSS from /proc and the
+# harness would need the FFmpeg DLLs staged next to it (MethodInfo::exe_path()
+# in crates/mv-bench/benchmark_extractors.rs puts method 11 under
+# executables/sys/, since it links the regular FFmpeg for demuxing). Replace
+# this stub with the build + cp steps from mk/linux.mk when that is done -
+# `build` and `build_sys` already call it, so nothing else has to change.
+EDGE264_DIR     := $(CURRENT_DIR)/edge264
+EDGE264_EXTRA_CFLAGS :=
+
+define edge264_build
+	@echo "[SKIP]  edge264 is not built on Windows yet (see mk/mingw.mk)."
+endef
+
+define build_edge264
+	@echo "[SKIP]  extractor8 (edge264) is not built on Windows yet (see mk/mingw.mk)."
+endef
+
+define pgo_edge264_gen
+	@echo "[SKIP]  edge264 PGO is not available on Windows yet."
+endef
+
+define pgo_edge264_use
+	@echo "[SKIP]  edge264 PGO is not available on Windows yet."
 endef
 
 # -----------------------------------------------------------------------------

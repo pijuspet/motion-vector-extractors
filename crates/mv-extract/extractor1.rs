@@ -99,15 +99,12 @@ fn main() {
         // output); override with L0_ONLY=0 to also export list-1 rows.
         let l0_only = std::env::var("L0_ONLY").map(|v| v != "0").unwrap_or(true);
         ff::av_opt_set_int(dec_ctx as *mut c_void, mv_l0_key.as_ptr(), if l0_only { 1 } else { 0 }, 0);
-        // MV export filters, off unless the makefile sets them: MV_GRID=N keeps
-        // at most one vector per NxN pixel cell, MV_MIN_SIZE=N drops vectors
-        // shorter than N pixels. The threshold runs before the grid, so a cell
-        // is claimed by a vector that actually passed it. Neither reduces
-        // decode time - the picture is fully decoded before they run.
+        // MV export filters, all off unless the makefile sets them: MV_GRID=N
+        // keeps at most one vector per NxN pixel cell, MV_MIN_SIZE=N drops
+        // vectors shorter than N pixels. The
+        // threshold runs before the grid, so a cell is claimed by a vector that
+        // actually passed it. None of these reduce decode time.
         set_mv_filter_opts(dec_ctx);
-        // Temporal decimation, the one filter here that saves decode time:
-        // MV_SKIP_FRAME=bidir drops B pictures, MV_SKIP_EVERY_NTH=N skips
-        // every Nth picture before any of its bins are decoded.
         set_skip_frame_opt(dec_ctx);
         if args.keyframes_only {
             (*dec_ctx).skip_frame = ff::AVDiscard::AVDISCARD_NONKEY;

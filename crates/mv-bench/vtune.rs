@@ -118,7 +118,7 @@ impl BenchmarkRunner {
                 "--",
                 &extractor_exec.to_string_lossy(),
                 &self.video_file,
-                "1",
+                "0",
                 &output_csv.to_string_lossy(),
                 "1", &tc_str, kf_str,
             ])
@@ -166,7 +166,7 @@ impl BenchmarkRunner {
 
         fs::create_dir_all(&self.vtune_dir).ok();
 
-        let do_print = 1;
+        let do_print = 0;
         let is_verbose = 1;
 
         let extractor_exec = self

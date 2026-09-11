@@ -86,6 +86,55 @@ endef
 # $(1) = FFmpeg prefix, $(2) = destination directory.
 define copy_runtime_libs
 endef
+# -----------------------------------------------------------------------------
+# extractor8 (edge264)
+# -----------------------------------------------------------------------------
+# edge264 (https://github.com/tvlabs/edge264) is a third-party from-scratch
+# H.264 decoder, forked here (see EDGE264_PATCH in the top-level makefile) to add
+# motion-vector-only decoding, a smaller macroblock layout, 4:2:2 residual
+# parsing and a picture-completion fix. The extractor itself now lives in the
+# submodule as edge264/extractor.c and is built by edge264's own Makefile
+# ("make extractor"); we supply the FFmpeg prefix it demuxes with, an absolute
+# rpath to the submodule (edge264 bakes $$ORIGIN, which stops resolving once the
+# binary is copied out of its build directory), and deploy the result as
+# executables/extractor8. The rm forces a relink: a plain
+# "make -C edge264 extractor" produces an $$ORIGIN-only binary, and make would
+# otherwise consider it up to date and let us deploy one that cannot start.
+EDGE264_DIR := $(CURRENT_DIR)/edge264
+
+# edge264 derives -march=native -O3 itself; -g mirrors the FFmpeg trees'
+# --enable-debug --disable-stripping so perf/VTune can see inside it.
+EDGE264_EXTRA_CFLAGS := -g
+
+# VARIANTS= drops edge264's `logs` object - a second copy of the header parser
+# compiled with -DLOGS, for a log callback the extractor never installs.
+# BUILDTEST=no skips edge264_test, which dlopen()s SDL2 to display frames.
+# $(1) = extra CFLAGS, $(2) = extra LDFLAGS.
+define edge264_build
+	$(MAKE) -C '$(EDGE264_DIR)' VARIANTS= BUILDTEST=no \
+		CFLAGS='$(EDGE264_EXTRA_CFLAGS) $(1)' LDFLAGS='$(2)'
+endef
+
+# Builds the library + extractor and deploys it. Skips with a hint rather than
+# failing when the submodule has not been checked out, so `make build` still
+# works on a clone that only wants the FFmpeg-based methods.
+define build_edge264
+	@if [ -f '$(EDGE264_DIR)/Makefile' ]; then \
+		$(MAKE) --no-print-directory apply_edge264_patch && \
+		$(MAKE) --no-print-directory -C '$(EDGE264_DIR)' VARIANTS= BUILDTEST=no \
+			CFLAGS='$(EDGE264_EXTRA_CFLAGS)' && \
+		rm -f '$(EDGE264_DIR)/extractor$(EXE_EXT)' && \
+		$(MAKE) --no-print-directory -C '$(EDGE264_DIR)' extractor$(EXE_EXT) \
+			VARIANTS= BUILDTEST=no CFLAGS='$(EDGE264_EXTRA_CFLAGS)' \
+			FFMPEG_PREFIX='$(REGULAR_PREFIX)' \
+			LDFLAGS='-Wl,-rpath,$(EDGE264_DIR) -Wl,--disable-new-dtags' && \
+		cp '$(EDGE264_DIR)/extractor$(EXE_EXT)' \
+			'$(EXECUTABLES_DIR_SYS)/extractor11$(EXE_EXT)'; \
+	else \
+		echo "[SKIP]  edge264 submodule not checked out - method 11 not built"; \
+		echo "        run: git submodule update --init edge264"; \
+	fi
+endef
 
 # -----------------------------------------------------------------------------
 # PGO (GCC -fprofile-generate / -fprofile-use)

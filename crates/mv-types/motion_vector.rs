@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 
@@ -302,6 +303,25 @@ impl<W: Write> MvCompactCsvWriter<W> {
     pub fn flush(&mut self) -> std::io::Result<()> {
         self.inner.flush()
     }
+}
+
+/// Bucket vectors by frame number, consuming the input so nothing is copied.
+///
+/// `get_frame_vectors` below is a linear scan of the whole array, which is fine
+/// once but quadratic when a renderer calls it per frame: combining a 3778-frame
+/// clip against an 11.5M-vector CSV meant ~7.6 billion comparisons and took 26 s
+/// for 660 rendered frames. Index once, then look each frame up directly.
+pub fn group_by_frame(vectors: Vec<MotionVector>) -> HashMap<i32, Vec<MotionVector>> {
+    let mut out: HashMap<i32, Vec<MotionVector>> = HashMap::new();
+    for v in vectors {
+        out.entry(v.frame).or_default().push(v);
+    }
+    out
+}
+
+/// Highest frame number present, or 0 when empty.
+pub fn max_frame_of(index: &HashMap<i32, Vec<MotionVector>>) -> i32 {
+    index.keys().copied().max().unwrap_or(0)
 }
 
 pub fn get_frame_vectors(all_vectors: &[MotionVector], frame_number: i32) -> Vec<MotionVector> {

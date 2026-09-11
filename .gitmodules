@@ -4,3 +4,7 @@
 [submodule "ffmpeg_installer"]
 	path = ffmpeg_installer
 	url = https://github.com/pijuspet/ffmpeg_installer
+[submodule "edge264"]
+	path = edge264
+	url = https://github.com/pijuspet/edge264.git
+

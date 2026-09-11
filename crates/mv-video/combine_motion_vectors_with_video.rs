@@ -10,13 +10,14 @@ use opencv::videoio::{
     CAP_PROP_FPS, CAP_PROP_FRAME_COUNT, CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH,
     CAP_PROP_POS_FRAMES,
 };
+use std::collections::HashMap;
 use std::env;
 use std::process;
 
 use crate::motion_vector_display::draw_motion_vectors;
 
 use mv_types::motion_vector::{
-    get_frame_vectors, get_max_frame, load_motion_vectors, reduce_motion_vectors, MotionVector,
+    group_by_frame, load_motion_vectors, max_frame_of, reduce_motion_vectors, MotionVector,
 };
 
 /// Read current video frame, resized to target dimensions.
@@ -51,23 +52,41 @@ fn read_video_frame(
 }
 
 /// Render a single motion vector segment image for the given dataframe and frame number.
+/// Map a source-video frame number onto the frame index of a motion-vector CSV
+/// that may cover fewer pictures.
+///
+/// A CSV numbers its rows per *decoded* picture, so with temporal decimation
+/// (MV_SKIP_FRAME / MV_SKIP_EVERY_NTH) a 3778-frame clip can produce 330 CSV
+/// frames. Pairing source frame N with CSV frame N would then run the overlay
+/// ~11x fast and leave it blank for the rest of the clip. Dividing by the
+/// stride holds each decoded picture's vectors for as many source frames as it
+/// represents, keeping the overlay aligned with the video beside it. A CSV that
+/// covers every picture has stride 1 and is unaffected.
+fn csv_frame_for(frame_number: i32, stride: f64) -> i32 {
+    if stride <= 1.0 {
+        return frame_number;
+    }
+    (((frame_number - 1) as f64 / stride).floor() as i32) + 1
+}
+
 fn render_motion_segment(
-    motion_dataframes: &[Vec<MotionVector>],
+    motion_dataframes: &[HashMap<i32, Vec<MotionVector>>],
     motion_df_index: i32,
     frame_number: i32,
     frame_width: i32,
     frame_height: i32,
+    strides: &[f64],
 ) -> Result<Mat, Box<dyn std::error::Error>> {
     let mut segment_image =
         Mat::zeros_size(Size::new(frame_width, frame_height), CV_8UC3)?.to_mat()?;
 
     if motion_df_index >= 0 && (motion_df_index as usize) < motion_dataframes.len() {
-        let mut frame_motion_data = get_frame_vectors(
-            &motion_dataframes[motion_df_index as usize],
-            frame_number,
-        );
-        frame_motion_data = reduce_motion_vectors(&frame_motion_data, 15000);
-        draw_motion_vectors(&mut segment_image, &frame_motion_data)?;
+        let stride = strides.get(motion_df_index as usize).copied().unwrap_or(1.0);
+        let key = csv_frame_for(frame_number, stride);
+        if let Some(vs) = motion_dataframes[motion_df_index as usize].get(&key) {
+            let frame_motion_data = reduce_motion_vectors(vs, 15000);
+            draw_motion_vectors(&mut segment_image, &frame_motion_data)?;
+        }
     }
 
     Ok(segment_image)
@@ -75,14 +94,16 @@ fn render_motion_segment(
 
 /// Compose all segments (video + motion vectors) into a single wide frame,
 /// with vertical dividing lines between segments.
+#[allow(clippy::too_many_arguments)]
 fn compose_combined_frame(
     video_frame: &Mat,
-    motion_dataframes: &[Vec<MotionVector>],
+    motion_dataframes: &[HashMap<i32, Vec<MotionVector>>],
     frame_number: i32,
     num_segments: i32,
     video_seg_idx: i32,
     frame_width: i32,
     frame_height: i32,
+    strides: &[f64],
 ) -> Result<Mat, Box<dyn std::error::Error>> {
     let combined_width = frame_width * num_segments;
     // Initialize combined frame canvas
@@ -109,6 +130,7 @@ fn compose_combined_frame(
                 frame_number,
                 frame_width,
                 frame_height,
+                strides,
             )?
         };
 
@@ -134,7 +156,7 @@ fn compose_combined_frame(
 
 fn create_combined_video(
     input_video_filename: &str,
-    motion_dataframes: &[Vec<MotionVector>],
+    motion_dataframes: &[HashMap<i32, Vec<MotionVector>>],
     output_path: &str,
     video_segment_index: Option<i32>,
     max_frames: i32,
@@ -162,11 +184,36 @@ fn create_combined_video(
     // Determine maximum frames across all data sources
     let max_csv_frames = motion_dataframes
         .iter()
-        .map(|df| get_max_frame(df))
+        .map(max_frame_of)
         .max()
         .unwrap_or(0);
     let total_video_frames = video_capture.get(CAP_PROP_FRAME_COUNT)? as i32;
     let num_frames = max_csv_frames.max(total_video_frames);
+
+    // One stride per CSV: how many source pictures each decoded picture stands
+    // for. 1.0 for an undecimated run, ~11.4 for `bidir + MV_SKIP_EVERY_NTH=3`.
+    let strides: Vec<f64> = motion_dataframes
+        .iter()
+        .map(|df| {
+            let csv_frames = max_frame_of(df);
+            if csv_frames > 0 && total_video_frames > csv_frames {
+                total_video_frames as f64 / csv_frames as f64
+            } else {
+                1.0
+            }
+        })
+        .collect();
+    for (i, s) in strides.iter().enumerate() {
+        if *s > 1.01 {
+            println!(
+                "  CSV {} covers {} of {} pictures - holding each for {:.2} source frames",
+                i,
+                max_frame_of(&motion_dataframes[i]),
+                total_video_frames,
+                s
+            );
+        }
+    }
 
     // Initialize video writer
     let fourcc = VideoWriter::fourcc('m', 'p', '4', 'v')?;
@@ -206,6 +253,7 @@ fn create_combined_video(
             video_seg_idx,
             frame_width,
             frame_height,
+            &strides,
         )?;
 
         video_writer.write(&combined_frame)?;
@@ -277,7 +325,10 @@ fn main() {
 
     match create_combined_video(
         input_video_filename,
-        &[original_motion_vectors, custom_motion_vectors],
+        &[
+            group_by_frame(original_motion_vectors),
+            group_by_frame(custom_motion_vectors),
+        ],
         &output_path,
         video_position,
         max_frames_to_process,

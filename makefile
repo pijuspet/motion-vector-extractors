@@ -43,34 +43,22 @@ THREAD_COUNT ?= 1
 WRITE_CSV ?= 0
 # List-0-only MV export (drops list-1/forward-reference rows), on by default
 # so CSV sizes are directly comparable across every method: extractor1/3/5/6
-# (custom FFmpeg) have always been list-0-only via mv_l0_only, and extractor9/10
-# (from-scratch Rust/C) now match via E9_L0_ONLY/E10_L0_ONLY. Set L0_ONLY=0 to
-# get full both-list output everywhere (e.g. for B-frame/list-1 investigation).
 L0_ONLY ?= 1
-# Motion-vector export filters in the custom FFmpeg (extractor1/3/5/6; the
-# regular FFmpeg build has no such options and ignores them). They shrink the
-# OUTPUT only: the picture is fully entropy-decoded before any of this runs, so
-# decode cost is unchanged.
-#
-# Order: size threshold first, then the grid, so a cell is claimed by a vector
-# that actually passed the threshold rather than by a sub-threshold one
-# suppressing the real vector behind it.
-#
 # Spatial thinning: split the picture into MV_GRID x MV_GRID pixel cells and
-# keep at most one vector per cell per picture. 0 = keep every vector. This
-# gives an evenly spread field, which is what a fixed camera wants - unlike
-# sampling by decode order, which clusters wherever the macroblock walk went.
+# keep at most one vector per cell per picture. 0 = keep every vector.
+# This gives an evenly spread field, which is what a fixed camera wants -
+# unlike sampling by decode order, which clusters wherever the macroblock walk
+# happened to go.
 MV_GRID ?= 0
 # Drop motion vectors whose displacement is shorter than this many whole pixels
 # (Euclidean length of dst-src). 0 = no size filter, export every vector.
 MV_MIN_SIZE ?= 0
-# --- Temporal decimation. The filters above cost full decode time; these do
-# not - they drop whole pictures before any bin is entropy-decoded.
+# --- Temporal decimation: the filters above cost full decode time, these do not.
+# Drop whole pictures before any bin is entropy-decoded.
 #
-# MV_SKIP_FRAME uses FFmpeg's own skip_frame vocabulary: noref, bidir, nointra,
-# nokey (note 'nointra', not 'nonintra'). Empty = decode everything.
-# bidir drops B pictures: measured 1.99s -> 1.31s on MCTTR, and every surviving
-# vector is bit-identical to an undecimated run.
+# MV_SKIP_FRAME=bidir drops B pictures.
+# Values: noref, bidir, nointra, nokey (FFmpeg's own skip_frame vocabulary -
+# note 'nointra', not 'nonintra'). Empty = decode everything.
 MV_SKIP_FRAME ?=
 # Skip every Nth picture, decoding the rest (0/1 = decode all). IDR always
 # decoded. Note the direction: 2 drops half, 3 a third, 4 a quarter, so a LARGER
@@ -144,7 +132,10 @@ INITIAL_RUN_DATA := $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results_$(VID
 # Trailing slash on the glob so `ls -d` yields only directories: reports written
 # alongside the run folders (e.g. compare_runs output) would otherwise sort last
 # and make this resolve to a plain file.
-LAST_RESULTS_DIR = $(patsubst %/,%,$(shell ls -d "$(CURRENT_DIR)/results/$(VIDEO_TYPE)/"*/ 2>/dev/null | sort | tail -n 1))
+# The glob is [0-9]* rather than *: run directories are timestamped, and a
+# non-run directory alongside them (results/<type>/_review, written by
+# review_deck) would otherwise sort last and be picked as "the latest run".
+LAST_RESULTS_DIR = $(patsubst %/,%,$(shell ls -d "$(CURRENT_DIR)/results/$(VIDEO_TYPE)/"[0-9]*/ 2>/dev/null | sort | tail -n 1))
 
 # NB: no trailing comments on these two — make keeps the whitespace before a
 # `#` as part of the value, and these are used quoted.
@@ -183,14 +174,24 @@ define ffmpeg_build
 	make -j"$$(nproc)" && make install
 endef
 
-# `build` links extractor11 against SLIM_PREFIX via pkg-config, so the slim tree
-# has to exist before any benchmark target runs — on a fresh checkout
-# `setup_ffmpeg` followed by `all` used to fail there with empty pkg-config
-# flags. Building all three prefixes here is what makes method 11 reachable
-# from `make all`.
+# Builds the custom + regular prefixes. The slim tree (method 11) is disabled;
+# uncomment the setup_ffmpeg_slim recursion and target below to bring it back.
 setup_ffmpeg: $(PLATFORM_GUARD)
 	$(call ffmpeg_build,$(CUSTOM_PREFIX))
 	$(call ffmpeg_build,$(REGULAR_PREFIX))
+
+# =============================================================================
+# EDGE264 SETUP (method 8)
+# =============================================================================
+# Builds the edge264 submodule (a third-party from-scratch H.264 decoder) with
+# the same optimization level the FFmpeg trees get: -march=native -O3, plus -g
+# so perf/VTune can see inside it. `make build` calls this implicitly; the
+# target exists so the library can be rebuilt on its own after a submodule
+# update. See mk/<platform>.mk for the flags; the extractor itself lives in the
+# submodule as edge264/extractor.c (built by "make -C edge264 extractor").
+setup_edge264: apply_edge264_patch
+	$(call edge264_build,,)
+	@echo "[OK]    edge264 build complete."
 
 # -----------------------------------------------------------------------------
 # Profile-guided optimization
@@ -202,15 +203,15 @@ setup_ffmpeg: $(PLATFORM_GUARD)
 # per-toolchain and live in mk/<platform>.mk.
 #
 # What the training run covers. All three are overridable on the command line
-# and apply to BOTH setup_ffmpeg_pgo and setup_ffmpeg_slim_pgo — a profile is
+# and apply to setup_ffmpeg_pgo 
 # only as good as the workload it saw, so narrow these when you want the build
 # tuned for one specific case rather than the whole corpus:
 #
 #   # tune the fork for single-threaded CABAC only
 #   make setup_ffmpeg_pgo PGO_TRAIN_TYPES=h264_cabac PGO_TRAIN_THREADS=1
 #
-#   # tune the slim tree for your own footage, both thread regimes
-#   make setup_ffmpeg_slim_pgo PGO_TRAIN_CLIPS="clipA clipB" PGO_TRAIN_THREADS="1 16"
+#   # tune the fork for your own footage, both thread regimes
+#   make setup_ffmpeg_pgo PGO_TRAIN_CLIPS="clipA clipB" PGO_TRAIN_THREADS="1 16"
 #
 # Defaults: one clip across all four corpora, so the profile covers every
 # decoder these trees carry (h264 CABAC, h264 CAVLC, HEVC, AVI / MPEG-4 Part 2).
@@ -226,6 +227,10 @@ PGO_TRAIN_TYPES   ?= h264_cabac h264_cavlc h265 h264_avi
 PGO_TRAIN_THREADS ?= 1 16
 
 PGO_CUST_DIR := $(CUSTOM_PREFIX)/pgo
+PGO_E264_DIR := $(EDGE264_DIR)/pgo
+
+PGO_E264_TRAIN_CLIPS ?= bigbunny_walking bigbunnyfull
+PGO_E264_TRAIN_TYPES ?= h264_cabac
 
 # $(1) = extractor binary to train with, $(2) = profile directory.
 # Loops clips x corpora x thread counts. A missing file is skipped rather than
@@ -285,6 +290,24 @@ setup_ffmpeg_pgo: $(PLATFORM_GUARD)
 	$(MAKE) build
 	@echo "[OK]    PGO custom build complete."
 
+setup_edge264_pgo: PGO_TRAIN_CLIPS := $(PGO_E264_TRAIN_CLIPS)
+setup_edge264_pgo: PGO_TRAIN_TYPES := $(PGO_E264_TRAIN_TYPES)
+setup_edge264_pgo: PGO_TRAIN_THREADS := 1
+setup_edge264_pgo: $(PLATFORM_GUARD)
+	@echo "===== PGO 1/3: instrumented edge264 build ====="
+	rm -rf '$(PGO_E264_DIR)' && mkdir -p '$(PGO_E264_DIR)'
+	$(MAKE) -C '$(EDGE264_DIR)' clean
+	$(call pgo_edge264_gen,$(PGO_E264_DIR))
+	@mkdir -p '$(EXECUTABLES_DIR_SYS)'
+	$(call build_edge264)
+	@echo "===== PGO 2/3: training run ====="
+	$(call pgo_train_run,'$(CURRENT_DIR)/$(EXECUTABLES_DIR_SYS)/extractor8$(EXE_EXT)',$(PGO_E264_DIR))
+	$(call pgo_check_profile,$(PGO_E264_DIR))
+	@echo "===== PGO 3/3: optimized rebuild ====="
+	$(MAKE) -C '$(EDGE264_DIR)' clean
+	$(call pgo_edge264_use,$(PGO_E264_DIR))
+	$(MAKE) build
+	@echo "[OK]    PGO edge264 build complete."
 
 # =============================================================================
 # BUILD TARGETS
@@ -302,7 +325,21 @@ build_tools: $(PLATFORM_GUARD)
 # build; 3/5/6 from the custom build; extractor1 from the custom build is
 # renamed to extractor4 (custom-FFmpeg flush-decoder variant), and extractor6
 # from the system build becomes extractor7 (same trick).
+define drop_stale_bindings
+	@hdr='$(CUSTOM_PREFIX)/include/libavcodec/avcodec.h'; \
+	if [ -f "$$hdr" ]; then \
+		for d in '$(TARGET_SYS)' '$(TARGET_CUST)'; do \
+			[ -d "$$d" ] || continue; \
+			if [ -z "$$(find "$$d" -name bindings.rs -newer "$$hdr" 2>/dev/null | head -n 1)" ]; then \
+				echo "[INFO]  FFmpeg headers newer than bindings - regenerating ffmpeg-sys-next in $$(basename $$d)"; \
+				rm -rf "$$d"/*/build/ffmpeg-sys-next-*; \
+			fi; \
+		done; \
+	fi
+endef
+
 build: $(PLATFORM_GUARD)
+	$(call drop_stale_bindings)
 	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
 	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
 	@mkdir -p '$(EXECUTABLES_DIR_SYS)' '$(EXECUTABLES_DIR_CUST)'
@@ -316,26 +353,8 @@ build: $(PLATFORM_GUARD)
 	cp '$(TARGET_SYS)/$(REL)/extractor6$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor7$(EXE_EXT)'
 	$(call copy_runtime_libs,$(REGULAR_PREFIX),$(EXECUTABLES_DIR_SYS))
 	$(call copy_runtime_libs,$(CUSTOM_PREFIX),$(EXECUTABLES_DIR_CUST))
+	$(call build_edge264)
 	@echo "[OK]    Build complete."
-
-# System-only build: every extractor links against the regular system FFmpeg.
-# Useful for isolating whether a regression comes from the custom patch or from
-# the extractor code itself. extractor4 here is just extractor1 under a
-# different name — identical binary to method 1 — and method11 is extractor5
-# again, which is the point of this target.
-build_sys: $(PLATFORM_GUARD)
-	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
-	@mkdir -p '$(EXECUTABLES_DIR_SYS)' '$(EXECUTABLES_DIR_SLIM)'
-	cp '$(TARGET_SYS)/$(REL)/extractor0$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor0$(EXE_EXT)'
-	cp '$(TARGET_SYS)/$(REL)/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor1$(EXE_EXT)'
-	cp '$(TARGET_SYS)/$(REL)/extractor2$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor2$(EXE_EXT)'
-	cp '$(TARGET_SYS)/$(REL)/extractor3$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor3$(EXE_EXT)'
-	cp '$(TARGET_SYS)/$(REL)/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor4$(EXE_EXT)'
-	cp '$(TARGET_SYS)/$(REL)/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor5$(EXE_EXT)'
-	cp '$(TARGET_SYS)/$(REL)/extractor6$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor6$(EXE_EXT)'
-	cp '$(TARGET_SYS)/$(REL)/extractor6$(EXE_EXT)' '$(EXECUTABLES_DIR_SYS)/extractor7$(EXE_EXT)'
-	$(call copy_runtime_libs,$(REGULAR_PREFIX),$(EXECUTABLES_DIR_SYS))
-	$(call copy_runtime_libs,$(REGULAR_PREFIX),$(EXECUTABLES_DIR_SLIM))
 
 # =============================================================================
 # BENCHMARKING
@@ -345,9 +364,10 @@ build_sys: $(PLATFORM_GUARD)
 # child process via the spawned process environment — see extractor1/3/5/6.rs
 # (mv_l0_only AVOption) and E9_L0_ONLY/E10_L0_ONLY relayed from it in
 # crates/mv-bench/benchmark_extractors.rs.
-BENCH_ENV = L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND) \
-            MV_GRID=$(MV_GRID) MV_MIN_SIZE=$(MV_MIN_SIZE) \
-            MV_SKIP_FRAME=$(MV_SKIP_FRAME) MV_SKIP_EVERY_NTH=$(MV_SKIP_EVERY_NTH)
+BENCH_ENV_CORE = L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND)
+BENCH_ENV_GRID = MV_GRID=$(MV_GRID) MV_MIN_SIZE=$(MV_MIN_SIZE)
+BENCH_ENV_SKIP = MV_SKIP_FRAME=$(MV_SKIP_FRAME) MV_SKIP_EVERY_NTH=$(MV_SKIP_EVERY_NTH)
+BENCH_ENV = $(BENCH_ENV_CORE) $(BENCH_ENV_GRID) $(BENCH_ENV_SKIP)
 BENCH_CMD = cargo run $(CARGO_TARGET_FLAG) --bin full_benchmark
 
 all:
@@ -428,6 +448,112 @@ benchmark_threads:
 		t=$$((t * 2)); \
 	done
 
+MV_GRIDS      ?= 0 16 32 64 128
+MV_MIN_SIZES  ?= 0 1 2 3 4 5
+SWEEP_THREADS ?= 1
+SWEEP_VIDEOS  ?= 1
+SWEEP_EXTRACT_STREAMS ?= 1
+SWEEP_STEPS ?= 2 3 4 5
+
+define sweep_cell
+					echo ""; \
+					echo "================================================================"; \
+					echo "  $(2)  t$(SWEEP_THREADS)  $$vtype/$$vname"; \
+					echo "================================================================"; \
+					if $(BENCH_ENV_CORE) EXTRACT_STREAMS=$(SWEEP_EXTRACT_STREAMS) $(1) \
+						$(BENCH_CMD) "$$filepath" $(STREAMS) $$vtype cust \
+						$(NRUNS) $(SWEEP_THREADS) $(KEYFRAMES_ONLY) 1 $(PROFILER_EXTRACTOR) $(SWEEP_STEPS); then \
+						ok=$$((ok+1)); runok=1; \
+					else \
+						echo "FAIL: $$vtype/$$vname $(2)"; fail=$$((fail+1)); runok=0; \
+					fi; \
+					if [ "$(SWEEP_VIDEOS)" = 1 ] && [ "$$runok" = 1 ]; then \
+						d=$$(ls -dt "$(CURRENT_DIR)/results/$$vtype"/*/ 2>/dev/null | head -n 1); d=$${d%/}; \
+						cust="$$d/method5_output_0.csv"; orig="$$d/method0_output_0.csv"; \
+						if [ -n "$$d" ] && [ -f "$$cust" ]; then \
+							echo "--- render: $$(basename $$d) ---"; \
+							if ! cargo run --release $(CARGO_TARGET_FLAG) --bin generate_motion_vectors_video \
+								"$$cust" "$$d" "$$filepath"; then \
+								echo "WARN: overlay render failed for $$(basename $$d)"; fail=$$((fail+1)); \
+							fi; \
+							if [ -f "$$orig" ]; then \
+								if ! cargo run --release $(CARGO_TARGET_FLAG) --bin combine_motion_vectors_with_video \
+									"$$filepath" "$$orig" "$$cust" "$$d"; then \
+									echo "WARN: combine failed for $$(basename $$d)"; fail=$$((fail+1)); \
+								fi; \
+							else \
+								echo "  no method0 CSV, skipping side-by-side combine"; \
+							fi; \
+						else \
+							echo "WARN: no method5 CSV in newest results dir - skipping render"; \
+						fi; \
+					fi;
+endef
+
+define sweep_filepath
+					if [ "$$vtype" = "h264_avi" ]; then \
+						filepath="$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi"; \
+					else \
+						filepath="$(CURRENT_DIR)/videos/$$vtype/$$vname"; \
+					fi; \
+					if [ ! -f "$$filepath" ]; then continue; fi;
+endef
+
+benchmark_filters:
+	@ok=0; fail=0; \
+	for grid in $(MV_GRIDS); do \
+		for msize in $(MV_MIN_SIZES); do \
+			for vname in $(VIDEO_NAMES); do \
+				for vtype in $(VIDEO_TYPES); do \
+	$(call sweep_filepath) \
+	$(call sweep_cell,$(BENCH_ENV_SKIP) MV_GRID=$$grid MV_MIN_SIZE=$$msize,MV_GRID=$$grid MV_MIN_SIZE=$$msize) \
+				done; \
+			done; \
+		done; \
+	done; \
+	echo ""; \
+	echo "benchmark_filters: $$ok run(s) OK, $$fail failure(s)"; \
+	[ "$$fail" -eq 0 ]
+
+benchmark_min_size:
+	@echo "benchmark_min_size: MV_MIN_SIZE = $(MV_MIN_SIZES)  (MV_GRID pinned to 0)"
+	@$(MAKE) benchmark_filters MV_GRIDS=0
+
+benchmark_grid:
+	@echo "benchmark_grid: MV_GRID = $(MV_GRIDS)  (MV_MIN_SIZE pinned to 0)"
+	@$(MAKE) benchmark_filters MV_MIN_SIZES=0
+
+SKIP_NTH_FROM  ?= 3
+SKIP_NTH_TO    ?= 30
+SKIP_NTH_STEP  ?= 3
+SKIP_NTHS      ?= $(shell if [ $(SKIP_NTH_FROM) -gt $(SKIP_NTH_TO) ]; then \
+                            seq $(SKIP_NTH_FROM) -$(SKIP_NTH_STEP) $(SKIP_NTH_TO); \
+                          else \
+                            seq $(SKIP_NTH_FROM) $(SKIP_NTH_STEP) $(SKIP_NTH_TO); \
+                          fi)
+SKIP_NTH_FRAME ?= bidir
+
+benchmark_skip_nth: COMPARE_SECOND = 5
+
+benchmark_skip_nth:
+	@if [ -z "$(strip $(SKIP_NTHS))" ]; then \
+		echo "benchmark_skip_nth: SKIP_NTHS is empty (FROM=$(SKIP_NTH_FROM) TO=$(SKIP_NTH_TO) STEP=$(SKIP_NTH_STEP)) - nothing to run"; \
+		exit 1; \
+	fi
+	@echo "benchmark_skip_nth: N = $(SKIP_NTHS)"; \
+	ok=0; fail=0; \
+	for nth in $(SKIP_NTHS); do \
+		for vname in $(VIDEO_NAMES); do \
+			for vtype in $(VIDEO_TYPES); do \
+	$(call sweep_filepath) \
+	$(call sweep_cell,$(BENCH_ENV_GRID) MV_SKIP_FRAME=$(SKIP_NTH_FRAME) MV_SKIP_EVERY_NTH=$$nth,MV_SKIP_FRAME=$(SKIP_NTH_FRAME) MV_SKIP_EVERY_NTH=$$nth) \
+			done; \
+		done; \
+	done; \
+	echo ""; \
+	echo "benchmark_skip_nth: $$ok run(s) OK, $$fail failure(s)"; \
+	[ "$$fail" -eq 0 ]
+
 # =============================================================================
 # DEVELOPMENT & TESTING TOOLS
 # =============================================================================
@@ -455,9 +581,13 @@ publish:
 	$(BENCH_WRAPPER) cargo run $(CARGO_TARGET_FLAG) --bin publish_report 3 \
 		'$(INITIAL_RUN_DATA)' '$(LAST_RESULTS_DIR)' $(VIDEO_TYPE) test_git test_git 1
 
+publish_titles:
+	$(BENCH_WRAPPER) cargo run $(CARGO_TARGET_FLAG) --bin publish_report 6
+
 generate_video:
-	cargo run $(CARGO_TARGET_FLAG) --bin generate_motion_vectors_video '$(CSV_FILE_PATH_CUST)' '$(LAST_RESULTS_DIR)'
-	cargo run $(CARGO_TARGET_FLAG) --bin combine_motion_vectors_with_video '$(VIDEO_FILE)' \
+	cargo run --release $(CARGO_TARGET_FLAG) --bin generate_motion_vectors_video \
+		'$(CSV_FILE_PATH_CUST)' '$(LAST_RESULTS_DIR)' '$(VIDEO_FILE)'
+	cargo run --release $(CARGO_TARGET_FLAG) --bin combine_motion_vectors_with_video '$(VIDEO_FILE)' \
 		'$(CSV_FILE_PATH_ORIG)' '$(CSV_FILE_PATH_CUST)' '$(LAST_RESULTS_DIR)'
 
 # Same as generate_video, but for every results dir at/after a given time
@@ -483,7 +613,7 @@ generate_videos_since:
 		hhmm=$$(echo "$$b" | cut -d_ -f2); \
 		[ "$$(echo "$$hhmm $(SINCE)" | awk '{print ($$1 < $$2)}')" = 1 ] && continue; \
 		vtype=$$(basename $$(dirname $$d)); \
-		stem=$$(echo "$$b" | sed -E 's/^[0-9]{8}_[0-9]{4}_//; s/_t[0-9]+(_kf)?(_csv)?$$//'); \
+		stem=$$(echo "$$b" | sed -E 's/^[0-9]{8}_[0-9]{4}_//; s/_t[0-9]+(_kf)?(_g[0-9]+)?(_m[0-9]+)?(_s[a-z0-9]+)?(_n[0-9]+)?(_csv)?$$//'); \
 		vid=$$(ls $(CURRENT_DIR)/videos/$$vtype/$$stem.* 2>/dev/null | head -n 1); \
 		orig=$$d/method0_output_0.csv; \
 		cust=; for m in $(CUST_METHODS); do \
@@ -493,9 +623,9 @@ generate_videos_since:
 		if [ -z "$$cust" ]; then echo "skip $$b: no custom CSV (tried methods $(CUST_METHODS))"; skipped=$$((skipped+1)); continue; fi; \
 		if [ -z "$$vid" ]; then echo "skip $$b: no source video at videos/$$vtype/$$stem.*"; skipped=$$((skipped+1)); continue; fi; \
 		echo "=== $$vtype/$$b  (custom=$$(basename $$cust)) ==="; \
-		cargo run $(CARGO_TARGET_FLAG) --bin generate_motion_vectors_video $$cust $$d || exit 1; \
+		cargo run --release $(CARGO_TARGET_FLAG) --bin generate_motion_vectors_video $$cust $$d $$vid || exit 1; \
 		if [ -f "$$orig" ]; then \
-			cargo run $(CARGO_TARGET_FLAG) --bin combine_motion_vectors_with_video $$vid $$orig $$cust $$d || exit 1; \
+			cargo run --release $(CARGO_TARGET_FLAG) --bin combine_motion_vectors_with_video $$vid $$orig $$cust $$d || exit 1; \
 		else \
 			echo "  no method0 CSV, skipping side-by-side combine"; \
 		fi; \
@@ -514,9 +644,8 @@ compare_mvs:
 
 		$(REGULAR_PREFIX)/bin/ffprobe -v error -select_streams v:0 -show_entries packet=pts_time \
 		-of csv=p=0 $(VIDEO_FILE) > $(LAST_RESULTS_DIR)/pkt_order.txt
-	cargo run --release --bin mv_diff_driver -- \
-		$(CSV_FILE_PATH_ORIG) $(CSV_FILE_PATH_CUST) \
-		$(LAST_RESULTS_DIR)/pkt_order.txt $(LAST_RESULTS_DIR)/mv_diff_neg1.txt
+
+# Reproducibility check: compare each method's MV output against *itself* across
 
 # =============================================================================
 # INSTALLER DIFF GENERATION
@@ -589,9 +718,11 @@ help:
 	@echo "  motion-vector-extractors — platform: $(PLATFORM)"
 	@echo ""
 	@echo "    $(MAKE_HINT) install                 # toolchain + dependencies"
-	@echo "    $(MAKE_HINT) setup_ffmpeg            # build all three FFmpeg trees (sys + custom + slim)"
+	@echo "    $(MAKE_HINT) setup_ffmpeg            # build both FFmpeg trees (sys + custom)"
 	@echo "    $(MAKE_HINT) setup_ffmpeg_pgo        # PGO the custom fork (instrument -> train -> rebuild)"
-	@echo "    $(MAKE_HINT) build                   # build all extractors (sys + custom + slim)"
+	@echo "    $(MAKE_HINT) setup_edge264           # build the edge264 decoder (method 11)"
+	@echo "    $(MAKE_HINT) setup_edge264_pgo       # PGO edge264 (instrument -> train -> rebuild)"
+	@echo "    $(MAKE_HINT) build                   # build all extractors (sys + custom)"
 	@echo "    $(MAKE_HINT) build_sys               # build extractors against the regular FFmpeg only"
 	@echo "    $(MAKE_HINT) build_tools             # cargo build --workspace --release"
 	@echo "    $(MAKE_HINT) test                    # cargo test --workspace"
@@ -601,8 +732,13 @@ help:
 	@echo "    $(MAKE_HINT) all                     # benchmark_all for sys + cust"
 	@echo "    $(MAKE_HINT) benchmark_keyframes     # all videos, keyframes-only mode"
 	@echo "    $(MAKE_HINT) benchmark_threads       # all videos, sweep thread counts"
+	@echo "    $(MAKE_HINT) benchmark_filters       # all videos, sweep MV_GRID x MV_MIN_SIZE (CSVs + plots + videos)"
+	@echo "    $(MAKE_HINT) benchmark_min_size      # all videos, sweep MV_MIN_SIZE $(MV_MIN_SIZES) with MV_GRID=0"
+	@echo "    $(MAKE_HINT) benchmark_grid          # all videos, sweep MV_GRID $(MV_GRIDS) with MV_MIN_SIZE=0"
+	@echo "    $(MAKE_HINT) benchmark_skip_nth      # all videos, sweep MV_SKIP_EVERY_NTH $(SKIP_NTH_FROM)..$(SKIP_NTH_TO) step $(SKIP_NTH_STEP) (CSVs + plots + videos)"
 	@echo ""
 	@echo "    $(MAKE_HINT) publish                 # publish report"
+	@echo "    $(MAKE_HINT) publish_titles          # dry run: page titles results/bulk would publish under"
 	@echo "    $(MAKE_HINT) generate_video          # render MV overlay video"
 	@echo "    $(MAKE_HINT) generate_videos_since   # same, for every recent results dir"
 	@echo "    $(MAKE_HINT) compare_mvs             # method0 vs method9 MV diff"
@@ -614,26 +750,32 @@ help:
 	@echo "        VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)  THREAD_COUNT=$(THREAD_COUNT)"
 	@echo "        KEYFRAMES_ONLY=$(KEYFRAMES_ONLY)  WRITE_CSV=$(WRITE_CSV)  L0_ONLY=$(L0_ONLY)"
 	@echo "        MV_GRID=$(MV_GRID)  MV_MIN_SIZE=$(MV_MIN_SIZE)   # export filters (no decode saving)"
+	@echo "        MV_GRIDS=$(MV_GRIDS)  MV_MIN_SIZES=$(MV_MIN_SIZES)   # benchmark_filters sweep"
+	@echo "        SKIP_NTH_FROM=$(SKIP_NTH_FROM)  SKIP_NTH_TO=$(SKIP_NTH_TO)  SKIP_NTH_STEP=$(SKIP_NTH_STEP)  SKIP_NTH_FRAME=$(SKIP_NTH_FRAME)"
+	@echo "          -> N = $(SKIP_NTHS)   # benchmark_skip_nth sweep"
+	@echo "        SWEEP_THREADS=$(SWEEP_THREADS)  SWEEP_VIDEOS=$(SWEEP_VIDEOS)  SWEEP_EXTRACT_STREAMS=$(SWEEP_EXTRACT_STREAMS)   # shared by both sweeps"
+	@echo "        SWEEP_STEPS=$(SWEEP_STEPS)   # per cell: extract, compare, plots, VTune - then the overlay render"
 	@echo "        MV_SKIP_FRAME=$(MV_SKIP_FRAME)  MV_SKIP_EVERY_NTH=$(MV_SKIP_EVERY_NTH)   # temporal decimation (real speedup)"
 	@echo "        COMPARE_FIRST=$(COMPARE_FIRST)  COMPARE_SECOND=$(COMPARE_SECOND)  PROFILER_EXTRACTOR=$(PROFILER_EXTRACTOR)"
 	@echo ""
 	@echo "  PGO vars: PGO_TRAIN_CLIPS=$(PGO_TRAIN_CLIPS)"
 	@echo "            PGO_TRAIN_TYPES=$(PGO_TRAIN_TYPES)  PGO_TRAIN_THREADS=$(PGO_TRAIN_THREADS)"
+	@echo "            PGO_E264_TRAIN_CLIPS=$(PGO_E264_TRAIN_CLIPS)  PGO_E264_TRAIN_TYPES=$(PGO_E264_TRAIN_TYPES)"
 	@echo "    e.g. $(MAKE_HINT) setup_ffmpeg_pgo PGO_TRAIN_TYPES=h264_cabac PGO_TRAIN_THREADS=1"
 	@echo ""
 ifneq ($(PLATFORM),linux)
 	@echo "  Notes:"
 	@echo "    - VTune (profiler) and perf (flamegraph) are Linux-only and skipped on Windows."
 	@echo "    - DLL resolution uses PATH, not rpath: build copies the FFmpeg DLLs into"
-	@echo "      $(EXECUTABLES_DIR)/{sys,cust,slim}/ so the .exe files run in place."
+	@echo "      $(EXECUTABLES_DIR)/{sys,cust}/ so the .exe files run in place."
 	@echo ""
 endif
 
 .PHONY: install platform_install \
-        setup_ffmpeg setup_ffmpeg_pgo \
+        setup_ffmpeg setup_ffmpeg_pgo setup_edge264 setup_edge264_pgo \
         build build_sys build_tools \
-        all benchmark benchmark_all benchmark_keyframes benchmark_threads \
-        test test_ffmpeg decode_ffmpeg \
-        publish generate_video generate_videos_since compare_mvs compare_runs \
+        all benchmark benchmark_all benchmark_keyframes benchmark_threads benchmark_filters benchmark_skip_nth \
+        benchmark_min_size benchmark_grid \
+        publish publish_titles review_deck generate_video generate_videos_since compare_mvs \
         fetch_fresh_ffmpeg installer_diff installer_publish clean_fresh_ffmpeg \
         help $(PLATFORM_PHONY)
