@@ -12,7 +12,7 @@ _METRIC_INFO = {
     "memory":                   ("Memory Usage (kB)",          "lower raw value = better"),
 }
 
-_HIGHER_IS_BETTER = {k for k, (_, d) in _METRIC_INFO.items() if "higher" in d}
+_HIGHER_IS_BETTER = {k for k, (_, d) in _METRIC_INFO.items() if "higher" in d} | {"frames"}
 _METRICS = list(_METRIC_INFO)
 
 # Per-(video_type, metric) y-axis ceiling for speedup line plots.
@@ -81,9 +81,37 @@ def add_derived_metrics(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def normalize_to_clip_pictures(df: pd.DataFrame) -> pd.DataFrame:
+    """Re-express per-frame metrics per picture in the clip, not per decoded one.
+
+    The Rust side divides by the pictures each method actually decoded. Under
+    temporal decimation (MV_SKIP_FRAME, MV_SKIP_EVERY_NTH, MV_DECODE_EVERY_NTH)
+    that denominator shrinks along with the work, so a run that finishes the
+    clip 17x sooner read 0.17x on fps. Dividing by the clip's picture count
+    instead - the most frames any method reported at that stream count - gives
+    every method the same denominator: fps and latency speedups then equal the
+    wall-clock one, and CPU / MV-extract speedups become total-work ratios.
+
+    A no-op when every method decoded the same pictures.
+    """
+    if "frames" not in df.columns:
+        return df
+    df = df.copy()
+    clip_frames = df.groupby("streams")["frames"].transform("max")
+    coverage = df["frames"].where(df["frames"] > 0) / clip_frames
+    for m in _PER_FRAME_METRICS & set(df.columns):
+        df[m] = df[m] / coverage if m in _HIGHER_IS_BETTER else df[m] * coverage
+    return df
+
+
 def compute_speedup_df(df: pd.DataFrame, baseline_method: str) -> pd.DataFrame:
-    df = add_derived_metrics(df)
-    available_metrics = [m for m in _METRICS if m in df.columns]
+    # Wall time is derived from the per-decoded-frame figure, so it has to be
+    # computed before normalisation rewrites time_per_frame.
+    df = normalize_to_clip_pictures(add_derived_metrics(df))
+    # "frames" is never charted - _render_heatmap keeps only _METRICS columns -
+    # but _coverage_note reads its method/baseline ratio to tell whether the
+    # methods decoded the same pictures. Without it the note never appears.
+    available_metrics = [m for m in _METRICS + ["frames"] if m in df.columns]
 
     rows = []
     for streams_val in sorted(df["streams"].unique()):
@@ -134,16 +162,16 @@ def _direction(metric: str) -> str:
 
 _AUTOSCALE_METRICS = {"wall_ms", "frames"}
 
-# Metrics normalised per DECODED frame. They are only comparable across methods
-# that decoded the same pictures, so when temporal decimation is in play they
-# understate a real win (a 10x faster run reads 0.88x). Charts of these carry a
-# warning whenever coverage is uneven; wall_ms and frames are exempt.
+# Metrics the Rust side records per DECODED frame. normalize_to_clip_pictures()
+# rescales them to per picture in the clip before any speedup is taken, so they
+# stay comparable when methods decode different pictures. Charts of these carry
+# a note whenever coverage is uneven, since fps then tracks wall clock exactly.
 _PER_FRAME_METRICS = {"fps", "time_per_frame", "cpu_ms_per_frame",
                       "mv_extract_ms_per_frame"}
 
 
-def _coverage_warning(speedup_df, metric):
-    """Warning text for per-frame charts when methods decoded unequal frames."""
+def _coverage_note(speedup_df, metric):
+    """Note for per-frame charts when methods decoded unequal frame counts."""
     if metric not in _PER_FRAME_METRICS:
         return ""
     cov = speedup_df[speedup_df["metric"] == "frames"]
@@ -152,9 +180,9 @@ def _coverage_warning(speedup_df, metric):
     worst = cov["speedup"].min()
     if worst >= 0.95:
         return ""
-    return (f"NOT a like-for-like comparison: some methods decoded up to "
-            f"{1.0 / max(worst, 1e-9):.1f}x fewer pictures (temporal decimation). "
-            f"Per-frame metrics understate the real gain - see the wall-clock chart.")
+    return (f"Some methods decoded up to {1.0 / max(worst, 1e-9):.1f}x fewer pictures "
+            f"(temporal decimation). Per-frame figures are per picture in the clip, "
+            f"so skipped pictures count as time saved.")
 
 
 def _y_max(metric: str, video_type: str):
@@ -233,8 +261,18 @@ def plot_speedup_line(
     ax.set_xlabel("Streams", fontsize=14)
     ax.set_ylabel("Speedup (×)", fontsize=14)
 
+    # The per-type limits keep comparable runs on one scale, but only as a
+    # default window: widen it to fit the data. Decimated runs reach 20x+ and
+    # keyframes-only rows pass 100x, and a fixed 0.5..5 window drew those off
+    # the axes, leaving just a legend entry.
     ymin, ymax = _y_min(metric, video_type), _y_max(metric, video_type)
     if ymin is not None or ymax is not None:
+        vals = sub["speedup"].dropna()
+        if not vals.empty:
+            if ymin is not None:
+                ymin = min(ymin, vals.min() * 0.9)
+            if ymax is not None:
+                ymax = max(ymax, vals.max() * 1.1)
         ax.set_ylim(ymin, ymax)
 
     stream_vals = sorted(sub["streams"].unique())
@@ -245,11 +283,11 @@ def plot_speedup_line(
     ax.legend(title="Method", loc="best", fontsize=11, title_fontsize=12)
     ax.grid(axis="y", alpha=0.3)
 
-    warn = _coverage_warning(speedup_df, metric)
+    note = _coverage_note(speedup_df, metric)
     fig.tight_layout()
-    if warn:
+    if note:
         fig.subplots_adjust(bottom=0.16)
-        fig.text(0.01, 0.055, warn, fontsize=11, color="crimson", ha="left", va="bottom")
+        fig.text(0.01, 0.055, note, fontsize=11, color="dimgray", ha="left", va="bottom")
     if run_info:
         fig.text(0.01, 0.01, run_info, fontsize=10, color="gray", style="italic", ha="left", va="bottom")
     save_path = os.path.join(plots_folder, filename)

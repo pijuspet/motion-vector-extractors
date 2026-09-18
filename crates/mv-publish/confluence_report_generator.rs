@@ -179,7 +179,8 @@ impl ConfluenceReportGenerator {
     ///   _kf     KEYFRAMES_ONLY=1
     ///   _g<N>   MV_GRID=N            grid filter
     ///   _m<N>   MV_MIN_SIZE=N        vector-size filter
-    ///   _n<N>   MV_SKIP_EVERY_NTH=N  temporal decimation
+    ///   _n<N>   MV_SKIP_EVERY_NTH=N    drop every Nth picture
+    ///   _d<N>   MV_DECODE_EVERY_NTH=N  keep every Nth picture
     ///   _csv    WRITE_CSV=1
     ///
     /// Folders that don't match (older runs predating this naming, or the
@@ -221,6 +222,13 @@ impl ConfluenceReportGenerator {
                 ("n", n) if !n.is_empty() => {
                     strategy.push("skipping decoding of the frames".to_string());
                     params.push(format!("MV_SKIP_EVERY_NTH={}", n));
+                }
+                // Deliberately the same strategy phrase as _n: both are "decode
+                // fewer pictures", and the parameter says which direction. A
+                // separate phrase would imply a third strategy exists.
+                ("d", n) if !n.is_empty() => {
+                    strategy.push("skipping decoding of the frames".to_string());
+                    params.push(format!("MV_DECODE_EVERY_NTH={}", n));
                 }
                 _ => {}
             }

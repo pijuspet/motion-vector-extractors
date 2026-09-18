@@ -14,31 +14,31 @@
             {
                 "metric": "wall_ms",
                 "title": "Wall-Clock Speedup vs Baseline ({baseline})",
-                "subtitle": "Time to process the whole clip: baseline / method — the honest speedup. Unlike the per-frame charts below, this stays correct when a method skips pictures (MV_SKIP_FRAME / MV_SKIP_EVERY_NTH).",
+                "subtitle": "Time to process the whole clip: baseline / method — values > 1.0 = faster",
                 "filename": "speedup_wall.png"
             },
             {
                 "metric": "fps",
                 "title": "Throughput Speedup vs Baseline ({baseline})",
-                "subtitle": "FPS ratio: method / baseline — values > 1.0 = higher throughput",
+                "subtitle": "Clip pictures per second: method / baseline — values > 1.0 = higher throughput; skipped pictures count as done",
                 "filename": "speedup_fps.png"
             },
             {
                 "metric": "time_per_frame",
                 "title": "Latency Speedup vs Baseline ({baseline})",
-                "subtitle": "Time/frame ratio: baseline / method — values > 1.0 = lower latency",
+                "subtitle": "Time per clip picture: baseline / method — values > 1.0 = lower latency",
                 "filename": "speedup_latency.png"
             },
             {
                 "metric": "cpu_ms_per_frame",
                 "title": "CPU Efficiency Speedup vs Baseline ({baseline})",
-                "subtitle": "CPU ms/frame ratio: baseline / method — values > 1.0 = less CPU work",
+                "subtitle": "CPU ms per clip picture: baseline / method — values > 1.0 = less CPU work",
                 "filename": "speedup_cpu.png"
             },
             {
                 "metric": "mv_extract_ms_per_frame",
                 "title": "MV Extraction Speedup vs Baseline ({baseline})",
-                "subtitle": "MV extract ms/frame ratio: baseline / method — values > 1.0 = faster extraction",
+                "subtitle": "MV extract ms per clip picture: baseline / method — values > 1.0 = faster extraction",
                 "filename": "speedup_mv_extract.png"
             },
             {

@@ -5,7 +5,7 @@ use std::time::Instant;
 use ffmpeg_sys_next as ff;
 
 use mv_extract::ffmpeg_common::{
-    get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs, set_av_flags, unset_av_flags, set_mv_filter_opts, set_skip_frame_opt, SourceFrameIndex
+    get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs, set_av_flags, unset_av_flags, set_mv_filter_opts, SourceFrameIndex
 };
 
 fn main() {
@@ -105,7 +105,8 @@ fn main() {
         // threshold runs before the grid, so a cell is claimed by a vector that
         // actually passed it. None of these reduce decode time.
         set_mv_filter_opts(dec_ctx);
-        set_skip_frame_opt(dec_ctx);
+        #[cfg(feature = "custom_ffmpeg")]
+        mv_extract::ffmpeg_common::set_skip_frame_opt(dec_ctx);
         if args.keyframes_only {
             (*dec_ctx).skip_frame = ff::AVDiscard::AVDISCARD_NONKEY;
         }

@@ -389,10 +389,18 @@ pub unsafe fn set_mv_filter_opts(dec_ctx: *mut ff::AVCodecContext) {
     for (opt, env) in [
         ("mv_grid", "MV_GRID"),
         ("mv_min_size", "MV_MIN_SIZE"),
-        // Temporal decimation: unlike the two above, this one actually cuts
-        // decode time, because a skipped picture never reaches the entropy
-        // decoder. See mv_skip_every_nth in the fork's avcodec.h.
+        // Temporal decimation: unlike the two above, these actually cut decode
+        // time, because a dropped picture never reaches the entropy decoder.
+        // See mv_skip_every_nth in the fork's avcodec.h.
+        //
+        // The two run in opposite directions and cover different halves of the
+        // range. MV_SKIP_EVERY_NTH=N drops every Nth and keeps the rest, so a
+        // larger N is a GENTLER trim and the most it can ever remove is half
+        // the pictures (N=2). MV_DECODE_EVERY_NTH=N keeps every Nth and drops
+        // the rest, so a larger N is HARSHER and it reaches the aggressive end
+        // the other cannot.
         ("mv_skip_every_nth", "MV_SKIP_EVERY_NTH"),
+        ("mv_decode_every_nth", "MV_DECODE_EVERY_NTH"),
     ] {
         let value = std::env::var(env)
             .ok()
@@ -401,7 +409,19 @@ pub unsafe fn set_mv_filter_opts(dec_ctx: *mut ff::AVCodecContext) {
         if value > 0 {
             let key = CString::new(opt).unwrap();
             ff::av_opt_set_int(dec_ctx as *mut std::ffi::c_void, key.as_ptr(), value, 0);
+            if matches!(opt, "mv_skip_every_nth" | "mv_decode_every_nth") && value > 1 {
+                quiet_decimation_logs();
+            }
         }
+    }
+}
+
+unsafe fn quiet_decimation_logs() {
+    if std::env::var("MV_DECIMATION_VERBOSE").map(|v| v != "0").unwrap_or(false) {
+        return;
+    }
+    if ff::av_log_get_level() > ff::AV_LOG_FATAL {
+        ff::av_log_set_level(ff::AV_LOG_FATAL);
     }
 }
 
@@ -445,12 +465,14 @@ pub struct SourceFrameIndex {
 /// True when any picture-dropping knob is set, i.e. when output order can
 /// diverge from source order. Reads the same environment the option setters do.
 fn decimation_configured() -> bool {
-    let nth = std::env::var("MV_SKIP_EVERY_NTH")
-        .ok()
-        .and_then(|v| v.trim().parse::<i64>().ok())
-        .unwrap_or(0);
-    if nth > 1 {
-        return true;
+    for var in ["MV_SKIP_EVERY_NTH", "MV_DECODE_EVERY_NTH"] {
+        let nth = std::env::var(var)
+            .ok()
+            .and_then(|v| v.trim().parse::<i64>().ok())
+            .unwrap_or(0);
+        if nth > 1 {
+            return true;
+        }
     }
     match std::env::var("MV_SKIP_FRAME") {
         Ok(mode) => {

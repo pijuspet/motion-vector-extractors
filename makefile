@@ -73,7 +73,11 @@ MV_SKIP_FRAME ?=
 # The counter runs over ALL pictures in decode order, so on a stream with a
 # regular GOP the skip period can alias against it and remove far fewer decoded
 # pictures than 1/N suggests - measure per clip rather than assuming.
-MV_SKIP_EVERY_NTH ?= 0
+
+# The complement: decode every Nth picture and skip the rest. Direction is the
+# OPPOSITE of MV_SKIP_EVERY_NTH - 2 keeps half, 3 a third, 30 a thirtieth, so a
+# LARGER N is a harsher trim.
+MV_DECODE_EVERY_NTH ?= 0
 # Which two methods the "Generate MV comparison" step's full (both-lists)
 # sanity check compares (step 3, logged as "first"/"second" rather than bare
 # method numbers). Default 1/4: both built from extractor1.rs, one against
@@ -227,7 +231,9 @@ PGO_TRAIN_THREADS ?= 1 16
 PGO_CUST_DIR := $(CUSTOM_PREFIX)/pgo
 PGO_E264_DIR := $(EDGE264_DIR)/pgo
 
-PGO_E264_TRAIN_CLIPS ?= bigbunny_walking bigbunnyfull
+PGO_E264_TRAIN_CLIPS ?= MCTTR0102b \
+                        2018-03-15.15-55-00.16-00-00.bus.G475.r13 \
+                        2018-03-05.09-50-15.09-55-01.school.G423.r13
 PGO_E264_TRAIN_TYPES ?= h264_cabac
 
 # $(1) = extractor binary to train with, $(2) = profile directory.
@@ -364,7 +370,7 @@ build: $(PLATFORM_GUARD)
 # crates/mv-bench/benchmark_extractors.rs.
 BENCH_ENV_CORE = L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND)
 BENCH_ENV_GRID = MV_GRID=$(MV_GRID) MV_MIN_SIZE=$(MV_MIN_SIZE)
-BENCH_ENV_SKIP = MV_SKIP_FRAME=$(MV_SKIP_FRAME) MV_SKIP_EVERY_NTH=$(MV_SKIP_EVERY_NTH)
+BENCH_ENV_SKIP = MV_SKIP_FRAME=$(MV_SKIP_FRAME) MV_SKIP_EVERY_NTH=$(MV_SKIP_EVERY_NTH) MV_DECODE_EVERY_NTH=$(MV_DECODE_EVERY_NTH)
 BENCH_ENV = $(BENCH_ENV_CORE) $(BENCH_ENV_GRID) $(BENCH_ENV_SKIP)
 BENCH_CMD = cargo run $(CARGO_TARGET_FLAG) --bin full_benchmark
 
@@ -552,6 +558,38 @@ benchmark_skip_nth:
 	echo "benchmark_skip_nth: $$ok run(s) OK, $$fail failure(s)"; \
 	[ "$$fail" -eq 0 ]
 
+# Sweep the other direction: decode every Nth picture and drop the rest, for N
+# from DECODE_NTH_FROM to DECODE_NTH_TO. Same shape as benchmark_skip_nth and
+# the same per-cell chain.
+DECODE_NTH_FROM  ?= 2
+DECODE_NTH_TO    ?= 30
+DECODE_NTH_STEP  ?= 4
+DECODE_NTHS      ?= $(shell seq $(DECODE_NTH_FROM) $(DECODE_NTH_STEP) $(DECODE_NTH_TO))
+DECODE_NTH_FRAME ?= bidir
+
+# Same reasoning as benchmark_skip_nth: the pair's second method has to be one
+# that decimates, or every N returns the same answer. Method 5 does.
+benchmark_decode_nth: COMPARE_SECOND = 5
+
+benchmark_decode_nth:
+	@if [ -z "$(strip $(DECODE_NTHS))" ]; then \
+		echo "benchmark_decode_nth: DECODE_NTHS is empty (FROM=$(DECODE_NTH_FROM) TO=$(DECODE_NTH_TO) STEP=$(DECODE_NTH_STEP)) - nothing to run"; \
+		exit 1; \
+	fi
+	@echo "benchmark_decode_nth: N = $(DECODE_NTHS)"; \
+	ok=0; fail=0; \
+	for nth in $(DECODE_NTHS); do \
+		for vname in $(VIDEO_NAMES); do \
+			for vtype in $(VIDEO_TYPES); do \
+	$(call sweep_filepath) \
+	$(call sweep_cell,$(BENCH_ENV_GRID) MV_SKIP_FRAME=$(DECODE_NTH_FRAME) MV_DECODE_EVERY_NTH=$$nth,MV_SKIP_FRAME=$(DECODE_NTH_FRAME) MV_DECODE_EVERY_NTH=$$nth) \
+			done; \
+		done; \
+	done; \
+	echo ""; \
+	echo "benchmark_decode_nth: $$ok run(s) OK, $$fail failure(s)"; \
+	[ "$$fail" -eq 0 ]
+
 # =============================================================================
 # DEVELOPMENT & TESTING TOOLS
 # =============================================================================
@@ -734,6 +772,7 @@ help:
 	@echo "    $(MAKE_HINT) benchmark_min_size      # all videos, sweep MV_MIN_SIZE $(MV_MIN_SIZES) with MV_GRID=0"
 	@echo "    $(MAKE_HINT) benchmark_grid          # all videos, sweep MV_GRID $(MV_GRIDS) with MV_MIN_SIZE=0"
 	@echo "    $(MAKE_HINT) benchmark_skip_nth      # all videos, sweep MV_SKIP_EVERY_NTH $(SKIP_NTH_FROM)..$(SKIP_NTH_TO) step $(SKIP_NTH_STEP) (CSVs + plots + videos)"
+	@echo "    $(MAKE_HINT) benchmark_decode_nth    # all videos, sweep MV_DECODE_EVERY_NTH $(DECODE_NTH_FROM)..$(DECODE_NTH_TO) step $(DECODE_NTH_STEP) (the harsh half)"
 	@echo ""
 	@echo "    $(MAKE_HINT) publish                 # publish report"
 	@echo "    $(MAKE_HINT) publish_titles          # dry run: page titles results/bulk would publish under"
@@ -751,9 +790,10 @@ help:
 	@echo "        MV_GRIDS=$(MV_GRIDS)  MV_MIN_SIZES=$(MV_MIN_SIZES)   # benchmark_filters sweep"
 	@echo "        SKIP_NTH_FROM=$(SKIP_NTH_FROM)  SKIP_NTH_TO=$(SKIP_NTH_TO)  SKIP_NTH_STEP=$(SKIP_NTH_STEP)  SKIP_NTH_FRAME=$(SKIP_NTH_FRAME)"
 	@echo "          -> N = $(SKIP_NTHS)   # benchmark_skip_nth sweep"
+	@echo "          -> N = $(DECODE_NTHS)   # benchmark_decode_nth sweep"
 	@echo "        SWEEP_THREADS=$(SWEEP_THREADS)  SWEEP_VIDEOS=$(SWEEP_VIDEOS)  SWEEP_EXTRACT_STREAMS=$(SWEEP_EXTRACT_STREAMS)   # shared by both sweeps"
 	@echo "        SWEEP_STEPS=$(SWEEP_STEPS)   # per cell: extract, compare, plots, VTune - then the overlay render"
-	@echo "        MV_SKIP_FRAME=$(MV_SKIP_FRAME)  MV_SKIP_EVERY_NTH=$(MV_SKIP_EVERY_NTH)   # temporal decimation (real speedup)"
+	@echo "        MV_SKIP_FRAME=$(MV_SKIP_FRAME)  MV_SKIP_EVERY_NTH=$(MV_SKIP_EVERY_NTH)  MV_DECODE_EVERY_NTH=$(MV_DECODE_EVERY_NTH)   # temporal decimation (real speedup)"
 	@echo "        COMPARE_FIRST=$(COMPARE_FIRST)  COMPARE_SECOND=$(COMPARE_SECOND)  PROFILER_EXTRACTOR=$(PROFILER_EXTRACTOR)"
 	@echo ""
 	@echo "  PGO vars: PGO_TRAIN_CLIPS=$(PGO_TRAIN_CLIPS)"
@@ -772,7 +812,7 @@ endif
 .PHONY: install platform_install \
         setup_ffmpeg setup_ffmpeg_pgo setup_edge264 setup_edge264_pgo \
         build build_sys build_tools \
-        all benchmark benchmark_all benchmark_keyframes benchmark_threads benchmark_filters benchmark_skip_nth \
+        all benchmark benchmark_all benchmark_keyframes benchmark_threads benchmark_filters benchmark_skip_nth benchmark_decode_nth \
         benchmark_min_size benchmark_grid \
         publish publish_titles generate_video generate_videos_since compare_mvs \
         fetch_fresh_ffmpeg installer_diff installer_publish clean_fresh_ffmpeg \

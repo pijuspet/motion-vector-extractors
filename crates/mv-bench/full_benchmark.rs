@@ -104,6 +104,10 @@ impl BenchmarkRunner {
         folder_name.push_str(&num_tag("MV_MIN_SIZE", 'm', 1));
         folder_name.push_str(&skip_frame_tag);
         folder_name.push_str(&num_tag("MV_SKIP_EVERY_NTH", 'n', 2));
+        // 'd' for decode-every-Nth, the complement of 'n'. Distinct letters
+        // matter: the two produce completely different output at the same N,
+        // and a shared tag would let them collide in one folder.
+        folder_name.push_str(&num_tag("MV_DECODE_EVERY_NTH", 'd', 2));
         if write_csv      { folder_name.push_str("_csv"); }
 
         let results_dir = results_type.join(&folder_name);
