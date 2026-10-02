@@ -26,7 +26,9 @@ impl BenchmarkPublisher {
     fn new() -> Self {
         let project_root = env::current_dir().expect("Failed to get current directory");
         let results_path = project_root.join("results");
-        let repo_path = project_root.join("ffmpeg");
+        // The custom FFmpeg checkout (submodule on release/8.0-develop): the
+        // repo whose commits the benchmark runs are attributed to.
+        let repo_path = project_root.join("ffmpeg").join("FFmpeg-8.0-custom");
         // Matches the makefile's INITIAL_RUN_DATA convention
         // (published/$(VIDEO_TYPE)/initial_results_$(VIDEO_TYPE)); the old
         // published/initial_results path doesn't exist on disk.
@@ -216,13 +218,13 @@ impl BenchmarkPublisher {
         }
     }
 
-    /// Commit history of the *nested* FFmpeg source repo (ffmpeg/FFmpeg-8.0-custom/FFmpeg),
+    /// Commit history of the custom FFmpeg submodule (ffmpeg/FFmpeg-8.0-custom),
     /// which is what actually tracks the decoder changes behind these benchmark runs.
     /// Returns (commit_unix_timestamp, full_hash) sorted oldest to newest.
     fn get_ffmpeg_commit_history(&self) -> Vec<(i64, String)> {
-        let nested_repo = self.repo_path.join("FFmpeg-8.0-custom").join("FFmpeg");
+        let nested_repo = &self.repo_path;
         let log_output = self
-            .run_command_capture(&["git", "log", "--pretty=format:%ct %H"], Some(&nested_repo))
+            .run_command_capture(&["git", "log", "--pretty=format:%ct %H"], Some(nested_repo))
             .unwrap_or_default();
 
         let mut commits: Vec<(i64, String)> = log_output
@@ -239,10 +241,10 @@ impl BenchmarkPublisher {
     }
 
     fn get_ffmpeg_remote_url(&self) -> Option<String> {
-        let nested_repo = self.repo_path.join("FFmpeg-8.0-custom").join("FFmpeg");
+        let nested_repo = &self.repo_path;
         self.run_command_capture(
             &["git", "config", "--get", "remote.origin.url"],
-            Some(&nested_repo),
+            Some(nested_repo),
         )
     }
 
@@ -304,7 +306,7 @@ impl BenchmarkPublisher {
         let commits = self.get_ffmpeg_commit_history();
         if commits.is_empty() {
             eprintln!(
-                "No commit history found in {}/FFmpeg-8.0-custom/FFmpeg — aborting.",
+                "No commit history found in {} — aborting.",
                 self.repo_path.display()
             );
             return;
@@ -468,7 +470,7 @@ impl BenchmarkPublisher {
         let commits = self.get_ffmpeg_commit_history();
         if commits.is_empty() {
             eprintln!(
-                "No commit history found in {}/FFmpeg-8.0-custom/FFmpeg — aborting.",
+                "No commit history found in {} — aborting.",
                 self.repo_path.display()
             );
             return;

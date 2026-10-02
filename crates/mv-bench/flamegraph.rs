@@ -294,7 +294,7 @@ impl BenchmarkRunner {
             println!("Using perf binary: {}", perf_bin);
 
             let ffmpeg_variant = if self.profiler_extractor >= 3 { "FFmpeg-8.0-custom" } else { "FFmpeg-8.0" };
-            let ffmpeg_lib = self.current_dir.join("ffmpeg").join(ffmpeg_variant).join("lib");
+            let ffmpeg_lib = self.current_dir.join("ffmpeg").join("install").join(ffmpeg_variant).join("lib");
 
             let perf_data = flamegraph_dir.join("perf.data");
             let output_csv = self.results_dir.join(format!("method{}_output_flamegraph.csv", self.profiler_extractor));

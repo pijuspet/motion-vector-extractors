@@ -161,7 +161,7 @@ impl BenchmarkRunner {
         println!("Running VTune profiler on {}...", extractor_name);
 
         let ffmpeg_variant = if self.profiler_extractor >= 3 { "FFmpeg-8.0-custom" } else { "FFmpeg-8.0" };
-        let ffmpeg_lib = self.current_dir.join("ffmpeg").join(ffmpeg_variant).join("lib");
+        let ffmpeg_lib = self.current_dir.join("ffmpeg").join("install").join(ffmpeg_variant).join("lib");
 
         fs::create_dir_all(&self.vtune_dir).ok();
 

@@ -28,7 +28,6 @@ pub struct BenchmarkRunner {
     pub profiler_extractor: u32,
     pub current_dir: PathBuf,
     pub results_dir: PathBuf,
-    pub pkg_config_path: PathBuf,
     pub extractor_executables: PathBuf,
     pub motion_vectors_comparison_file: PathBuf,
     pub slides_config: PathBuf,
@@ -108,8 +107,6 @@ impl BenchmarkRunner {
         let results_dir = results_type.join(&folder_name);
         fs::create_dir_all(&results_dir).ok();
 
-        let pkg_config_path = current_dir.join("ffmpeg").join("FFmpeg-8.0").join("lib").join("pkgconfig");
-
         let extractor_executables = current_dir.join("executables");
 
         let motion_vectors_comparison_file = results_dir.join("mv_comparison_result.txt");
@@ -136,7 +133,6 @@ impl BenchmarkRunner {
             profiler_extractor,
             current_dir,
             results_dir,
-            pkg_config_path,
             extractor_executables,
             motion_vectors_comparison_file,
             slides_config,

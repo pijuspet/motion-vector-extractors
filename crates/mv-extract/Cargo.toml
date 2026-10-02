@@ -14,7 +14,7 @@ custom_ffmpeg = []
 # wrapper exhaustively matches on `AVFrameSideDataType`, which breaks when our
 # custom FFmpeg adds `AV_FRAME_DATA_MOTION_VECTORS_COMPACT`. The FFmpeg install
 # to link against is selected at build time via `PKG_CONFIG_PATH`, so
-# `ffmpeg/FFmpeg-8.0{,-custom}/lib/pkgconfig` is injected by the makefile targets.
+# `ffmpeg/install/FFmpeg-8.0{,-custom}/lib/pkgconfig` is injected by the makefile targets.
 # default-features would pull avdevice/avfilter/swscale/swresample; the
 # extractors use only avformat (demux) + avcodec (decode) + avutil (frames,
 # always linked). Dropping them lets the slim FFmpeg build omit those four

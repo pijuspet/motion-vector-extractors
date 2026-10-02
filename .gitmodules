@@ -1,10 +1,11 @@
-[submodule "ffmpeg"]
-	path = ffmpeg
-	url = https://github.com/pijuspet/ffmpeg
-[submodule "ffmpeg_installer"]
-	path = ffmpeg_installer
-	url = https://github.com/pijuspet/ffmpeg_installer
 [submodule "edge264"]
 	path = edge264
 	url = https://github.com/pijuspet/edge264.git
-
+[submodule "ffmpeg/FFmpeg-8.0"]
+	path = ffmpeg/FFmpeg-8.0
+	url = https://github.com/pijuspet/ffmpeg
+	branch = release/8.0-hevc-mv
+[submodule "ffmpeg/FFmpeg-8.0-custom"]
+	path = ffmpeg/FFmpeg-8.0-custom
+	url = https://github.com/pijuspet/ffmpeg
+	branch = release/8.0-develop

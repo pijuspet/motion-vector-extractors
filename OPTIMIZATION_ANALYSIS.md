@@ -1,6 +1,6 @@
 # Custom FFmpeg 8.0 — optimization inventory, CABAC deep dive, and applied changes
 
-This covers what the custom fork (`ffmpeg_installer/custom_ffmpeg.diff`)
+This covers what the custom fork (branch `release/8.0-develop` of pijuspet/ffmpeg)
 optimizes, a walk through the H.264 CABAC assembly.
 
 ## 1. What the custom fork already optimizes

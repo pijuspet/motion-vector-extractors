@@ -39,7 +39,7 @@ jobs:
 
       - name: FFmpeg submodule revision
         id: ff
-        run: echo "sha=$(git -C ffmpeg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(git -C ffmpeg/FFmpeg-8.0 rev-parse --short HEAD)-$(git -C ffmpeg/FFmpeg-8.0-custom rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -50,14 +50,16 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      # The two FFmpeg builds are the slow part; cache the prefixes keyed on the
-      # submodule revision so `setup_ffmpeg` is incremental on a cache hit.
+      # The two FFmpeg builds are the slow part; cache the checkouts (in-tree
+      # objects) and ffmpeg/install keyed on both submodule revisions so
+      # `setup_ffmpeg` is incremental on a cache hit.
       - name: Cache built FFmpeg
         uses: actions/cache@v4
         with:
           path: |
             ffmpeg/FFmpeg-8.0
             ffmpeg/FFmpeg-8.0-custom
+            ffmpeg/install
           key: ${{ runner.os }}-ffmpeg-${{ steps.ff.outputs.sha }}-${{ hashFiles('makefile', 'mk/linux.mk') }}
 
       - name: apt update
@@ -114,7 +116,7 @@ jobs:
 
       - name: FFmpeg submodule revision
         id: ff
-        run: echo "sha=$(git -C ffmpeg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(git -C ffmpeg/FFmpeg-8.0 rev-parse --short HEAD)-$(git -C ffmpeg/FFmpeg-8.0-custom rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Cache built FFmpeg
         uses: actions/cache@v4
@@ -122,6 +124,7 @@ jobs:
           path: |
             ffmpeg/FFmpeg-8.0
             ffmpeg/FFmpeg-8.0-custom
+            ffmpeg/install
           key: ${{ runner.os }}-ffmpeg-${{ steps.ff.outputs.sha }}-${{ hashFiles('makefile', 'mk/mingw.mk') }}
 
       - name: make install
@@ -201,7 +204,7 @@ jobs:
 
       - name: FFmpeg submodule revision
         id: ff
-        run: echo "sha=$(git -C ffmpeg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(git -C ffmpeg/FFmpeg-8.0 rev-parse --short HEAD)-$(git -C ffmpeg/FFmpeg-8.0-custom rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Cache built FFmpeg
         uses: actions/cache@v4
@@ -209,6 +212,7 @@ jobs:
           path: |
             ffmpeg/FFmpeg-8.0
             ffmpeg/FFmpeg-8.0-custom
+            ffmpeg/install
           key: windows-msvc-ffmpeg-${{ steps.ff.outputs.sha }}-${{ hashFiles('makefile', 'mk/msvc.mk') }}
 
       - name: check-env

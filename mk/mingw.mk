@@ -81,9 +81,7 @@ SLIM_FFMPEG := --disable-everything \
 	--enable-muxer=mov \
 	--enable-protocol=file,rtp,tcp,udp \
 	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
-# --target-os/--arch pin the MinGW64 cross-shape. Kept in step with the
-# ffmpeg_installer submodule's own makefile.windows (a different file from the
-# repo-root ones this replaced -- that one still exists and is unaffected).
+# --target-os/--arch pin the MinGW64 cross-shape.
 FF_CONFIGURE_FLAGS = --enable-shared --disable-static --enable-swresample \
 	--target-os=mingw32 --arch=x86_64 \
 	--enable-debug --disable-stripping --disable-doc \

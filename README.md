@@ -19,6 +19,7 @@ Run it with `sudo`, not as a root shell. VTune, the apt packages and the sysctl 
 ```bash
 make setup_ffmpeg
 ```
+Both are submodules of [pijuspet/ffmpeg](https://github.com/pijuspet/ffmpeg), each on its own branch, and install into `ffmpeg/install/` (see [FFmpeg sources](#ffmpeg-sources)).
 
 4. **Build all extractors**
 ```bash
@@ -136,14 +137,14 @@ make build
 
 This forces bindgen to re-run against the updated headers. You only need to do this after the custom FFmpeg headers themselves change.
 
-## Updating the Custom FFmpeg Patch
+## FFmpeg sources
 
-The `ffmpeg_installer/` submodule ships the diff that transforms a vanilla FFmpeg `release/8.0` checkout into the custom-patched build. When you change the FFmpeg source under `ffmpeg/FFmpeg-8.0-custom/FFmpeg/`, regenerate the diff and commit it so others can apply the same changes.
+`ffmpeg/` is a plain folder holding two submodules of [pijuspet/ffmpeg](https://github.com/pijuspet/ffmpeg). Each branch builds on the one before it:
 
-### Generate the diff
+| Path | Branch | Contents | Used by |
+|---|---|---|---|
+| — | `release/8.0` | unmodified upstream FFmpeg `release/8.0` | base of the other two |
+| `ffmpeg/FFmpeg-8.0` | `release/8.0-hevc-mv` | upstream + HEVC motion-vector export | regular build: methods 0, 1, 2, 7 |
+| `ffmpeg/FFmpeg-8.0-custom` | `release/8.0-develop` | the above + the MV-only patch | custom build: methods 3, 4, 5, 6 |
 
-```bash
-make installer_diff
-```
-
-This clones a fresh copy of `FFmpeg release/8.0` into `/tmp/ffmpeg-8.0-fresh` (skipped if it already exists), diffs it against `ffmpeg/FFmpeg-8.0-custom/FFmpeg/`, and writes the result to `ffmpeg_installer/custom_ffmpeg.diff`. Build artifacts, binaries, and generated files are excluded automatically.
+`make setup_ffmpeg` configures and builds each checkout in place and installs it into `ffmpeg/install/FFmpeg-8.0[-custom]/` (gitignored). A built binary reports the commit it came from: `ffmpeg -version` prints e.g. `e22fcf859f custom`.
