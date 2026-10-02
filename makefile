@@ -73,11 +73,24 @@ MV_SKIP_FRAME ?=
 # The counter runs over ALL pictures in decode order, so on a stream with a
 # regular GOP the skip period can alias against it and remove far fewer decoded
 # pictures than 1/N suggests - measure per clip rather than assuming.
+MV_SKIP_EVERY_NTH ?= 0
 
 # The complement: decode every Nth picture and skip the rest. Direction is the
 # OPPOSITE of MV_SKIP_EVERY_NTH - 2 keeps half, 3 a third, 30 a thirtieth, so a
 # LARGER N is a harsher trim.
 MV_DECODE_EVERY_NTH ?= 0
+
+# Content-adaptive decimation: drop every non-IDR picture whose coded access
+# unit is smaller than this many bytes (0 = off). On a fixed camera a still
+# picture codes as a tiny all-skip P frame, so this drops the idle frames and
+# keeps the ones that carry motion, unlike the blind every-Nth knobs above.
+# IDR is always decoded. H.264 only: honoured by the custom-fork methods
+# (mv_min_frame_bytes) and edge264 (method 8), which measure the
+# same demuxed packet size and so drop the same pictures; the stock methods
+# ignore it and decode every picture, like MV_SKIP_EVERY_NTH. Stacks with the
+# knobs above: a picture is dropped if any of them says so. The threshold is per
+# clip - bus at 400 keeps 758 of 9007.
+MV_MIN_FRAME_BYTES ?= 400
 # Which two methods the "Generate MV comparison" step's full (both-lists)
 # sanity check compares (step 3, logged as "first"/"second" rather than bare
 # method numbers). Default 1/4: both built from extractor1.rs, one against
@@ -370,7 +383,8 @@ build: $(PLATFORM_GUARD)
 # crates/mv-bench/benchmark_extractors.rs.
 BENCH_ENV_CORE = L0_ONLY=$(L0_ONLY) COMPARE_FIRST=$(COMPARE_FIRST) COMPARE_SECOND=$(COMPARE_SECOND)
 BENCH_ENV_GRID = MV_GRID=$(MV_GRID) MV_MIN_SIZE=$(MV_MIN_SIZE)
-BENCH_ENV_SKIP = MV_SKIP_FRAME=$(MV_SKIP_FRAME) MV_SKIP_EVERY_NTH=$(MV_SKIP_EVERY_NTH) MV_DECODE_EVERY_NTH=$(MV_DECODE_EVERY_NTH)
+BENCH_ENV_SKIP = MV_SKIP_FRAME=$(MV_SKIP_FRAME) MV_SKIP_EVERY_NTH=$(MV_SKIP_EVERY_NTH) MV_DECODE_EVERY_NTH=$(MV_DECODE_EVERY_NTH) \
+                 MV_MIN_FRAME_BYTES=$(MV_MIN_FRAME_BYTES)
 BENCH_ENV = $(BENCH_ENV_CORE) $(BENCH_ENV_GRID) $(BENCH_ENV_SKIP)
 BENCH_CMD = cargo run $(CARGO_TARGET_FLAG) --bin full_benchmark
 
@@ -590,6 +604,40 @@ benchmark_decode_nth:
 	echo "benchmark_decode_nth: $$ok run(s) OK, $$fail failure(s)"; \
 	[ "$$fail" -eq 0 ]
 
+FRAME_BYTES ?= 0 100 400 1000 2000 5000
+
+# Both sides of the MV comparison have to honour the knob, or the diff just
+# counts the pictures the filtered side dropped. Methods 4 and 5 are both
+# custom-fork builds, so they filter identically and any difference is a real
+# disagreement.
+benchmark_min_frame_bytes: COMPARE_FIRST = 4
+benchmark_min_frame_bytes: COMPARE_SECOND = 5
+
+# Render the MV overlays per cell, straight after that cell's CSVs, plots and
+# VTune pass (sweep_cell does the renders after the benchmark command returns,
+# so they never overlap the measurement they belong to). SWEEP_VIDEOS=0 on the
+# command line still wins and skips them.
+benchmark_min_frame_bytes: SWEEP_VIDEOS = 1
+
+benchmark_min_frame_bytes:
+	@if [ -z "$(strip $(FRAME_BYTES))" ]; then \
+		echo "benchmark_min_frame_bytes: FRAME_BYTES is empty - nothing to run"; \
+		exit 1; \
+	fi
+	@echo "benchmark_min_frame_bytes: bytes = $(FRAME_BYTES)"; \
+	ok=0; fail=0; \
+	for b in $(FRAME_BYTES); do \
+		for vname in $(VIDEO_NAMES); do \
+			for vtype in $(VIDEO_TYPES); do \
+	$(call sweep_filepath) \
+	$(call sweep_cell,$(BENCH_ENV_GRID) MV_MIN_FRAME_BYTES=$$b,MV_MIN_FRAME_BYTES=$$b) \
+			done; \
+		done; \
+	done; \
+	echo ""; \
+	echo "benchmark_min_frame_bytes: $$ok run(s) OK, $$fail failure(s)"; \
+	[ "$$fail" -eq 0 ]
+
 # =============================================================================
 # DEVELOPMENT & TESTING TOOLS
 # =============================================================================
@@ -649,7 +697,7 @@ generate_videos_since:
 		hhmm=$$(echo "$$b" | cut -d_ -f2); \
 		[ "$$(echo "$$hhmm $(SINCE)" | awk '{print ($$1 < $$2)}')" = 1 ] && continue; \
 		vtype=$$(basename $$(dirname $$d)); \
-		stem=$$(echo "$$b" | sed -E 's/^[0-9]{8}_[0-9]{4}_//; s/_t[0-9]+(_kf)?(_g[0-9]+)?(_m[0-9]+)?(_s[a-z0-9]+)?(_n[0-9]+)?(_csv)?$$//'); \
+		stem=$$(echo "$$b" | sed -E 's/^[0-9]{8}_[0-9]{4}_//; s/_t[0-9]+(_kf)?(_g[0-9]+)?(_m[0-9]+)?(_s[a-z0-9]+)?(_n[0-9]+)?(_d[0-9]+)?(_b[0-9]+)?(_csv)?$$//'); \
 		vid=$$(ls $(CURRENT_DIR)/videos/$$vtype/$$stem.* 2>/dev/null | head -n 1); \
 		orig=$$d/method0_output_0.csv; \
 		cust=; for m in $(CUST_METHODS); do \
@@ -773,6 +821,7 @@ help:
 	@echo "    $(MAKE_HINT) benchmark_grid          # all videos, sweep MV_GRID $(MV_GRIDS) with MV_MIN_SIZE=0"
 	@echo "    $(MAKE_HINT) benchmark_skip_nth      # all videos, sweep MV_SKIP_EVERY_NTH $(SKIP_NTH_FROM)..$(SKIP_NTH_TO) step $(SKIP_NTH_STEP) (CSVs + plots + videos)"
 	@echo "    $(MAKE_HINT) benchmark_decode_nth    # all videos, sweep MV_DECODE_EVERY_NTH $(DECODE_NTH_FROM)..$(DECODE_NTH_TO) step $(DECODE_NTH_STEP) (the harsh half)"
+	@echo "    $(MAKE_HINT) benchmark_min_frame_bytes # all videos, sweep MV_MIN_FRAME_BYTES $(FRAME_BYTES) (CSVs + plots + VTune + MV compare + overlays)"
 	@echo ""
 	@echo "    $(MAKE_HINT) publish                 # publish report"
 	@echo "    $(MAKE_HINT) publish_titles          # dry run: page titles results/bulk would publish under"
@@ -794,6 +843,7 @@ help:
 	@echo "        SWEEP_THREADS=$(SWEEP_THREADS)  SWEEP_VIDEOS=$(SWEEP_VIDEOS)  SWEEP_EXTRACT_STREAMS=$(SWEEP_EXTRACT_STREAMS)   # shared by both sweeps"
 	@echo "        SWEEP_STEPS=$(SWEEP_STEPS)   # per cell: extract, compare, plots, VTune - then the overlay render"
 	@echo "        MV_SKIP_FRAME=$(MV_SKIP_FRAME)  MV_SKIP_EVERY_NTH=$(MV_SKIP_EVERY_NTH)  MV_DECODE_EVERY_NTH=$(MV_DECODE_EVERY_NTH)   # temporal decimation (real speedup)"
+	@echo "        MV_MIN_FRAME_BYTES=$(MV_MIN_FRAME_BYTES)   # drop non-IDR pictures smaller than N bytes (custom fork + method 8)"
 	@echo "        COMPARE_FIRST=$(COMPARE_FIRST)  COMPARE_SECOND=$(COMPARE_SECOND)  PROFILER_EXTRACTOR=$(PROFILER_EXTRACTOR)"
 	@echo ""
 	@echo "  PGO vars: PGO_TRAIN_CLIPS=$(PGO_TRAIN_CLIPS)"
@@ -813,6 +863,7 @@ endif
         setup_ffmpeg setup_ffmpeg_pgo setup_edge264 setup_edge264_pgo \
         build build_sys build_tools \
         all benchmark benchmark_all benchmark_keyframes benchmark_threads benchmark_filters benchmark_skip_nth benchmark_decode_nth \
+        benchmark_min_frame_bytes \
         benchmark_min_size benchmark_grid \
         publish publish_titles generate_video generate_videos_since compare_mvs \
         fetch_fresh_ffmpeg installer_diff installer_publish clean_fresh_ffmpeg \

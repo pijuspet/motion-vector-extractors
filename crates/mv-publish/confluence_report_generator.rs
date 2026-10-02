@@ -181,6 +181,7 @@ impl ConfluenceReportGenerator {
     ///   _m<N>   MV_MIN_SIZE=N        vector-size filter
     ///   _n<N>   MV_SKIP_EVERY_NTH=N    drop every Nth picture
     ///   _d<N>   MV_DECODE_EVERY_NTH=N  keep every Nth picture
+    ///   _b<N>   MV_MIN_FRAME_BYTES=N   drop pictures under N coded bytes
     ///   _csv    WRITE_CSV=1
     ///
     /// Folders that don't match (older runs predating this naming, or the
@@ -229,6 +230,12 @@ impl ConfluenceReportGenerator {
                 ("d", n) if !n.is_empty() => {
                     strategy.push("skipping decoding of the frames".to_string());
                     params.push(format!("MV_DECODE_EVERY_NTH={}", n));
+                }
+                // Same phrase again: the byte threshold also decodes fewer
+                // pictures, it just picks them by coded size.
+                ("b", n) if !n.is_empty() => {
+                    strategy.push("skipping decoding of the frames".to_string());
+                    params.push(format!("MV_MIN_FRAME_BYTES={}", n));
                 }
                 _ => {}
             }

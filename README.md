@@ -74,6 +74,13 @@ make installer_publish
 
 Runs `installer_diff` then stages `ffmpeg_installer/ffmpeg_version.diff` in the submodule.
 
+## Frame decimation
+
+The extractors can skip pictures before they are entropy-decoded. `MV_SKIP_FRAME`,
+`MV_SKIP_EVERY_NTH` and `MV_DECODE_EVERY_NTH` drop blindly; `MV_MIN_FRAME_BYTES`
+drops by coded size, which on a fixed camera removes the idle all-skip frames and
+keeps the ones carrying motion.
+
 ## Running the Benchmark
 
 To run the full benchmark run:

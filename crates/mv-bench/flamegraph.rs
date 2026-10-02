@@ -278,6 +278,19 @@ impl BenchmarkRunner {
 
         let output_html = flamegraph_dir.join(format!("{}_flamegraph.html", extractor_name));
 
+        // Non-root perf needs paranoid <= 1 for user-space sampling; Debian/Ubuntu default to 4.
+        if let Some(level) = fs::read_to_string("/proc/sys/kernel/perf_event_paranoid")
+            .ok()
+            .and_then(|s| s.trim().parse::<i32>().ok())
+        {
+            if level > 1 && unsafe { libc::geteuid() } != 0 {
+                eprintln!("Skipping flamegraph: kernel.perf_event_paranoid is {} (needs <= 1).", level);
+                eprintln!("  Fix: sudo sysctl kernel.perf_event_paranoid=1");
+                eprintln!("  Persist: echo 'kernel.perf_event_paranoid = 1' | sudo tee /etc/sysctl.d/99-perf.conf");
+                return;
+            }
+        }
+
         if let Some(perf_bin) = find_perf() {
             println!("Using perf binary: {}", perf_bin);
 

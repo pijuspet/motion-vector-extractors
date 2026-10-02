@@ -108,6 +108,10 @@ impl BenchmarkRunner {
         // matter: the two produce completely different output at the same N,
         // and a shared tag would let them collide in one folder.
         folder_name.push_str(&num_tag("MV_DECODE_EVERY_NTH", 'd', 2));
+        // 'b' for the byte threshold. Without a tag every value lands in a
+        // folder name that looks unfiltered - which is how the 2026-09-18 runs
+        // came to be picked as an unfiltered reference by the bulk report.
+        folder_name.push_str(&num_tag("MV_MIN_FRAME_BYTES", 'b', 1));
         if write_csv      { folder_name.push_str("_csv"); }
 
         let results_dir = results_type.join(&folder_name);

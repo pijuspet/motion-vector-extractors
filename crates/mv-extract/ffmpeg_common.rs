@@ -401,6 +401,11 @@ pub unsafe fn set_mv_filter_opts(dec_ctx: *mut ff::AVCodecContext) {
         // the other cannot.
         ("mv_skip_every_nth", "MV_SKIP_EVERY_NTH"),
         ("mv_decode_every_nth", "MV_DECODE_EVERY_NTH"),
+        // Content-adaptive: drop non-key pictures whose packet is smaller than
+        // N bytes (the idle, all-skip frames of a fixed camera). Same rule and
+        // same packet size as edge264's extractor, so methods 5 and 8 drop the
+        // same pictures.
+        ("mv_min_frame_bytes", "MV_MIN_FRAME_BYTES"),
     ] {
         let value = std::env::var(env)
             .ok()
@@ -409,7 +414,9 @@ pub unsafe fn set_mv_filter_opts(dec_ctx: *mut ff::AVCodecContext) {
         if value > 0 {
             let key = CString::new(opt).unwrap();
             ff::av_opt_set_int(dec_ctx as *mut std::ffi::c_void, key.as_ptr(), value, 0);
-            if matches!(opt, "mv_skip_every_nth" | "mv_decode_every_nth") && value > 1 {
+            if (matches!(opt, "mv_skip_every_nth" | "mv_decode_every_nth") && value > 1)
+                || opt == "mv_min_frame_bytes"
+            {
                 quiet_decimation_logs();
             }
         }
@@ -473,6 +480,13 @@ fn decimation_configured() -> bool {
         if nth > 1 {
             return true;
         }
+    }
+    let min_bytes = std::env::var("MV_MIN_FRAME_BYTES")
+        .ok()
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .unwrap_or(0);
+    if min_bytes > 0 {
+        return true;
     }
     match std::env::var("MV_SKIP_FRAME") {
         Ok(mode) => {
