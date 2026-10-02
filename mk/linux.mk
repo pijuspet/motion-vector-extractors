@@ -189,12 +189,16 @@ endef
 # to `sudo` by CI.
 SUDO ?=
 
+# Under `sudo make install`, run per-user steps (rustup, venv, git-lfs,
+# executables/) as the invoking user so they don't end up in /root or root-owned.
+AS_USER := $(if $(SUDO_USER),sudo -u $(SUDO_USER) -H,)
+
 # Packages required to build + benchmark. Rust is bootstrapped separately via
 # rustup (see the recipe) — the apt `cargo`/`rustup` packages conflict with
 # each other on recent Ubuntu, so they're intentionally not listed here.
-APT_CORE  := build-essential gcc g++ make pkg-config nasm libclang-dev libopencv-dev clang
+APT_CORE  := build-essential gcc g++ make pkg-config nasm libclang-dev libopencv-dev clang git-lfs
 # Profiler / report-generation extras (perf, notifications, pdf/plot rendering).
-APT_EXTRA := xdg-utils libnss3 libnotify4 wkhtmltopdf linux-tools-common linux-tools-realtime
+APT_EXTRA := xdg-utils libnss3 libnotify4 wkhtmltopdf linux-tools-common linux-tools-realtime python3-venv
 
 install_vtune:
 ifndef CI
@@ -215,19 +219,24 @@ ifndef CI
 		echo "kernel.yama.ptrace_scope = 0" >> /etc/sysctl.d/10-ptrace.conf; \
 	fi
 	sysctl -p /etc/sysctl.d/10-ptrace.conf
+	@echo "Allowing user-space perf sampling (flamegraph step)..."
+	echo "kernel.perf_event_paranoid = 1" > /etc/sysctl.d/99-perf.conf
+	sysctl -p /etc/sysctl.d/99-perf.conf
 	@echo "VTune installation complete."
 else
 	@echo "[CI] Skipping VTune / oneAPI install."
 endif
 
 platform_install: install_vtune
-	command -v cargo >/dev/null 2>&1 || curl https://sh.rustup.rs -sSf | sh -s -- -y
+	$(AS_USER) sh -c 'command -v cargo >/dev/null 2>&1 || [ -x "$$HOME/.cargo/bin/cargo" ] || curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
 	$(SUDO) apt install -y $(APT_CORE)
+	$(AS_USER) git lfs install
+	$(AS_USER) git lfs pull
 ifndef CI
 	$(SUDO) apt install -y $(APT_EXTRA)
-	mkdir -p $(VENV_FOLDER)
-	python3 -m venv $(VENV_FOLDER)
-	. $(VENV_FOLDER)/bin/activate && pip install -r requirements.txt
+	$(AS_USER) mkdir -p $(VENV_FOLDER)
+	$(AS_USER) python3 -m venv $(VENV_FOLDER)
+	$(AS_USER) sh -c '. $(VENV_FOLDER)/bin/activate && pip install -r requirements.txt'
 endif
 
 PLATFORM_PHONY := install_vtune

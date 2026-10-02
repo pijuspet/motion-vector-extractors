@@ -24,9 +24,6 @@ pub const METHODS: &[MethodInfo] = &[
     MethodInfo { id: 4, name: "Custom FFmpeg - Flush decoder" },
     MethodInfo { id: 5, name: "Custom FFmpeg" },
     MethodInfo { id: 6, name: "Custom FFmpeg - Keyframes only" },
-    // extractor6.rs built against the regular FFmpeg — the keyframes-only
-    // counterpart to method 6, the same way method 4 is method 1 against the
-    // custom fork. No separate source file.
     MethodInfo { id: 7, name: "Original FFmpeg - Keyframes only" },
     MethodInfo { id: 8, name: "edge264 H.264 decoder" },
 ];
@@ -173,7 +170,6 @@ fn spawn_processes(
     output_dir: &str,
     exe_dir: &str,
     is_verbose: bool,
-    keyframes_only: bool,
     thread_count: i32,
 ) -> Vec<ChildProcess> {
     let mut processes = Vec::with_capacity(stream_count as usize);
@@ -212,7 +208,6 @@ fn spawn_processes(
                 }
             };
             let tc_str = thread_count.to_string();
-            let kf_str = if keyframes_only { "1" } else { "0" };
 
             let c_exe = CString::new(exe_path.as_str()).unwrap();
             let c_video = CString::new(video_file).unwrap();
@@ -220,7 +215,6 @@ fn spawn_processes(
             let c_csv = CString::new(csv_path.as_str()).unwrap();
             let c_verbose = CString::new(verbose_str).unwrap();
             let c_tc = CString::new(tc_str.as_str()).unwrap();
-            let c_kf = CString::new(kf_str).unwrap();
 
             unsafe {
                 libc::execl(
@@ -231,7 +225,6 @@ fn spawn_processes(
                     c_csv.as_ptr(),
                     c_verbose.as_ptr(),
                     c_tc.as_ptr(),
-                    c_kf.as_ptr(),
                     std::ptr::null::<libc::c_char>(),
                 );
                 // execl only returns on error
@@ -390,7 +383,6 @@ fn spawn_processes(
     output_dir: &str,
     exe_dir: &str,
     is_verbose: bool,
-    keyframes_only: bool,
     thread_count: i32,
 ) -> Vec<ChildProcess> {
     use std::process::{Command, Stdio};
@@ -402,10 +394,9 @@ fn spawn_processes(
         let print_str = if print_csv { "1" } else { "0" };
         let verbose_str = if i > 0 || !is_verbose { "0" } else { "1" };
         let tc_str = thread_count.to_string();
-        let kf_str = if keyframes_only { "1" } else { "0" };
 
         let child = Command::new(&exe_path)
-            .args([video_file, print_str, &csv_path, verbose_str, &tc_str, kf_str])
+            .args([video_file, print_str, &csv_path, verbose_str, &tc_str])
             .stdout(Stdio::piped())
             .spawn()
             .unwrap_or_else(|e| {
@@ -500,7 +491,6 @@ fn run_benchmark(
     output_dir: &str,
     exe_dir: &str,
     is_verbose: bool,
-    keyframes_only: bool,
     thread_count: i32,
 ) -> BenchmarkResult {
     let mut result = BenchmarkResult::default();
@@ -522,7 +512,6 @@ fn run_benchmark(
         output_dir,
         exe_dir,
         is_verbose,
-        keyframes_only,
         thread_count,
     );
 
@@ -684,7 +673,6 @@ pub fn run_benchmark_extractors(
     exe_dir: &str,
     is_verbose: bool,
     print_csv: bool,
-    keyframes_only: bool,
     thread_count: i32,
 ) -> Option<Vec<SharedBenchmarkResult>> {
     if stream_count < 1 || stream_count > MAX_STREAMS {
@@ -710,10 +698,6 @@ pub fn run_benchmark_extractors(
             if thread_count == 0 { "auto".to_string() } else { thread_count.to_string() }
         );
         println!(
-            "Keyframes only   : {}",
-            if keyframes_only { "yes" } else { "no" }
-        );
-        println!(
             "Print CSV        : {}\n",
             if print_csv { "yes" } else { "no" }
         );
@@ -737,7 +721,6 @@ pub fn run_benchmark_extractors(
             output_dir,
             exe_dir,
             is_verbose,
-            keyframes_only,
             thread_count,
         );
         if is_verbose {

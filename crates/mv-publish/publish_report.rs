@@ -112,7 +112,6 @@ impl BenchmarkPublisher {
             3,
             0,
             false,
-            false,
             4,
         );
 

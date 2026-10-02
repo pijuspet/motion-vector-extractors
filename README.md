@@ -13,12 +13,12 @@ git clone --recurse-submodules https://github.com/pijuspet/motion-vector-extract
 ```bash
 sudo make install
 ```
+Run it with `sudo`, not as a root shell. VTune, the apt packages and the sysctl settings (`ptrace_scope=0`, `perf_event_paranoid=1`) need root. Rust (rustup), the Python venv, `git lfs pull` and `executables/` run as the invoking user (`$SUDO_USER`), so nothing ends up in `/root` or owned by root. Open a new shell afterwards so `cargo` is on `PATH`.
 
 3. **Build both FFmpeg versions** (standard + custom-patched)
 ```bash
 make setup_ffmpeg
 ```
-This clones FFmpeg `release/8.0` into `ffmpeg/FFmpeg-8.0/FFmpeg` and `ffmpeg/FFmpeg-8.0-custom/FFmpeg`, applies the patch from `ffmpeg_installer/`, and compiles both. Takes several minutes.
 
 4. **Build all extractors**
 ```bash
@@ -34,7 +34,89 @@ make setup_edge264       # rebuild just the decoder after a submodule update
 make setup_edge264_pgo   # instrument -> train -> rebuild, same recipe as setup_ffmpeg_pgo
 ```
 
-The submodule is a **fork**: `edge264_fork/edge264_mv_extract.diff` gives edge264 a motion-vector-only mode (the counterpart of the custom FFmpeg fork's `motion_vectors_only`.
+## Usage
+
+`make` with no target prints the help screen with the current variable values. Every variable below can be overridden on the command line, e.g. `make benchmark VIDEO_NAME=bigbunny.mp4 THREAD_COUNT=4`.
+
+### Setup and build
+
+| Command | What it does |
+|---|---|
+| `sudo make install` | Installs the toolchain and dependencies, and creates `.env` from `.env_template` |
+| `make setup_ffmpeg` | Builds both FFmpeg trees: the regular one (sys) and the custom-patched fork (cust) |
+| `make setup_ffmpeg_pgo` | Profile-guided build of the custom fork: instrumented build, then a training run, then an optimized rebuild, then `make build` |
+| `make setup_edge264` | Rebuilds only the edge264 decoder (method 8), e.g. after a submodule update |
+| `make setup_edge264_pgo` | The same PGO recipe for edge264 |
+| `make build` | Builds every extractor against both FFmpeg trees plus edge264, and copies the binaries and runtime libs into `executables/` |
+| `make build_tools` | `cargo build --workspace --release` against the regular FFmpeg |
+| `make test` | `cargo test --workspace`. There are no tests yet, so it only compiles the workspace |
+
+PGO training is controlled by `PGO_TRAIN_CLIPS`, `PGO_TRAIN_TYPES` and `PGO_TRAIN_THREADS`. edge264 uses `PGO_E264_TRAIN_CLIPS` and `PGO_E264_TRAIN_TYPES` instead. Example:
+```bash
+make setup_ffmpeg_pgo PGO_TRAIN_TYPES=h264_cabac PGO_TRAIN_THREADS=1
+```
+The default training clip (`MCTTR0102b`) is also a benchmark clip. Measure PGO gains on a different clip (school or bus), otherwise you are testing on the training data.
+
+### Benchmarks
+
+| Command | What it does |
+|---|---|
+| `make benchmark` | Benchmarks one video (`VIDEO_TYPE`/`VIDEO_NAME`). Without `STEPS` it asks which steps to run (see below) |
+| `make benchmark_all` | Benchmarks `VIDEO_NAME` for every type in `VIDEO_TYPES`. Add `TYPE=sys` or `TYPE=cust` (default `cust`) to pick one tree |
+| `make all` | Runs `benchmark_all` for both `sys` and `cust` |
+| `make benchmark_threads` | Runs every video at 1, 2, 4, … up to `MAX_THREADS` threads |
+| `make benchmark_skip_nth` | Sweeps `MV_SKIP_EVERY_NTH` from `SKIP_NTH_FROM` to `SKIP_NTH_TO` in steps of `SKIP_NTH_STEP`, with `MV_SKIP_FRAME=bidir` |
+| `make benchmark_decode_nth` | Sweeps `MV_DECODE_EVERY_NTH` from `DECODE_NTH_FROM` to `DECODE_NTH_TO` in steps of `DECODE_NTH_STEP` |
+
+The `full_benchmark` steps, which you select with `STEPS="..."` or at the prompt:
+
+| Step | |
+|---|---|
+| `1` | Build |
+| `2` | Extract (run the benchmark) |
+| `3` | Compare motion vectors between `COMPARE_FIRST` and `COMPARE_SECOND` |
+| `4` | Plots and PowerPoint |
+| `5` | VTune profile of `PROFILER_EXTRACTOR` (Linux only) |
+| `6` | Flamegraph (Linux only) |
+| `0` | All of the above. This takes much longer than extraction alone because it includes the full reporting |
+
+```bash
+make benchmark STEPS="2 4"          # extract + plots, no prompt
+```
+
+### Results, videos and reports
+
+Each run writes its MV CSVs and VTune/flamegraph output to `results/<video_type>/<date>_<time>_.../`. Plot images (`.png`) and the PowerPoint go to `plots/`. The commands below read from the newest results dir, so run `make benchmark` first.
+
+| Command | What it does |
+|---|---|
+| `make generate_video` | Renders the MV overlay and the side-by-side comparison video from the newest results dir (needs `method0_output_0.csv` and `method5_output_0.csv`) |
+| `make generate_videos_since` | The same for every results dir created on or after `SINCE_DAY` and `SINCE` (`HHMM`). Uses the first CSV it finds among `CUST_METHODS` |
+| `make compare_mvs` | Compares the method 0 and method 5 MV CSVs in the newest results dir and writes `mv_diff_neg1.txt` |
+| `make decode_ffmpeg` | Remuxes `VIDEO_FILE` with the custom FFmpeg CLI into the newest results dir |
+| `make publish` | Publishes the report for the newest results dir |
+| `make publish_titles` | Dry run: prints the page titles `results/bulk` would be published under |
+
+### Common variables
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `VIDEO_NAME` / `VIDEO_TYPE` | `MCTTR0102b.mp4` / `h264_cabac` | Single video for `benchmark`, `generate_video` and `compare_mvs`. Types: `h264_cabac`, `h264_cavlc`, `h264_avi`, `h265` |
+| `VIDEO_NAMES` / `VIDEO_TYPES` | school, bus, MCTTR / `h264_cabac` | Video set for the multi-video targets. Missing files are skipped |
+| `STREAMS`, `NRUNS` | `20`, `3` | Parallel streams and repeat runs |
+| `THREAD_COUNT` | `1` | Decoder threads per extractor (`0` lets FFmpeg choose) |
+| `WRITE_CSV` | `0` | `1` = write per-method MV CSVs |
+| `L0_ONLY` | `1` | Export list-0 vectors only |
+| `MV_SKIP_FRAME` | empty | `noref` / `bidir` / `nointra` / `nokey` frame skipping |
+| `MV_SKIP_EVERY_NTH` | `0` | Skip every Nth picture. Always use it with `MV_SKIP_FRAME=bidir` |
+| `MV_DECODE_EVERY_NTH` | `0` | Decode only every Nth picture |
+| `COMPARE_FIRST`, `COMPARE_SECOND` | `1`, `4` | The method pair compared in step 3 |
+| `PROFILER_EXTRACTOR` | `4` | The extractor profiled in steps 5 and 6 |
+
+## Frame decimation
+
+The extractors can skip pictures before they are entropy-decoded, using
+`MV_SKIP_FRAME`, `MV_SKIP_EVERY_NTH` and `MV_DECODE_EVERY_NTH`.
 
 ### Fixing stale Rust bindings after a header change
 
@@ -65,65 +147,3 @@ make installer_diff
 ```
 
 This clones a fresh copy of `FFmpeg release/8.0` into `/tmp/ffmpeg-8.0-fresh` (skipped if it already exists), diffs it against `ffmpeg/FFmpeg-8.0-custom/FFmpeg/`, and writes the result to `ffmpeg_installer/custom_ffmpeg.diff`. Build artifacts, binaries, and generated files are excluded automatically.
-
-### Stage and commit
-
-```bash
-make installer_publish
-```
-
-Runs `installer_diff` then stages `ffmpeg_installer/ffmpeg_version.diff` in the submodule.
-
-## Frame decimation
-
-The extractors can skip pictures before they are entropy-decoded. `MV_SKIP_FRAME`,
-`MV_SKIP_EVERY_NTH` and `MV_DECODE_EVERY_NTH` drop blindly; `MV_MIN_FRAME_BYTES`
-drops by coded size, which on a fixed camera removes the idle all-skip frames and
-keeps the ones carrying motion.
-
-## Running the Benchmark
-
-To run the full benchmark run:
-```
-make benchmark
-```
-
-To run all experiments for original and custom FFmpeg:
-```
-make all
-```
-
-- Replace video with your input video file from the videos in `videos/`.
-
-During execution, you’ll be presented with options. If you select **option `0`**, the script will:
-- Run all benchmarks.
-- Generate charts.
-- Create a PowerPoint presentation (PPT).
-- Compare original and custom FFmpegs extracted motion vectors
-- Generate Vtune and flamegraph useage plots. 
-
-> **Note:** Selecting option 0 will take longer because it performs both the benchmarks and the full reporting.
-
-## Generate motion vector video
-```
-make generate_video
-```
-
-videos are saved in `/results/[date]` folder (requires `method0_output_0.csv` and `method4_output_0.csv` files, run `make benchmark` with flag 0 beforehand).
-
-## Results Output
-
-After the benchmarks are complete:
-- All plot images (`.png`) and the PowerPoint presentation (`.ppt`), including the results, will be available in the `plot` folder.
-- Motion vectors, vtune results are saved in `/results/[date]/` folder.
-
-## Current Results 
-
-> **Note:** The 3 with FFMPEG Patched use the Naive return version of FFMPEG, and the one called "Same" - is a copy of the code that performs best on the patched running not  on the Patched
-
-<img width="1600" height="900" alt="grouped_barchart_fps" src="https://github.com/user-attachments/assets/21f15b0b-f9a1-4ca6-8f5a-04c6f3347246" />
-
-<img width="1600" height="900" alt="scaling_timeperframe" src="https://github.com/user-attachments/assets/16ae1c73-3a82-4525-b752-12fa3311d01d" />
-
-<img width="3077" height="1112" alt="detail_table_15streams" src="https://github.com/user-attachments/assets/e1e74285-9eb4-4354-b18c-13a192364db4" />
-

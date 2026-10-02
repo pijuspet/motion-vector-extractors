@@ -24,11 +24,10 @@ use mv_types::motion_vector::MvCompact;
 
 /// CLI arguments shared by every extractor binary.
 ///
-/// Layout: `<input file> <print mv> <output file> <is verbose> <thread_count> <keyframes_only>`
+/// Layout: `<input file> <print mv> <output file> <is verbose> <thread_count>`
 ///
 /// `thread_count` maps directly to `AVCodecContext.thread_count`: 0 = FFmpeg
 /// picks automatically, 1 = single-threaded, N = N threads.
-/// `keyframes_only` = 1 enables I-frame-only decoding (stream discard + skip_frame).
 pub struct ExtractorArgs {
     pub video_file: String,
     pub do_print: bool,
@@ -36,36 +35,26 @@ pub struct ExtractorArgs {
     pub is_verbose: bool,
     /// 0 = auto (FFmpeg default), 1 = single-threaded, N = N threads.
     pub thread_count: i32,
-    /// Decode only I-frames; set via env var `KEYFRAMES_ONLY=1`.
-    pub keyframes_only: bool,
 }
 
 impl ExtractorArgs {
     pub fn from_env() -> Option<Self> {
         let argv: Vec<String> = std::env::args().collect();
-        if argv.len() < 7 {
+        if argv.len() < 6 {
             let exe = argv.first().cloned().unwrap_or_else(|| "extractor".to_string());
             eprintln!(
-                "Usage: {} <input file> <print mv> <output file> <is verbose> <thread_count> <keyframes_only>",
+                "Usage: {} <input file> <print mv> <output file> <is verbose> <thread_count>",
                 exe
             );
             return None;
         }
-        let keyframes_only = argv[6] == "1";
-        let mut thread_count = argv[5].parse::<i32>().unwrap_or(0);
-        // Keyframes-only decodes ~2-5% of the frames with no inter-frame
-        // dependencies to pipeline, so frame threads only add setup/handoff
-        // cost: measured 0.024 ms/f at 1 thread vs 0.055 at 128. Clamp.
-        if keyframes_only {
-            thread_count = 1;
-        }
+        let thread_count = argv[5].parse::<i32>().unwrap_or(0);
         Some(Self {
             video_file: argv[1].clone(),
             do_print: argv[2].parse::<i32>().unwrap_or(0) != 0,
             output_file: argv[3].clone(),
             is_verbose: argv[4].parse::<i32>().unwrap_or(0) != 0,
             thread_count,
-            keyframes_only,
         })
     }
 }
@@ -374,24 +363,18 @@ pub fn print_ffmpeg_version() {
     }
 }
 
-/// Apply the custom fork's motion-vector post-filter AVOptions, read from the
-/// environment (the makefile exports both via BENCH_ENV).
+/// Apply the custom fork's picture-decimation AVOptions, read from the
+/// environment (the makefile exports them via BENCH_ENV).
 ///
-/// * `MV_GRID=N`      — export at most one vector per N x N pixel cell.
-/// * `MV_MIN_SIZE=N`  — drop vectors whose displacement is shorter than N pixels.
-///
-/// Unset, `0` or unparseable means "no filter", and in that case nothing is set
-/// at all, so default runs stay byte-identical to before these options existed.
-/// Both options exist only in the custom FFmpeg; against the regular build
+/// Unset, `0` or unparseable means "no decimation", and in that case nothing is
+/// set at all, so default runs stay byte-identical to before these options
+/// existed. The options exist only in the custom FFmpeg; against the regular build
 /// `av_opt_set_int` just returns AVERROR_OPTION_NOT_FOUND, which is why the
 /// extractors can call this unconditionally (same as `mv_l0_only` already does).
-pub unsafe fn set_mv_filter_opts(dec_ctx: *mut ff::AVCodecContext) {
+pub unsafe fn set_decimation_opts(dec_ctx: *mut ff::AVCodecContext) {
     for (opt, env) in [
-        ("mv_grid", "MV_GRID"),
-        ("mv_min_size", "MV_MIN_SIZE"),
-        // Temporal decimation: unlike the two above, these actually cut decode
-        // time, because a dropped picture never reaches the entropy decoder.
-        // See mv_skip_every_nth in the fork's avcodec.h.
+        // These cut decode time, because a dropped picture never reaches the
+        // entropy decoder. See mv_skip_every_nth in the fork's avcodec.h.
         //
         // The two run in opposite directions and cover different halves of the
         // range. MV_SKIP_EVERY_NTH=N drops every Nth and keeps the rest, so a
@@ -401,11 +384,6 @@ pub unsafe fn set_mv_filter_opts(dec_ctx: *mut ff::AVCodecContext) {
         // the other cannot.
         ("mv_skip_every_nth", "MV_SKIP_EVERY_NTH"),
         ("mv_decode_every_nth", "MV_DECODE_EVERY_NTH"),
-        // Content-adaptive: drop non-key pictures whose packet is smaller than
-        // N bytes (the idle, all-skip frames of a fixed camera). Same rule and
-        // same packet size as edge264's extractor, so methods 5 and 8 drop the
-        // same pictures.
-        ("mv_min_frame_bytes", "MV_MIN_FRAME_BYTES"),
     ] {
         let value = std::env::var(env)
             .ok()
@@ -414,9 +392,7 @@ pub unsafe fn set_mv_filter_opts(dec_ctx: *mut ff::AVCodecContext) {
         if value > 0 {
             let key = CString::new(opt).unwrap();
             ff::av_opt_set_int(dec_ctx as *mut std::ffi::c_void, key.as_ptr(), value, 0);
-            if (matches!(opt, "mv_skip_every_nth" | "mv_decode_every_nth") && value > 1)
-                || opt == "mv_min_frame_bytes"
-            {
+            if value > 1 {
                 quiet_decimation_logs();
             }
         }
@@ -456,7 +432,7 @@ unsafe fn quiet_decimation_logs() {
 /// being dropped the output counter already IS the source position, so falling
 /// back to it keeps every existing run - and every CSV ever compared against one
 /// - byte-identical, and sidesteps variable-frame-rate clips where the PTS
-/// arithmetic would not hold. Same reasoning as `set_mv_filter_opts`: a default
+/// arithmetic would not hold. Same reasoning as `set_decimation_opts`: a default
 /// run must look exactly as it did before the feature existed.
 pub struct SourceFrameIndex {
     /// PTS units per source picture. 0 means "just count", either because no
@@ -480,13 +456,6 @@ fn decimation_configured() -> bool {
         if nth > 1 {
             return true;
         }
-    }
-    let min_bytes = std::env::var("MV_MIN_FRAME_BYTES")
-        .ok()
-        .and_then(|v| v.trim().parse::<i64>().ok())
-        .unwrap_or(0);
-    if min_bytes > 0 {
-        return true;
     }
     match std::env::var("MV_SKIP_FRAME") {
         Ok(mode) => {
@@ -592,9 +561,8 @@ impl SourceFrameIndex {
 /// Temporal decimation: drop whole pictures before they are entropy-decoded.
 ///
 /// `MV_SKIP_FRAME` accepts FFmpeg's `skip_frame` vocabulary — `noref`, `bidir`,
-/// `nointra`, `nokey` — and is unset by default. Unlike the spatial filters in
-/// `set_mv_filter_opts`, this one genuinely saves decode time: a discarded
-/// picture has none of its CABAC bins consumed at all.
+/// `nointra`, `nokey` — and is unset by default. It genuinely saves decode time:
+/// a discarded picture has none of its CABAC bins consumed at all.
 ///
 /// Safe for the pictures that are still decoded, because H.264 predicts motion
 /// vectors from *spatial* neighbours within the same slice. The only cross-

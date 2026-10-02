@@ -109,7 +109,6 @@ impl BenchmarkRunner {
         let output_csv    = self.results_dir.join(format!("method{}_output_vtune.csv", self.profiler_extractor));
 
         let tc_str = self.thread_count.to_string();
-        let kf_str = if self.keyframes_only { "1" } else { "0" };
         let status = Command::new(&vtune)
             .args([
                 "-collect", "hotspots",
@@ -120,7 +119,7 @@ impl BenchmarkRunner {
                 &self.video_file,
                 "0",
                 &output_csv.to_string_lossy(),
-                "1", &tc_str, kf_str,
+                "1", &tc_str,
             ])
             .stdin(std::process::Stdio::null())
             .status();
@@ -201,9 +200,8 @@ impl BenchmarkRunner {
         }
 
         let tc_str = self.thread_count.to_string();
-        let kf_str = if self.keyframes_only { "1" } else { "0" };
         let vtune_collect_cmd = format!(
-            "vtune -collect hotspots -knob sampling-mode=sw -result-dir {} -- {} {} {} {} {} {} {}",
+            "vtune -collect hotspots -knob sampling-mode=sw -result-dir {} -- {} {} {} {} {} {}",
             self.vtune_dir.display(),
             extractor_exec.display(),
             self.video_file,
@@ -211,7 +209,6 @@ impl BenchmarkRunner {
             output_csv.display(),
             is_verbose,
             tc_str,
-            kf_str,
         );
 
         if !self.run_shell_command(

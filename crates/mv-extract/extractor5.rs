@@ -5,7 +5,7 @@ use std::time::Instant;
 use ffmpeg_sys_next as ff;
 
 use mv_extract::ffmpeg_common::{
-    get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs, set_av_flags, unset_av_flags, set_mv_filter_opts, set_skip_frame_opt, SourceFrameIndex
+    get_current_rss_kb, open_mv_any, print_ffmpeg_version, write_frame_mvs, ExtractorArgs, set_av_flags, unset_av_flags, set_decimation_opts, set_skip_frame_opt, SourceFrameIndex
 };
 
 fn main() {
@@ -58,9 +58,6 @@ fn main() {
         }
 
         let video_stream = *(*fmt_ctx).streams.add(vsi as usize);
-        if args.keyframes_only {
-            (*video_stream).discard = ff::AVDiscard::AVDISCARD_NONKEY;
-        }
         //endregion
 
         //region codec
@@ -97,16 +94,10 @@ fn main() {
         // output); override with L0_ONLY=0 to also export list-1 rows.
         let l0_only = std::env::var("L0_ONLY").map(|v| v != "0").unwrap_or(true);
         ff::av_opt_set_int(dec_ctx as *mut c_void, mv_l0_key.as_ptr(), if l0_only { 1 } else { 0 }, 0);
-        // MV export filters, all off unless the makefile sets them: MV_GRID=N
-        // keeps at most one vector per NxN pixel cell, MV_MIN_SIZE=N drops
-        // vectors shorter than N pixels. The
-        // threshold runs before the grid, so a cell is claimed by a vector that
-        // actually passed it. None of these reduce decode time.
-        set_mv_filter_opts(dec_ctx);
+        // Picture decimation, off unless the makefile sets it:
+        // MV_SKIP_EVERY_NTH / MV_DECODE_EVERY_NTH.
+        set_decimation_opts(dec_ctx);
         set_skip_frame_opt(dec_ctx);
-        if args.keyframes_only {
-            (*dec_ctx).skip_frame = ff::AVDiscard::AVDISCARD_NONKEY;
-        }
         //endregion
 
         if ff::avcodec_open2(dec_ctx, codec, &mut opts) < 0 {

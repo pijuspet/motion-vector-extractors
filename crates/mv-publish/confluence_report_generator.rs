@@ -176,12 +176,8 @@ impl ConfluenceReportGenerator {
     /// `<timestamp>_<video_stem>_t<threads>` followed by one tag per active
     /// run setting (see the folder_name block in full_benchmark.rs):
     ///
-    ///   _kf     KEYFRAMES_ONLY=1
-    ///   _g<N>   MV_GRID=N            grid filter
-    ///   _m<N>   MV_MIN_SIZE=N        vector-size filter
     ///   _n<N>   MV_SKIP_EVERY_NTH=N    drop every Nth picture
     ///   _d<N>   MV_DECODE_EVERY_NTH=N  keep every Nth picture
-    ///   _b<N>   MV_MIN_FRAME_BYTES=N   drop pictures under N coded bytes
     ///   _csv    WRITE_CSV=1
     ///
     /// Folders that don't match (older runs predating this naming, or the
@@ -207,19 +203,7 @@ impl ConfluenceReportGenerator {
         for tag in caps[3].split('_').filter(|t| !t.is_empty()) {
             let (head, num) = tag.split_at(1);
             match (head, num) {
-                ("k", "f") => {
-                    strategy.push("keyframes only".to_string());
-                    params.push("KEYFRAMES_ONLY=1".to_string());
-                }
                 ("c", "sv") => params.push("WRITE_CSV=1".to_string()),
-                ("g", n) if !n.is_empty() => {
-                    strategy.push("filtering by grid".to_string());
-                    params.push(format!("MV_GRID={}", n));
-                }
-                ("m", n) if !n.is_empty() => {
-                    strategy.push("motion vector filtering by size".to_string());
-                    params.push(format!("MV_MIN_SIZE={}", n));
-                }
                 ("n", n) if !n.is_empty() => {
                     strategy.push("skipping decoding of the frames".to_string());
                     params.push(format!("MV_SKIP_EVERY_NTH={}", n));
@@ -230,12 +214,6 @@ impl ConfluenceReportGenerator {
                 ("d", n) if !n.is_empty() => {
                     strategy.push("skipping decoding of the frames".to_string());
                     params.push(format!("MV_DECODE_EVERY_NTH={}", n));
-                }
-                // Same phrase again: the byte threshold also decodes fewer
-                // pictures, it just picks them by coded size.
-                ("b", n) if !n.is_empty() => {
-                    strategy.push("skipping decoding of the frames".to_string());
-                    params.push(format!("MV_MIN_FRAME_BYTES={}", n));
                 }
                 _ => {}
             }

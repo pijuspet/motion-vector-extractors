@@ -195,7 +195,6 @@ impl BenchmarkRunner {
         fs::create_dir_all(&vtune_dir).ok();
 
         let tc_str = self.thread_count.to_string();
-        let kf_str = if self.keyframes_only { "1" } else { "0" };
 
         // Collect hotspots with software sampling — no admin needed
         let collect_start = std::time::Instant::now();
@@ -208,7 +207,7 @@ impl BenchmarkRunner {
                 &extractor.to_string_lossy(),
                 &self.video_file, "0",
                 &output_csv.to_string_lossy(),
-                "1", &tc_str, kf_str,
+                "1", &tc_str,
             ])
             .stdin(std::process::Stdio::null())
             .status();
@@ -305,9 +304,8 @@ impl BenchmarkRunner {
             let ld_path = format!("{}:{}", ffmpeg_lib.display(), existing_ld);
 
             let tc_str = self.thread_count.to_string();
-            let kf_str = if self.keyframes_only { "1" } else { "0" };
             let perf_cmd = format!(
-                "LD_LIBRARY_PATH={} {} record -g --call-graph dwarf -F 99 -o {} -- {} {} 0 {} 1 {} {}",
+                "LD_LIBRARY_PATH={} {} record -g --call-graph dwarf -F 99 -o {} -- {} {} 0 {} 1 {}",
                 ld_path,
                 perf_bin,
                 perf_data.display(),
@@ -315,7 +313,6 @@ impl BenchmarkRunner {
                 self.video_file,
                 output_csv.display(),
                 tc_str,
-                kf_str,
             );
 
             println!("Running: perf record on {}...", extractor_name);

@@ -43,7 +43,6 @@ pub fn run_benchmark(
     results_absolute_path: &str,
     is_verbose: i32,
     write_to_csv: i32,
-    keyframes_only: bool,
     thread_count: i32,
 ) -> Vec<BenchmarkResult> {
     println!("Running benchmark with {} streams...", streams);
@@ -55,7 +54,6 @@ pub fn run_benchmark(
         project_absolute_path,
         is_verbose != 0,
         write_to_csv != 0,
-        keyframes_only,
         thread_count,
     )
     .unwrap_or_default()
@@ -71,7 +69,6 @@ pub fn run_benchmark_averaged(
     is_verbose: i32,
     write_to_csv: i32,
     n_runs: usize,
-    keyframes_only: bool,
     thread_count: i32,
 ) -> Vec<BenchmarkResult> {
     let mut all_runs: Vec<Vec<BenchmarkResult>> = Vec::new();
@@ -85,7 +82,6 @@ pub fn run_benchmark_averaged(
             results_absolute_path,
             is_verbose,
             write_to_csv,
-            keyframes_only,
             thread_count,
         );
         if !results.is_empty() {
@@ -174,7 +170,6 @@ pub fn benchmark(
     write_to_csv: i32,
     video_type: &str,
     n_runs: usize,
-    keyframes_only: bool,
     thread_count: i32,
 ) {
     let stream_steps = generate_stream_runs(streams);
@@ -195,7 +190,6 @@ pub fn benchmark(
             is_verbose,
             write_to_csv,
             n_runs,
-            keyframes_only,
             thread_count,
         );
         if results.is_empty() {
@@ -221,8 +215,7 @@ pub fn benchmark(
 
     let threads_str = if thread_count == 0 { "auto".to_string() } else { thread_count.to_string() };
     let run_info = format!(
-        "Keyframes only: {} | Threads: {}",
-        if keyframes_only { "yes" } else { "no" },
+        "Threads: {}",
         threads_str,
     );
 

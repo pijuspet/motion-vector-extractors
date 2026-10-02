@@ -189,8 +189,11 @@ platform_install: check-shell
 		mingw-w64-x86_64-python-seaborn \
 		mingw-w64-x86_64-python-lxml \
 		mingw-w64-x86_64-opencv \
+		mingw-w64-x86_64-git-lfs \
 		make git patch diffutils \
 		winpty
+	git lfs install
+	git lfs pull
 	@mkdir -p '$(VENV_FOLDER)'
 # CI (GitHub Actions sets CI=true) skips the report-only Python venv/pip layer;
 # the pacman packages above are enough to build + benchmark.

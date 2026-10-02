@@ -49,9 +49,6 @@ fn main() {
         }
 
         let video_stream = *(*fmt_ctx).streams.add(vsi as usize);
-        if args.keyframes_only {
-            (*video_stream).discard = ff::AVDiscard::AVDISCARD_NONKEY;
-        }
         //endregion
 
         let dec_ctx = ff::avcodec_alloc_context3(ptr::null());
@@ -71,9 +68,6 @@ fn main() {
         let key = CString::new("flags2").unwrap();
         let val = CString::new("+export_mvs").unwrap();
         ff::av_dict_set(&mut opts, key.as_ptr(), val.as_ptr(), 0);
-        if args.keyframes_only {
-            (*dec_ctx).skip_frame = ff::AVDiscard::AVDISCARD_NONKEY;
-        }
         //endregion
 
         //region codec
