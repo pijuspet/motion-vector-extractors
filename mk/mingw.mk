@@ -175,7 +175,9 @@ endef
 # add C:\Program Files\wkhtmltopdf\bin to PATH (needed by imgkit/plots.py).
 platform_install: check-shell
 	@echo "[INFO]  Installing MSYS2/MinGW64 build dependencies..."
-	pacman -S --needed --noconfirm \
+	@# Retried: MSYS2 mirrors stall ("Operation too slow") and fail the whole
+	@# transaction; --needed makes a retry fetch only what is still missing.
+	for i in 1 2 3; do pacman -S --needed --noconfirm \
 		mingw-w64-x86_64-toolchain \
 		mingw-w64-x86_64-rust \
 		mingw-w64-x86_64-nasm \
@@ -189,7 +191,9 @@ platform_install: check-shell
 		mingw-w64-x86_64-opencv \
 		mingw-w64-x86_64-git-lfs \
 		make git patch diffutils \
-		winpty
+		winpty && break; \
+		[ $$i = 3 ] && exit 1; echo "[WARN]  pacman failed (attempt $$i/3), retrying in 15s"; sleep 15; \
+	done
 	git lfs install
 	git lfs pull
 	@mkdir -p '$(VENV_FOLDER)'
