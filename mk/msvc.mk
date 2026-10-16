@@ -129,6 +129,7 @@ SLIM_FFMPEG := --disable-everything \
 	--enable-parser=h264,hevc,mpeg4video \
 	--enable-demuxer=mov,avi,h264,hevc,mpegts,rtsp,sdp \
 	--enable-protocol=file,rtp,tcp,udp \
+	--enable-encoder=mjpeg --enable-muxer=image2 --enable-filter=null,format,scale \
 	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
 
 # `cl`/`link`/`nasm` must be on PATH (launch MSYS2 bash from the VS x64 Native

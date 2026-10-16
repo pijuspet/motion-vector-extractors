@@ -523,6 +523,25 @@ impl BenchmarkRunner {
         }
     }
 
+    pub fn iframes(&self) -> bool {
+        let out = self.results_dir.join("iframes");
+        let start = std::time::Instant::now();
+        let ok = Command::new("make")
+            .arg("extract_iframes")
+            .arg(format!("VIDEO_FILE={}", self.video_file))
+            .arg(format!("IFRAMES_DIR={}", out.display()))
+            .current_dir(&self.current_dir)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            println!("I-frame extraction (decode + JPEG encode): {:.1} ms", start.elapsed().as_secs_f64() * 1000.0);
+        } else {
+            eprintln!("I-frame extraction failed for {}", self.video_file);
+        }
+        ok
+    }
+
     pub fn run_all(&self) {
         if !self.build() {
             println!("Build failed, aborting.");
@@ -533,5 +552,6 @@ impl BenchmarkRunner {
         self.plot();
         self.profiler();
         self.flamegraph();
+        self.iframes();
     }
 }

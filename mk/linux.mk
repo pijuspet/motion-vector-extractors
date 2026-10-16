@@ -40,6 +40,8 @@ PLATFORM_GUARD :=
 #     and h264's MV export is compile-gated behind CONFIG_MPEGVIDEODEC, which an
 #     mpegvideo decoder (mpeg4) turns on — without it h264 exports zero MVs.
 #   - rtsp/sdp are demuxers (RTSP rides on the rtp/tcp/udp protocols).
+#   - mjpeg encoder + image2 muxer (+ null/format/scale, which the ffmpeg CLI
+#     needs for any re-encode) are for `extract_iframes`.
 #   - mov muxer is kept for the optional `decode_ffmpeg` remux helper. (mk/msvc.mk
 #     drops it — the mov muxer pulls in FFmpeg's cbs layer with no cbs types, and
 #     that empty table fails to compile under MSVC. GCC/MinGW accept it fine.)
@@ -49,6 +51,7 @@ SLIM_FFMPEG := --disable-everything \
 	--enable-demuxer=mov,avi,h264,hevc,mpegts,rtsp,sdp \
 	--enable-muxer=mov \
 	--enable-protocol=file,rtp,tcp,udp \
+	--enable-encoder=mjpeg --enable-muxer=image2 --enable-filter=null,format,scale \
 	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
 
 # Configure flags shared by the regular + custom trees (the shared makefile

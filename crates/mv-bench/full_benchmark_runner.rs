@@ -19,6 +19,7 @@ fn usage() {
     println!("    4 = Generate Plots and PowerPoint");
     println!("    5 = Profiler (VTune on FFmpeg hacked)");
     println!("    6 = Flamegraph (perf or VTune data)");
+    println!("    7 = Extract I-frames as JPEGs (results/<type>/<clip>/iframes/)");
     println!("    0 = Run ALL steps");
     println!();
 }
@@ -65,6 +66,7 @@ fn main() {
     println!("  4: Generate Plots and PowerPoint");
     println!("  5: Profiler (VTune on FFmpeg hacked)");
     println!("  6: Flamegraph (perf or VTune data)");
+    println!("  7: Extract I-frames as JPEGs");
     println!("  0: Run ALL steps");
     println!();
 
@@ -86,6 +88,7 @@ fn main() {
             "4" => runner.plot(),
             "5" => runner.profiler(),
             "6" => runner.flamegraph(),
+            "7" => { runner.iframes(); }
             "0" => {
                 runner.run_all();
                 break;
@@ -93,4 +96,5 @@ fn main() {
             _ => println!("Invalid step: {}", step),
         }
     }
+    let _ = std::fs::remove_dir(&runner.results_dir);
 }

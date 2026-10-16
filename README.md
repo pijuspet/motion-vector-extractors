@@ -94,6 +94,7 @@ The `full_benchmark` steps, which you select with `STEPS="..."` or at the prompt
 | `4` | Plots and PowerPoint |
 | `5` | VTune profile of `PROFILER_EXTRACTOR` (Linux only) |
 | `6` | Flamegraph (Linux only) |
+| `7` | Keyframes as JPEGs via `make extract_iframes` into the run folder's `iframes/`, timed. Not part of `0` |
 | `0` | All of the above. This takes much longer than extraction alone because it includes the full reporting |
 
 ```bash
@@ -110,6 +111,7 @@ Each run writes its MV CSVs and VTune/flamegraph output to `results/<video_type>
 | `make generate_videos_since` | The same for every results dir created on or after `SINCE_DAY` and `SINCE` (`HHMM`). Uses the first CSV it finds among `CUST_METHODS` |
 | `make compare_mvs` | Compares the method 0 and method 5 MV CSVs in the newest results dir and writes `mv_diff_neg1.txt` |
 | `make decode_ffmpeg` | Remuxes `VIDEO_FILE` with the custom FFmpeg CLI into the newest results dir |
+| `make extract_iframes` | Saves the keyframes of `VIDEO_FILE` as JPEGs with the custom FFmpeg CLI (`-skip_frame nokey`, so only keyframes are decoded) into `results/<type>/<YYYYMMDD_HHMM>_<clip>/iframes/`, named by source PTS. NAS clips (`VIDEO_TYPE=nas/<type>`) go under `results/nas/<type>/`. Override with `IFRAMES_DIR=` |
 | `make mount_nas` / `make umount_nas` | (WSL) Maps `NAS_SHARE` to `NAS_DRIVE` with `net use` and mounts it at `NAS_MOUNT` (default `nas/` in the repo, gitignored). Share, user and password come from `.env` (keys in `.env_template`); an empty `NAS_PASSWORD` makes `net use` prompt |
 | `make pick_video` | Browse `nas/MEVA/videos`, `nas/iLIDS/videos`, or the clips picked before in `videos/nas/` (`DATASET=meva\|ilids\|picked`, else a numbered menu asks; size and duration shown per clip), pick a clip, and run `TARGET` on it (default `benchmark`; several goals allowed, e.g. `TARGET="benchmark generate_video"`). The codec picks the type (H.264 → `h264_cabac`, HEVC → `h265`, MPEG-4 → `h264_avi`); the clip is linked into `videos/nas/<type>/` and run as `VIDEO_TYPE=nas/<type>`, so results go to `results/nas/<type>/` and any target reaches it later, e.g. `make generate_video VIDEO_TYPE=nas/h264_cabac VIDEO_NAME=<clip>` |
 | `make publish` | Publishes the report for the newest results dir |

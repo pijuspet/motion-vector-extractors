@@ -80,6 +80,7 @@ SLIM_FFMPEG := --disable-everything \
 	--enable-demuxer=mov,avi,h264,hevc,mpegts,rtsp,sdp \
 	--enable-muxer=mov \
 	--enable-protocol=file,rtp,tcp,udp \
+	--enable-encoder=mjpeg --enable-muxer=image2 --enable-filter=null,format,scale \
 	--enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata
 # --target-os/--arch pin the MinGW64 cross-shape.
 FF_CONFIGURE_FLAGS = --enable-shared --disable-static --enable-swresample \
@@ -184,7 +185,6 @@ platform_install: check-shell
 		mingw-w64-x86_64-python-pip \
 		mingw-w64-x86_64-python-matplotlib \
 		mingw-w64-x86_64-python-pandas \
-		mingw-w64-x86_64-python-seaborn \
 		mingw-w64-x86_64-python-lxml \
 		mingw-w64-x86_64-opencv \
 		mingw-w64-x86_64-git-lfs \
@@ -195,9 +195,10 @@ platform_install: check-shell
 	@mkdir -p '$(VENV_FOLDER)'
 # CI (GitHub Actions sets CI=true) skips the report-only Python venv/pip layer;
 # the pacman packages above are enough to build + benchmark.
+# seaborn comes from pip: MSYS2 dropped mingw-w64-x86_64-python-seaborn (pure Python).
 ifndef CI
 	python -m venv --upgrade-deps --system-site-packages '$(VENV_WIN)'
-	grep -vE '^\s*(matplotlib|pandas|seaborn)' requirements.txt > /tmp/pip-reqs.txt && \
+	grep -vE '^\s*(matplotlib|pandas)' requirements.txt > /tmp/pip-reqs.txt && \
 	'$(PYTHON)' -m pip install -r /tmp/pip-reqs.txt
 endif
 

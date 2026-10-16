@@ -299,7 +299,7 @@ setup_ffmpeg_pgo: $(PLATFORM_GUARD)
 	make clean && make -j"$$(nproc)" && make install
 	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
 	@mkdir -p '$(EXECUTABLES_DIR_CUST)'
-	cp '$(TARGET_CUST)/$(REL)/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)'
+	cp -f '$(TARGET_CUST)/$(REL)/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)'
 	$(call copy_runtime_libs,$(CUSTOM_PREFIX),$(EXECUTABLES_DIR_CUST))
 	@echo "===== PGO 2/3: training run ====="
 	$(call pgo_train_run,'$(CURRENT_DIR)/$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)',$(PGO_CUST_DIR))
@@ -364,14 +364,14 @@ build: $(PLATFORM_GUARD)
 	$(call build_extractors,$(REGULAR_PREFIX),$(TARGET_SYS),)
 	$(call build_extractors,$(CUSTOM_PREFIX),$(TARGET_CUST),--features=custom_ffmpeg)
 	@mkdir -p '$(EXECUTABLES_DIR_SYS)' '$(EXECUTABLES_DIR_CUST)'
-	cp '$(TARGET_SYS)/$(REL)/extractor0$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor0$(EXE_EXT)'
-	cp '$(TARGET_SYS)/$(REL)/extractor1$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor1$(EXE_EXT)'
-	cp '$(TARGET_SYS)/$(REL)/extractor2$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor2$(EXE_EXT)'
-	cp '$(TARGET_CUST)/$(REL)/extractor3$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor3$(EXE_EXT)'
-	cp '$(TARGET_CUST)/$(REL)/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor4$(EXE_EXT)'
-	cp '$(TARGET_CUST)/$(REL)/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)'
-	cp '$(TARGET_CUST)/$(REL)/extractor6$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor6$(EXE_EXT)'
-	cp '$(TARGET_SYS)/$(REL)/extractor6$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor7$(EXE_EXT)'
+	cp -f '$(TARGET_SYS)/$(REL)/extractor0$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor0$(EXE_EXT)'
+	cp -f '$(TARGET_SYS)/$(REL)/extractor1$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor1$(EXE_EXT)'
+	cp -f '$(TARGET_SYS)/$(REL)/extractor2$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor2$(EXE_EXT)'
+	cp -f '$(TARGET_CUST)/$(REL)/extractor3$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor3$(EXE_EXT)'
+	cp -f '$(TARGET_CUST)/$(REL)/extractor1$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor4$(EXE_EXT)'
+	cp -f '$(TARGET_CUST)/$(REL)/extractor5$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor5$(EXE_EXT)'
+	cp -f '$(TARGET_CUST)/$(REL)/extractor6$(EXE_EXT)' '$(EXECUTABLES_DIR_CUST)/extractor6$(EXE_EXT)'
+	cp -f '$(TARGET_SYS)/$(REL)/extractor6$(EXE_EXT)'  '$(EXECUTABLES_DIR_SYS)/extractor7$(EXE_EXT)'
 	$(call copy_runtime_libs,$(REGULAR_PREFIX),$(EXECUTABLES_DIR_SYS))
 	$(call copy_runtime_libs,$(CUSTOM_PREFIX),$(EXECUTABLES_DIR_CUST))
 	$(call build_edge264)
@@ -580,6 +580,16 @@ test_ffmpeg:
 decode_ffmpeg:
 	LD_LIBRARY_PATH=$(CUSTOM_PREFIX)/lib:$$LD_LIBRARY_PATH $(CUSTOM_PREFIX)/bin/ffmpeg -y -i $(VIDEO_FILE) -c copy -an $(LAST_RESULTS_DIR)/decoded_output.mp4
 
+# Timestamped like the benchmark run folders; nas/<type> clips land under results/nas/.
+IFRAMES_TS  := $(shell date +%Y%m%d_%H%M)
+IFRAMES_DIR ?= $(CURRENT_DIR)/results/$(VIDEO_TYPE)/$(IFRAMES_TS)_$(basename $(VIDEO_NAME))/iframes
+extract_iframes:
+	mkdir -p '$(IFRAMES_DIR)'
+	LD_LIBRARY_PATH=$(CUSTOM_PREFIX)/lib:$$LD_LIBRARY_PATH $(CUSTOM_PREFIX)/bin/ffmpeg -hide_banner -nostdin -y \
+		-skip_frame nokey -i '$(VIDEO_FILE)' -an -fps_mode passthrough -frame_pts 1 \
+		-strict -1 -q:v 2 '$(IFRAMES_DIR)/%08d.jpg'
+	@echo "[OK]    $$(ls '$(IFRAMES_DIR)' | wc -l) keyframes -> $(IFRAMES_DIR)"
+
 # =============================================================================
 # PUBLISHING & VIDEO GENERATION
 # =============================================================================
@@ -711,6 +721,7 @@ help:
 	@echo "    $(MAKE_HINT) compare_mvs             # method0 vs method9 MV diff"
 	@echo "    $(MAKE_HINT) compare_runs            # reproducibility check across runs"
 	@echo "    $(MAKE_HINT) decode_ffmpeg           # decode VIDEO_FILE via the custom FFmpeg"
+	@echo "    $(MAKE_HINT) extract_iframes         # keyframes of VIDEO_FILE as JPEGs -> results/<type>/<YYYYMMDD_HHMM>_<clip>/iframes/"
 	@echo "    $(MAKE_HINT) mount_nas / umount_nas  # mount the NAS video share (settings in .env)"
 	@echo "    $(MAKE_HINT) pick_video              # pick a MEVA/iLIDS clip on the NAS and benchmark it (DATASET=meva|ilids|picked TARGET=benchmark)"
 	@echo ""
@@ -742,5 +753,5 @@ endif
         setup_ffmpeg setup_ffmpeg_pgo setup_edge264 setup_edge264_pgo \
         build build_sys build_tools \
         all benchmark benchmark_all benchmark_threads benchmark_skip_nth benchmark_decode_nth \
-        publish publish_titles generate_video generate_videos_since compare_mvs mount_nas umount_nas pick_video \
+        publish publish_titles generate_video generate_videos_since compare_mvs extract_iframes mount_nas umount_nas pick_video \
         help $(PLATFORM_PHONY)
