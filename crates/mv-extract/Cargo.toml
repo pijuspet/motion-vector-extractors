@@ -19,7 +19,9 @@ custom_ffmpeg = []
 # extractors use only avformat (demux) + avcodec (decode) + avutil (frames,
 # always linked). Dropping them lets the slim FFmpeg build omit those four
 # libraries entirely — see ffmpeg/slim-ffmpeg/README.md.
-ffmpeg-sys-next = { version = "9.0.0", default-features = false, features = ["avformat"] }
+# Pinned: 9.0.1 moved to bindgen 0.73, whose MinGW bindings emit __tile1024i
+# (clang amxintrin.h) as packed+aligned, which rustc rejects (E0587).
+ffmpeg-sys-next = { version = "=9.0.0", default-features = false, features = ["avformat"] }
 libc = "0.2"
 mv-types = { path = "../mv-types" }
 
