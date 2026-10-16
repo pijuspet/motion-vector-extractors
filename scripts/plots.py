@@ -2,7 +2,33 @@ import imgkit
 import matplotlib.pyplot as plt
 import os
 import pandas as pd
+import re
 import seaborn as sns
+
+# Plots are grouped into subfolders of plots/ by what they show, so the same
+# chart for every stream count sits together:
+#   barchart_cpu_5streams.png      -> barchart_cpu/
+#   detail_table_5streams_*.png    -> detail_table/
+#   speedup_heatmap[_5streams].png -> speedup_heatmap/
+#   scaling_*, speedup_*, grouped_barchart_*, fastest_* -> their prefix
+# Anything else (CSV, PPTX, blank.png) stays at the top. Mirrored in
+# crates/mv-publish/confluence_report_generator.rs (plot_subdir) - keep in sync.
+_PLOT_GROUPS = ("grouped_barchart", "speedup_heatmap", "scaling", "speedup", "fastest")
+
+
+def plot_subdir(filename):
+    stem = os.path.splitext(os.path.basename(filename))[0]
+    m = re.match(r"(.+?)_\d+streams", stem)
+    if m:
+        return m.group(1)
+    return next((g for g in _PLOT_GROUPS if stem.startswith(g)), "")
+
+
+def plot_path(plots_folder, filename):
+    """Where `filename` lives under plots_folder; creates its subfolder."""
+    d = os.path.join(plots_folder, plot_subdir(filename))
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, filename)
 
 
 def highlight_table(df):
@@ -91,7 +117,7 @@ def pretty_table(df, filename, plots_folder, col_width=2.8, row_height=0.8):
     tbl.auto_set_column_width(col=list(range(n_cols)))
     fig.tight_layout(pad=0.5)
 
-    outpath = os.path.join(plots_folder, filename)
+    outpath = plot_path(plots_folder, filename)
     fig.savefig(outpath, dpi=200)
     plt.close(fig)
     print(f"Saved pretty table image: {outpath}")
@@ -112,7 +138,7 @@ def plot_grouped_bar(
     plt.tight_layout()
     if run_info:
         plt.figtext(0.01, 0.01, run_info, fontsize=10, color="gray", style="italic", ha="left", va="bottom")
-    save_path = os.path.join(plots_folder, filename)
+    save_path = plot_path(plots_folder, filename)
     plt.savefig(save_path)
     plt.close()
     print(f"Saved grouped bar chart: {save_path}")
@@ -131,7 +157,7 @@ def plot_metric(df, metric, title, ylabel, filename, plots_folder, run_info=""):
     plt.tight_layout()
     if run_info:
         plt.figtext(0.01, 0.01, run_info, fontsize=10, color="gray", style="italic", ha="left", va="bottom")
-    save_path = os.path.join(plots_folder, filename)
+    save_path = plot_path(plots_folder, filename)
     plt.savefig(save_path)
     plt.close()
     print(f"Saved plot: {save_path}")
@@ -147,7 +173,7 @@ def plot_scaling(df, metric, title, ylabel, filename, plots_folder, legend_loc="
     plt.tight_layout()
     if run_info:
         plt.figtext(0.01, 0.01, run_info, fontsize=10, color="gray", style="italic", ha="left", va="bottom")
-    save_path = os.path.join(plots_folder, filename)
+    save_path = plot_path(plots_folder, filename)
     plt.savefig(save_path)
     plt.close()
     print(f"Saved plot: {save_path}")

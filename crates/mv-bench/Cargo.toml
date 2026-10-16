@@ -30,3 +30,7 @@ path = "full_benchmark_runner.rs"
 [[bin]]
 name = "mv_diff_driver"
 path = "mv_diff_driver.rs"
+
+[[bin]]
+name = "pick_video"
+path = "pick_video.rs"

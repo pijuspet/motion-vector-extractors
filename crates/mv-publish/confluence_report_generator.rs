@@ -109,8 +109,20 @@ const MAIN_DASHBOARD_PLOTS: &[FileSpec] = &[
     FileSpec { title: None, filename: "grouped_barchart_memory.png", subdir: "plots" },
 ];
 
+fn plot_subdir(filename: &str) -> String {
+    let stem = filename.rsplit_once('.').map_or(filename, |(s, _)| s);
+    if let Some(c) = Regex::new(r"^(.+?)_\d+streams").unwrap().captures(stem) {
+        return c[1].to_string();
+    }
+    ["grouped_barchart", "speedup_heatmap", "scaling", "speedup", "fastest"]
+        .into_iter()
+        .find(|g| stem.starts_with(g))
+        .unwrap_or("")
+        .to_string()
+}
+
 const GLOB_PATTERNS: &[GlobSpec] = &[
-    GlobSpec { _title_prefix: None, pattern: "detail_table_*streams.png", subdir: "plots" },
+    GlobSpec { _title_prefix: None, pattern: "**/detail_table_*streams.png", subdir: "plots" },
 ];
 
 pub struct ConfluenceReportGenerator {
@@ -255,7 +267,10 @@ impl ConfluenceReportGenerator {
             } else {
                 format!("{}/{}", results_dir, spec.subdir)
             };
-            let filepath = format!("{}/{}", full_dir, spec.filename);
+            // Plots sit in per-chart subfolders of plots/; older runs have them flat.
+            let grouped = format!("{}/{}/{}", full_dir, plot_subdir(spec.filename), spec.filename);
+            let flat = format!("{}/{}", full_dir, spec.filename);
+            let filepath = if spec.subdir == "plots" && Path::new(&grouped).is_file() { grouped } else { flat };
             if Path::new(&filepath).is_file() {
                 let attachment_name = format!("{}{}", prefix, spec.filename);
                 files.push((
@@ -387,7 +402,7 @@ impl ConfluenceReportGenerator {
 
         // Detail tables
         let re = Regex::new(r"detail_table_(\d+)streams\.png").unwrap();
-        let pattern = format!("{}/detail_table_*streams.png", plots_dir);
+        let pattern = format!("{}/**/detail_table_*streams.png", plots_dir);
         let mut detail_tables: Vec<(i32, serde_json::Value)> = Vec::new();
 
         if let Ok(paths) = glob::glob(&pattern) {

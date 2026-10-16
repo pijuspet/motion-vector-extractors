@@ -3,6 +3,8 @@ import os
 import pandas as pd
 import seaborn as sns
 
+from plots import plot_path
+
 _METRIC_INFO = {
     "wall_ms":                  ("Wall clock, whole clip",     "lower raw value = better"),
     "fps":                      ("Throughput (FPS)",           "higher raw value = better"),
@@ -188,13 +190,13 @@ def _coverage_note(speedup_df, metric):
 def _y_max(metric: str, video_type: str):
     if metric in _AUTOSCALE_METRICS:
         return None  # let matplotlib fit the data; these span 0.05x .. 60x
-    return _SPEEDUP_Y_MAX.get((video_type, metric), 4)
+    return _SPEEDUP_Y_MAX.get((video_type.rsplit('/', 1)[-1], metric), 4)
 
 
 def _y_min(metric: str, video_type: str):
     if metric in _AUTOSCALE_METRICS:
         return None
-    return _SPEEDUP_Y_MIN.get((video_type, metric), 0.5)
+    return _SPEEDUP_Y_MIN.get((video_type.rsplit('/', 1)[-1], metric), 0.5)
 
 
 def plot_speedup_line(
@@ -290,7 +292,7 @@ def plot_speedup_line(
         fig.text(0.01, 0.055, note, fontsize=11, color="dimgray", ha="left", va="bottom")
     if run_info:
         fig.text(0.01, 0.01, run_info, fontsize=10, color="gray", style="italic", ha="left", va="bottom")
-    save_path = os.path.join(plots_folder, filename)
+    save_path = plot_path(plots_folder, filename)
     fig.savefig(save_path, dpi=150)
     plt.close(fig)
     print(f"[speedup] Saved: {save_path}")
@@ -330,7 +332,7 @@ def _render_heatmap(pivot: pd.DataFrame, title: str, filename: str, plots_folder
     fig.tight_layout()
     if run_info:
         fig.text(0.01, 0.01, run_info, fontsize=10, color="gray", style="italic", ha="left", va="bottom")
-    save_path = os.path.join(plots_folder, filename)
+    save_path = plot_path(plots_folder, filename)
     fig.savefig(save_path, dpi=150)
     plt.close(fig)
     print(f"[speedup] Saved heatmap: {save_path}")

@@ -123,7 +123,12 @@ PYTHON := $(VENV_FOLDER)/bin/python$(EXE_EXT)
 
 TARGET_SYS    := $(CARGO_TARGET_BASE)/extractor-sys
 TARGET_CUST   := $(CARGO_TARGET_BASE)/extractor-cust
-VIDEO_FILE := $(CURRENT_DIR)/videos/$(VIDEO_TYPE)/$(VIDEO_NAME)
+# Video root: <VIDEOS_DIR>/<video_type>/<clip>. Point it at the NAS mount
+# (make mount_nas) to read videos from there, e.g. VIDEOS_DIR=$(NAS_MOUNT)/<dir>.
+VIDEOS_DIR ?= $(CURRENT_DIR)/videos
+# Where mount_nas mounts the NAS share (gitignored).
+NAS_MOUNT ?= $(CURRENT_DIR)/nas
+VIDEO_FILE := $(VIDEOS_DIR)/$(VIDEO_TYPE)/$(VIDEO_NAME)
 
 INITIAL_RUN_DATA := $(CURRENT_DIR)/published/$(VIDEO_TYPE)/initial_results_$(VIDEO_TYPE)
 # Trailing slash on the glob so `ls -d` yields only directories: reports written
@@ -136,6 +141,24 @@ LAST_RESULTS_DIR = $(patsubst %/,%,$(shell ls -d "$(CURRENT_DIR)/results/$(VIDEO
 # `#` as part of the value, and these are used quoted.
 CSV_FILE_PATH_ORIG = $(LAST_RESULTS_DIR)/method0_output_0.csv
 CSV_FILE_PATH_CUST = $(LAST_RESULTS_DIR)/method5_output_0.csv
+
+# Run dir name -> source clip stem: drops the <date>_<time>_ prefix and the
+# _t<threads> knob suffix and every _<tag>[N] after it (_sb, _n9, _d6, _csv,
+# and older runs' _kf, _g4, _f2 ...). Shared with generate_videos_since.
+RUN_STEM_SED = s/^[0-9]{8}_[0-9]{4}_//; s/_t[0-9]+(_[a-z]+[0-9]*)*$$//
+
+# generate_video renders the newest run that has the custom CSV, looking across
+# every video type - local (results/<type>/) and NAS (results/nas/<type>/) alike.
+# Types are the folders under videos/ (so archives like results/bulk3/ are
+# skipped); VIDEO_TYPE on the command line narrows it to that type. The clip is
+# found from the run name, so VIDEO_NAME is not needed.
+RUN_TYPES  = $(patsubst $(VIDEOS_DIR)/%/,%,$(filter-out $(VIDEOS_DIR)/nas/,$(wildcard $(VIDEOS_DIR)/*/ $(VIDEOS_DIR)/nas/*/)))
+RUN_SEARCH = $(if $(filter command line,$(origin VIDEO_TYPE)),$(VIDEO_TYPE),$(RUN_TYPES))
+# Newest by run name (<date>_<time>_...), not mtime: re-rendering touches old runs.
+LATEST_RUN = $(patsubst %/,%,$(dir $(shell ls -d $(foreach t,$(RUN_SEARCH),"$(CURRENT_DIR)/results/$(t)/"[0-9]*/method5_output_0.csv) 2>/dev/null \
+               | awk -F/ '{print $$(NF-1) "\t" $$0}' | sort | tail -n 1 | cut -f2)))
+RUN_TYPE   = $(patsubst $(CURRENT_DIR)/results/%,%,$(patsubst %/,%,$(dir $(1))))
+RUN_VIDEO  = $(firstword $(wildcard $(VIDEOS_DIR)/$(call RUN_TYPE,$(1))/$(shell echo '$(notdir $(1))' | sed -E '$(RUN_STEM_SED)').*))
 
 ifeq ($(PLATFORM),msvc)
 MAKE_HINT := make PLATFORM=msvc
@@ -240,9 +263,9 @@ define pgo_train_run
 	@for clip in $(PGO_TRAIN_CLIPS); do \
 		for vtype in $(PGO_TRAIN_TYPES); do \
 			if [ "$$vtype" = "h264_avi" ]; then \
-				f='$(CURRENT_DIR)'/videos/$$vtype/$$clip.avi; \
+				f='$(VIDEOS_DIR)'/$$vtype/$$clip.avi; \
 			else \
-				f='$(CURRENT_DIR)'/videos/$$vtype/$$clip.mp4; \
+				f='$(VIDEOS_DIR)'/$$vtype/$$clip.mp4; \
 			fi; \
 			if [ -f "$$f" ]; then \
 				for t in $(PGO_TRAIN_THREADS); do \
@@ -377,9 +400,9 @@ benchmark_all:
 	@vname="$(VIDEO_NAME)"; \
 	for vtype in $(VIDEO_TYPES); do \
 		if [ "$$vtype" = "h264_avi" ]; then \
-			filepath="$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi"; \
+			filepath="$(VIDEOS_DIR)/$$vtype/$${vname%.*}.avi"; \
 		else \
-			filepath="$(CURRENT_DIR)/videos/$$vtype/$$vname"; \
+			filepath="$(VIDEOS_DIR)/$$vtype/$$vname"; \
 		fi; \
 		if [ -f "$$filepath" ]; then \
 			echo ""; \
@@ -411,9 +434,9 @@ benchmark_threads:
 		for vname in $(VIDEO_NAMES); do \
 			for vtype in $(VIDEO_TYPES); do \
 				if [ "$$vtype" = "h264_avi" ]; then \
-					filepath="$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi"; \
+					filepath="$(VIDEOS_DIR)/$$vtype/$${vname%.*}.avi"; \
 				else \
-					filepath="$(CURRENT_DIR)/videos/$$vtype/$$vname"; \
+					filepath="$(VIDEOS_DIR)/$$vtype/$$vname"; \
 				fi; \
 				if [ -f "$$filepath" ]; then \
 					echo ""; \
@@ -468,9 +491,9 @@ endef
 
 define sweep_filepath
 					if [ "$$vtype" = "h264_avi" ]; then \
-						filepath="$(CURRENT_DIR)/videos/$$vtype/$${vname%.*}.avi"; \
+						filepath="$(VIDEOS_DIR)/$$vtype/$${vname%.*}.avi"; \
 					else \
-						filepath="$(CURRENT_DIR)/videos/$$vtype/$$vname"; \
+						filepath="$(VIDEOS_DIR)/$$vtype/$$vname"; \
 					fi; \
 					if [ ! -f "$$filepath" ]; then continue; fi;
 endef
@@ -568,7 +591,12 @@ publish:
 publish_titles:
 	$(BENCH_WRAPPER) cargo run $(CARGO_TARGET_FLAG) --bin publish_report 6
 
+generate_video: LAST_RESULTS_DIR := $(LATEST_RUN)
+generate_video: VIDEO_FILE := $(call RUN_VIDEO,$(LATEST_RUN))
 generate_video:
+	@[ -n '$(LAST_RESULTS_DIR)' ] || { echo "generate_video: no run with method5_output_0.csv under results/ for types: $(RUN_SEARCH) - benchmark with WRITE_CSV=1 first"; exit 1; }
+	@[ -n '$(VIDEO_FILE)' ] || { echo "generate_video: no source clip for $(LAST_RESULTS_DIR) under $(VIDEOS_DIR)/$(call RUN_TYPE,$(LAST_RESULTS_DIR))/"; exit 1; }
+	@echo "generate_video: $(LAST_RESULTS_DIR) <- $(VIDEO_FILE)"
 	cargo run --release $(CARGO_TARGET_FLAG) --bin generate_motion_vectors_video \
 		'$(CSV_FILE_PATH_CUST)' '$(LAST_RESULTS_DIR)' '$(VIDEO_FILE)'
 	cargo run --release $(CARGO_TARGET_FLAG) --bin combine_motion_vectors_with_video '$(VIDEO_FILE)' \
@@ -591,21 +619,21 @@ CUST_METHODS ?= 4 5 3
 
 generate_videos_since:
 	@n=0; skipped=0; \
-	for d in $(CURRENT_DIR)/results/*/$(SINCE_DAY)_*/; do \
+	for d in $(CURRENT_DIR)/results/*/$(SINCE_DAY)_*/ $(CURRENT_DIR)/results/nas/*/$(SINCE_DAY)_*/; do \
 		[ -d "$$d" ] || continue; \
 		d=$${d%/}; b=$$(basename $$d); \
 		hhmm=$$(echo "$$b" | cut -d_ -f2); \
 		[ "$$(echo "$$hhmm $(SINCE)" | awk '{print ($$1 < $$2)}')" = 1 ] && continue; \
-		vtype=$$(basename $$(dirname $$d)); \
-		stem=$$(echo "$$b" | sed -E 's/^[0-9]{8}_[0-9]{4}_//; s/_t[0-9]+(_kf)?(_g[0-9]+)?(_m[0-9]+)?(_s[a-z0-9]+)?(_n[0-9]+)?(_d[0-9]+)?(_b[0-9]+)?(_csv)?$$//'); \
-		vid=$$(ls $(CURRENT_DIR)/videos/$$vtype/$$stem.* 2>/dev/null | head -n 1); \
+		vtype=$${d#$(CURRENT_DIR)/results/}; vtype=$${vtype%/*}; \
+		stem=$$(echo "$$b" | sed -E '$(RUN_STEM_SED)'); \
+		vid=$$(ls $(VIDEOS_DIR)/$$vtype/$$stem.* 2>/dev/null | head -n 1); \
 		orig=$$d/method0_output_0.csv; \
 		cust=; for m in $(CUST_METHODS); do \
 			c=$$d/method$${m}_output_0.csv; \
 			if [ -f "$$c" ]; then cust=$$c; break; fi; \
 		done; \
 		if [ -z "$$cust" ]; then echo "skip $$b: no custom CSV (tried methods $(CUST_METHODS))"; skipped=$$((skipped+1)); continue; fi; \
-		if [ -z "$$vid" ]; then echo "skip $$b: no source video at videos/$$vtype/$$stem.*"; skipped=$$((skipped+1)); continue; fi; \
+		if [ -z "$$vid" ]; then echo "skip $$b: no source video at $(VIDEOS_DIR)/$$vtype/$$stem.*"; skipped=$$((skipped+1)); continue; fi; \
 		echo "=== $$vtype/$$b  (custom=$$(basename $$cust)) ==="; \
 		cargo run --release $(CARGO_TARGET_FLAG) --bin generate_motion_vectors_video $$cust $$d $$vid || exit 1; \
 		if [ -f "$$orig" ]; then \
@@ -616,6 +644,26 @@ generate_videos_since:
 		n=$$((n+1)); \
 	done; \
 	echo "generate_videos_since: generated for $$n run(s), skipped $$skipped"
+
+mount_nas:
+	@while IFS== read -r k v; do case $$k in NAS_*) export "$$k=$$v";; esac; done < .env; \
+	: "$${NAS_SHARE:?set NAS_SHARE in .env}" "$${NAS_USER:?set NAS_USER in .env}"; \
+	drive=$${NAS_DRIVE:-V:}; mnt='$(NAS_MOUNT)'; \
+	cd /mnt/c && if ! cmd.exe /c "if exist $$drive\\ (exit 0) else (exit 1)"; then \
+		pw=$${NAS_PASSWORD:+!NAS_PASSWORD!}; \
+		WSLENV=NAS_SHARE:NAS_USER:NAS_PASSWORD cmd.exe /v:on /c "net use $$drive !NAS_SHARE! $$pw /user:!NAS_USER! /persistent:yes" || exit 1; \
+	fi; \
+	mkdir -p "$$mnt"; \
+	mountpoint -q "$$mnt" || sudo mount -t drvfs "$$drive" "$$mnt" -o uid=$$(id -u),gid=$$(id -g); \
+	ls "$$mnt"
+
+umount_nas:
+	sudo umount '$(NAS_MOUNT)'
+
+DATASET ?=
+TARGET  ?= benchmark
+pick_video:
+	NAS_MOUNT='$(NAS_MOUNT)' cargo run -q --release $(CARGO_TARGET_FLAG) --bin pick_video -- $(DATASET) --target '$(TARGET)'
 
 compare_mvs:
 	LD_LIBRARY_PATH=$(REGULAR_PREFIX)/lib:$$LD_LIBRARY_PATH \
@@ -658,13 +706,15 @@ help:
 	@echo ""
 	@echo "    $(MAKE_HINT) publish                 # publish report"
 	@echo "    $(MAKE_HINT) publish_titles          # dry run: page titles results/bulk would publish under"
-	@echo "    $(MAKE_HINT) generate_video          # render MV overlay video"
+	@echo "    $(MAKE_HINT) generate_video          # render MV overlay video for the newest run (local or NAS)"
 	@echo "    $(MAKE_HINT) generate_videos_since   # same, for every recent results dir"
 	@echo "    $(MAKE_HINT) compare_mvs             # method0 vs method9 MV diff"
 	@echo "    $(MAKE_HINT) compare_runs            # reproducibility check across runs"
 	@echo "    $(MAKE_HINT) decode_ffmpeg           # decode VIDEO_FILE via the custom FFmpeg"
+	@echo "    $(MAKE_HINT) mount_nas / umount_nas  # mount the NAS video share (settings in .env)"
+	@echo "    $(MAKE_HINT) pick_video              # pick a MEVA/iLIDS clip on the NAS and benchmark it (DATASET=meva|ilids|picked TARGET=benchmark)"
 	@echo ""
-	@echo "  Vars: VIDEO_NAME=$(VIDEO_NAME)"
+	@echo "  Vars: VIDEO_NAME=$(VIDEO_NAME)  VIDEOS_DIR=$(VIDEOS_DIR)"
 	@echo "        VIDEO_TYPE=$(VIDEO_TYPE)  STREAMS=$(STREAMS)  NRUNS=$(NRUNS)  THREAD_COUNT=$(THREAD_COUNT)"
 	@echo "        WRITE_CSV=$(WRITE_CSV)  L0_ONLY=$(L0_ONLY)"
 	@echo "        SKIP_NTH_FROM=$(SKIP_NTH_FROM)  SKIP_NTH_TO=$(SKIP_NTH_TO)  SKIP_NTH_STEP=$(SKIP_NTH_STEP)  SKIP_NTH_FRAME=$(SKIP_NTH_FRAME)"
@@ -692,5 +742,5 @@ endif
         setup_ffmpeg setup_ffmpeg_pgo setup_edge264 setup_edge264_pgo \
         build build_sys build_tools \
         all benchmark benchmark_all benchmark_threads benchmark_skip_nth benchmark_decode_nth \
-        publish publish_titles generate_video generate_videos_since compare_mvs \
+        publish publish_titles generate_video generate_videos_since compare_mvs mount_nas umount_nas pick_video \
         help $(PLATFORM_PHONY)

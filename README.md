@@ -35,6 +35,21 @@ make setup_edge264       # rebuild just the decoder after a submodule update
 make setup_edge264_pgo   # instrument -> train -> rebuild, same recipe as setup_ffmpeg_pgo
 ```
 
+5. **Optional: NAS video access** (WSL). Benchmarking MEVA / iLIDS clips straight from the NAS needs these keys in `.env` at the repo root. `make install` creates `.env` from `.env_template`; `.env` is gitignored, so the credentials never reach git:
+
+| Key | What to put |
+|---|---|
+| `NAS_SHARE` | UNC path of the dataset share, e.g. `\\<nas-host>\<share>` |
+| `NAS_USER` | NAS account name |
+| `NAS_PASSWORD` | That account's password. Leave it empty and `net use` asks for it on the first mount |
+| `NAS_DRIVE` | Free Windows drive letter to map the share to (default `V:`) |
+
+Values are read verbatim, so don't add quotes. The share path, account and password are the ones in the dataset owners' notes (the VLM-Datasets "NAS box for datasets" entry). Ask the team if you don't have access. Then:
+```bash
+make mount_nas      # maps the share and mounts it at nas/ (asks for sudo)
+make pick_video     # pick a clip and benchmark it
+```
+
 ## Usage
 
 `make` with no target prints the help screen with the current variable values. Every variable below can be overridden on the command line, e.g. `make benchmark VIDEO_NAME=bigbunny.mp4 THREAD_COUNT=4`.
@@ -91,10 +106,12 @@ Each run writes its MV CSVs and VTune/flamegraph output to `results/<video_type>
 
 | Command | What it does |
 |---|---|
-| `make generate_video` | Renders the MV overlay and the side-by-side comparison video from the newest results dir (needs `method0_output_0.csv` and `method5_output_0.csv`) |
+| `make generate_video` | Renders the MV overlay and the side-by-side comparison video for the newest run with `method0_output_0.csv` and `method5_output_0.csv`, across all local and NAS video types (`results/<type>/`, `results/nas/<type>/`). The source clip is found from the run name. Pass `VIDEO_TYPE=` to limit it to one type |
 | `make generate_videos_since` | The same for every results dir created on or after `SINCE_DAY` and `SINCE` (`HHMM`). Uses the first CSV it finds among `CUST_METHODS` |
 | `make compare_mvs` | Compares the method 0 and method 5 MV CSVs in the newest results dir and writes `mv_diff_neg1.txt` |
 | `make decode_ffmpeg` | Remuxes `VIDEO_FILE` with the custom FFmpeg CLI into the newest results dir |
+| `make mount_nas` / `make umount_nas` | (WSL) Maps `NAS_SHARE` to `NAS_DRIVE` with `net use` and mounts it at `NAS_MOUNT` (default `nas/` in the repo, gitignored). Share, user and password come from `.env` (keys in `.env_template`); an empty `NAS_PASSWORD` makes `net use` prompt |
+| `make pick_video` | Browse `nas/MEVA/videos`, `nas/iLIDS/videos`, or the clips picked before in `videos/nas/` (`DATASET=meva\|ilids\|picked`, else a numbered menu asks; size and duration shown per clip), pick a clip, and run `TARGET` on it (default `benchmark`; several goals allowed, e.g. `TARGET="benchmark generate_video"`). The codec picks the type (H.264 → `h264_cabac`, HEVC → `h265`, MPEG-4 → `h264_avi`); the clip is linked into `videos/nas/<type>/` and run as `VIDEO_TYPE=nas/<type>`, so results go to `results/nas/<type>/` and any target reaches it later, e.g. `make generate_video VIDEO_TYPE=nas/h264_cabac VIDEO_NAME=<clip>` |
 | `make publish` | Publishes the report for the newest results dir |
 | `make publish_titles` | Dry run: prints the page titles `results/bulk` would be published under |
 
@@ -104,6 +121,7 @@ Each run writes its MV CSVs and VTune/flamegraph output to `results/<video_type>
 |---|---|---|
 | `VIDEO_NAME` / `VIDEO_TYPE` | `MCTTR0102b.mp4` / `h264_cabac` | Single video for `benchmark`, `generate_video` and `compare_mvs`. Types: `h264_cabac`, `h264_cavlc`, `h264_avi`, `h265` |
 | `VIDEO_NAMES` / `VIDEO_TYPES` | school, bus, MCTTR / `h264_cabac` | Video set for the multi-video targets. Missing files are skipped |
+| `VIDEOS_DIR` | `videos/` | Video root, laid out as `<VIDEOS_DIR>/<video_type>/<clip>`. Set it in the makefile or on the command line to read from the NAS mount, e.g. `nas/MEVA/videos` |
 | `STREAMS`, `NRUNS` | `20`, `3` | Parallel streams and repeat runs |
 | `THREAD_COUNT` | `1` | Decoder threads per extractor (`0` lets FFmpeg choose) |
 | `WRITE_CSV` | `0` | `1` = write per-method MV CSVs |

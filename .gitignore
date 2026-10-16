@@ -1,6 +1,8 @@
 __pycache__/
 executables/
 results/
+nas/
+videos/nas/
 .env
 
 published/**/vtune_results/archive/

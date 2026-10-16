@@ -56,7 +56,7 @@ def save_to_ppt(slides, ppt_filename, plots_folder):
             tf.paragraphs[0].font.size = Pt(18)
             tf.paragraphs[0].alignment = PP_ALIGN.LEFT
 
-        img_path = os.path.join(plots_folder, slide_data["filename"])
+        img_path = plts.plot_path(plots_folder, slide_data["filename"])
         if os.path.isfile(img_path):
             left_img = Inches(0.5)
             top_img = Inches(1.9)
@@ -65,7 +65,7 @@ def save_to_ppt(slides, ppt_filename, plots_folder):
             slide.shapes.add_picture(
                 img_path, left_img, top_img, width=max_width, height=max_height
             )
-    ppt_out = os.path.join(plots_folder, ppt_filename)
+    ppt_out = plts.plot_path(plots_folder, ppt_filename)
     prs.save(ppt_out)
     print(f"\nPowerPoint file created: {ppt_out}")
 
@@ -109,7 +109,7 @@ def add_fastest_methods_slide(slides, df_hp, streams_order, plots_folder, config
 
     plts.save_highlighted_table_as_png(
         tbl_fastest,
-        os.path.join(plots_folder, highlighted_png),
+        plts.plot_path(plots_folder, highlighted_png),
     )
 
     slides.append(
@@ -219,7 +219,7 @@ def add_detailed_tables(slides, df_hp, streams_order, plots_folder, config_list)
         plts.pretty_table(tbl, tbl_filename, plots_folder)
 
         plts.save_highlighted_table_as_png(
-            tbl, os.path.join(plots_folder, highlighted_png)
+            tbl, plts.plot_path(plots_folder, highlighted_png)
         )
 
         slides.append(
